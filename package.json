@@ -1,0 +1,18 @@
+{
+  "name": "tiktok-warmup-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "Lucas Portet",
+  "license": "ISC",
+  "description": "♨️ TikTok warmup bot",
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "cli-table3": "^0.6.5",
+    "ora": "^5.4.1",
+    "tree-cli": "^0.6.7"
+  }
+}
