@@ -2,6 +2,8 @@
 
 This is a simple TikTok bot that can be used to warm up your account.
 
+![CleanShot 2025-06-04 at 23 31 21](https://github.com/user-attachments/assets/ffaeae04-311c-4300-b8f2-86b2dd6ce6e0)
+
 ## Setup
 
 Run `npm install` to install the dependencies.
@@ -29,6 +31,7 @@ Run the bot with `npm start` and enjoy!
 > Make sure to add the `--` before the parameters as npm doesn't pass custom flags. ex: `npm start -- --duration=20`
 
 `--duration` (default: 30) — the duration of the session in minutes.
+
 `--sequence` (default: null) — the sequence of actions to perform. Example: `npm start -- --sequence=swipeNext,swipeNext,likePost`.
 
 ## Internal configuration
