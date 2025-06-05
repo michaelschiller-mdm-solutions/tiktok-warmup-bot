@@ -27,7 +27,7 @@ Setup voice actions (Settings > Accessibility > Voice Control) on your device fo
 - Open shop
 - Open inbox
 
-You can find all the voice actions in the `voice-actions` folder.
+You can find all the voice actions in the `voice-actions` folder. I let ElevenLabs do the talking. My French accent made Siri act like it was on strike.
 
 If you don't want some of the actions, you can comment them out in the `index.js` file — if you're not technical, just ask Cursor, it'll do the work for you.
 
