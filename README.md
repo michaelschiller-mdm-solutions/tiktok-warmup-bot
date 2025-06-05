@@ -62,6 +62,8 @@ Found an issue or just want to say hi? Reach out on [X/Twitter](https://x.com/lu
 
 This setup is inspired by [Julian Valdy's article from The Quest](https://julianivaldy.medium.com/building-tiktok-instagram-farm-083e5e3bab62), figuring out the voice actions and the logic to run them.
 
+You'll find a PDF archive of the article [here](https://share.zight.com/X6uLj9kK). Thanks [@thesureshg](https://x.com/thesureshg) for the reupload.
+
 ## License
 
 This software is licensed under the [Beerware License](LICENSE.md).
