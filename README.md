@@ -10,6 +10,13 @@ Run `npm install` to install the dependencies.
 
 The trick is to use the Voice Control feature on your iOS device to perform some actions.
 
+<details>
+<summary>Enabling Voice Control</summary>
+  
+![ScreenRecording_06-04-2025 23-36-18_1 (1)](https://github.com/user-attachments/assets/030e8aa9-ca96-4f9e-8cb8-3977a355219b)
+
+</details>
+
 Setup voice actions (Settings > Accessibility > Voice Control) on your device for:
 - Swipe next
 - Swipe previous
