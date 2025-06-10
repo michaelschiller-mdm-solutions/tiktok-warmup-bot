@@ -1,0 +1,6 @@
+browser-use
+google-generativeai
+python-dotenv
+playwright
+langchain-google-genai
+langchain-core 

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
 import { Plus, Search, Filter, Download } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -13,9 +12,6 @@ import ModelSettings from '../components/ModelSettings';
 import BulkActions from '../components/BulkActions';
 
 const Models: React.FC = () => {
-  const { modelId } = useParams();
-  const navigate = useNavigate();
-  
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,14 +75,6 @@ const Models: React.FC = () => {
     const matchesStatus = statusFilter === 'all' || model.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
-
-  // Calculate summary statistics
-  const stats = {
-    total: models.length,
-    active: models.filter(m => m.status === 'active').length,
-    totalAccounts: models.reduce((sum, m) => sum + (m.account_count || 0), 0),
-    activeAccounts: models.reduce((sum, m) => sum + (m.active_accounts || 0), 0),
-  };
 
   if (loading) {
     return (

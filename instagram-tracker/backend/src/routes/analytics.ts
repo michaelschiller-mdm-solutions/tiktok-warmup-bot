@@ -151,7 +151,7 @@ router.get('/timeseries', async (req, res) => {
           COUNT(*) as action_count
         FROM activity_logs 
         WHERE created_at >= NOW() - INTERVAL $2
-        ${model_id ? 'AND details->>'model_id' = $3' : ''}
+        ${model_id ? "AND details->>'model_id' = $3" : ''}
         GROUP BY DATE_TRUNC($1, created_at), action_type
         ORDER BY period ASC, action_type
       `;

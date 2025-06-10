@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Calendar, Users, Activity, Settings, Download } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -39,13 +39,7 @@ const ModelDetail: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState('30d');
 
-  useEffect(() => {
-    if (modelId) {
-      loadModelPerformance();
-    }
-  }, [modelId, selectedPeriod]);
-
-  const loadModelPerformance = async () => {
+  const loadModelPerformance = useCallback(async () => {
     if (!modelId) return;
 
     try {
@@ -60,7 +54,13 @@ const ModelDetail: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [modelId, selectedPeriod]);
+
+  useEffect(() => {
+    if (modelId) {
+      loadModelPerformance();
+    }
+  }, [modelId, loadModelPerformance]);
 
   const handleExport = () => {
     toast('Export functionality coming soon!');
