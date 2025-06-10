@@ -1,15 +1,23 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Settings, Users, Activity, Calendar, Trash2, Edit } from 'lucide-react';
+import { Settings, Users, Activity, Calendar, Trash2, Edit, CheckSquare, Square } from 'lucide-react';
 import { Model } from '../types/models';
 
 interface ModelCardProps {
   model: Model;
+  isSelected?: boolean;
+  onSelect?: (selected: boolean) => void;
   onEdit?: (model: Model) => void;
   onDelete?: (model: Model) => void;
 }
 
-const ModelCard: React.FC<ModelCardProps> = ({ model, onEdit, onDelete }) => {
+const ModelCard: React.FC<ModelCardProps> = ({ 
+  model, 
+  isSelected = false,
+  onSelect,
+  onEdit, 
+  onDelete 
+}) => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800';
@@ -35,20 +43,37 @@ const ModelCard: React.FC<ModelCardProps> = ({ model, onEdit, onDelete }) => {
   ];
 
   return (
-    <div className="bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200">
+    <div className={`bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 ${
+      isSelected ? 'ring-2 ring-blue-500 ring-opacity-50' : ''
+    }`}>
       {/* Header */}
       <div className="p-6 border-b border-gray-100">
         <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <h3 className="text-lg font-semibold text-gray-900">{model.name}</h3>
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(model.status)}`}>
-                {model.status}
-              </span>
-            </div>
-            {model.description && (
-              <p className="text-sm text-gray-600 mt-1 line-clamp-2">{model.description}</p>
+          <div className="flex items-center gap-3 flex-1">
+            {/* Selection Checkbox */}
+            {onSelect && (
+              <button
+                onClick={() => onSelect(!isSelected)}
+                className="text-gray-400 hover:text-blue-600 transition-colors"
+              >
+                {isSelected ? 
+                  <CheckSquare className="h-5 w-5 text-blue-600" /> : 
+                  <Square className="h-5 w-5" />
+                }
+              </button>
             )}
+            
+            <div className="flex-1">
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-semibold text-gray-900">{model.name}</h3>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(model.status)}`}>
+                  {model.status}
+                </span>
+              </div>
+              {model.description && (
+                <p className="text-sm text-gray-600 mt-1 line-clamp-2">{model.description}</p>
+              )}
+            </div>
           </div>
           
           {/* Action Buttons */}

@@ -9,6 +9,8 @@ import ModelGrid from '../components/ModelGrid';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ModelWizard from '../components/ModelWizard';
 import ModelStats from '../components/ModelStats';
+import ModelSettings from '../components/ModelSettings';
+import BulkActions from '../components/BulkActions';
 
 const Models: React.FC = () => {
   const { modelId } = useParams();
@@ -21,6 +23,9 @@ const Models: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<Model | null>(null);
+  const [selectedModels, setSelectedModels] = useState<Set<number>>(new Set());
 
   // Load models data
   useEffect(() => {
@@ -48,8 +53,8 @@ const Models: React.FC = () => {
   };
 
   const handleEditModel = (model: Model) => {
-    // TODO: Implement in Task 1-5 (Model Settings Panel)
-    toast(`Edit model "${model.name}" - coming soon!`);
+    setSelectedModel(model);
+    setIsSettingsOpen(true);
   };
 
   const handleDeleteModel = async (model: Model) => {
@@ -177,9 +182,19 @@ const Models: React.FC = () => {
         </div>
       </div>
 
+      {/* Bulk Actions */}
+      <BulkActions
+        models={filteredModels}
+        selectedModels={selectedModels}
+        onSelectionChange={setSelectedModels}
+        onModelsUpdated={loadModels}
+      />
+
       {/* Models Grid */}
       <ModelGrid
         models={filteredModels}
+        selectedModels={selectedModels}
+        onSelectionChange={setSelectedModels}
         onEdit={handleEditModel}
         onDelete={handleDeleteModel}
       />
@@ -188,6 +203,17 @@ const Models: React.FC = () => {
       <ModelWizard
         isOpen={isWizardOpen}
         onClose={() => setIsWizardOpen(false)}
+        onSuccess={loadModels}
+      />
+
+      {/* Model Settings Panel */}
+      <ModelSettings
+        model={selectedModel}
+        isOpen={isSettingsOpen}
+        onClose={() => {
+          setIsSettingsOpen(false);
+          setSelectedModel(null);
+        }}
         onSuccess={loadModels}
       />
     </div>

@@ -4,12 +4,33 @@ import ModelCard from './ModelCard';
 
 interface ModelGridProps {
   models: Model[];
+  selectedModels?: Set<number>;
+  onSelectionChange?: (selectedIds: Set<number>) => void;
   onEdit?: (model: Model) => void;
   onDelete?: (model: Model) => void;
   className?: string;
 }
 
-const ModelGrid: React.FC<ModelGridProps> = ({ models, onEdit, onDelete, className = '' }) => {
+const ModelGrid: React.FC<ModelGridProps> = ({ 
+  models, 
+  selectedModels = new Set(),
+  onSelectionChange,
+  onEdit, 
+  onDelete, 
+  className = '' 
+}) => {
+  const handleModelSelect = (modelId: number, selected: boolean) => {
+    if (!onSelectionChange) return;
+    
+    const newSelection = new Set(selectedModels);
+    if (selected) {
+      newSelection.add(modelId);
+    } else {
+      newSelection.delete(modelId);
+    }
+    onSelectionChange(newSelection);
+  };
+
   if (models.length === 0) {
     return (
       <div className={`text-center py-12 ${className}`}>
@@ -29,6 +50,8 @@ const ModelGrid: React.FC<ModelGridProps> = ({ models, onEdit, onDelete, classNa
         <ModelCard
           key={model.id}
           model={model}
+          isSelected={selectedModels.has(model.id)}
+          onSelect={onSelectionChange ? (selected) => handleModelSelect(model.id, selected) : undefined}
           onEdit={onEdit}
           onDelete={onDelete}
         />
