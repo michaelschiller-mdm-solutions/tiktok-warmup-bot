@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Models from './pages/Models';
+import ModelDetail from './pages/ModelDetail';
 import Analytics from './pages/Analytics';
 
 function App() {
@@ -16,7 +17,7 @@ function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/models" element={<Models />} />
-            <Route path="/models/:modelId" element={<Models />} />
+            <Route path="/models/:modelId" element={<ModelDetail />} />
             <Route path="/analytics" element={<Analytics />} />
           </Routes>
         </Layout>

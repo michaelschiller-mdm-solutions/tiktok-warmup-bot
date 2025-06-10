@@ -8,6 +8,7 @@ import { apiClient } from '../services/api';
 import ModelGrid from '../components/ModelGrid';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ModelWizard from '../components/ModelWizard';
+import ModelStats from '../components/ModelStats';
 
 const Models: React.FC = () => {
   const { modelId } = useParams();
@@ -19,6 +20,7 @@ const Models: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Load models data
   useEffect(() => {
@@ -31,6 +33,7 @@ const Models: React.FC = () => {
       setError(null);
       const data = await apiClient.getModels();
       setModels(data);
+      setRefreshTrigger(prev => prev + 1); // Trigger analytics refresh
     } catch (err: any) {
       console.error('Failed to load models:', err);
       setError(err.message || 'Failed to load models');
@@ -125,24 +128,7 @@ const Models: React.FC = () => {
         </div>
 
         {/* Statistics Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
-            <div className="text-sm text-gray-500">Total Models</div>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-2xl font-bold text-green-600">{stats.active}</div>
-            <div className="text-sm text-gray-500">Active Models</div>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-2xl font-bold text-blue-600">{stats.totalAccounts}</div>
-            <div className="text-sm text-gray-500">Total Accounts</div>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-2xl font-bold text-purple-600">{stats.activeAccounts}</div>
-            <div className="text-sm text-gray-500">Active Accounts</div>
-          </div>
-        </div>
+        <ModelStats refreshTrigger={refreshTrigger} className="mt-6" />
       </div>
 
       {/* Filters and Search */}

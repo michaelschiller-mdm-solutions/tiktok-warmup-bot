@@ -89,10 +89,39 @@ class ApiClient {
     return response.data.data || response.data;
   }
 
-  // Analytics API methods (placeholder for future tasks)
+  // Analytics API methods
   async getAnalytics(): Promise<any> {
-    const response = await this.client.get('/analytics');
+    const response = await this.client.get('/analytics/overview');
+    return response.data.data;
+  }
+
+  async getTimeSeries(metric: string = 'follows', period: string = '7d', modelId?: number): Promise<any> {
+    const params = new URLSearchParams({ metric, period });
+    if (modelId) params.append('model_id', modelId.toString());
+    
+    const response = await this.client.get(`/analytics/timeseries?${params}`);
+    return response.data.data;
+  }
+
+  async getModelComparison(): Promise<any> {
+    const response = await this.client.get('/analytics/models/comparison');
+    return response.data.data;
+  }
+
+  async getActivityFeed(limit: number = 50, offset: number = 0, modelId?: number): Promise<any> {
+    const params = new URLSearchParams({ 
+      limit: limit.toString(), 
+      offset: offset.toString() 
+    });
+    if (modelId) params.append('model_id', modelId.toString());
+
+    const response = await this.client.get(`/analytics/activity-feed?${params}`);
     return response.data;
+  }
+
+  async getModelPerformance(modelId: number, period: string = '30d'): Promise<any> {
+    const response = await this.client.get(`/analytics/models/${modelId}/performance?period=${period}`);
+    return response.data.data;
   }
 
   // Import API methods (placeholder for future tasks)
