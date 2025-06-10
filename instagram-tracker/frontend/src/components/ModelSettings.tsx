@@ -142,7 +142,7 @@ const ModelSettings: React.FC<ModelSettingsProps> = ({
 
       setHasChanges(changed);
     }
-  }, [form.values, model]);
+  }, [form.values, model, form]);
 
   const handleClose = () => {
     if (hasChanges) {

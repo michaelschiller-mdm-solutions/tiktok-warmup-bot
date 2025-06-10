@@ -1,5 +1,5 @@
 import express from 'express';
-import { pool } from '../database';
+import { db } from '../database';
 
 const router = express.Router();
 
@@ -13,7 +13,7 @@ router.get('/overview', async (req, res) => {
       recentActivityResult
     ] = await Promise.all([
       // Model statistics
-      pool.query(`
+      db.query(`
         SELECT 
           COUNT(*) as total_models,
           COUNT(CASE WHEN status = 'active' THEN 1 END) as active_models,
@@ -23,7 +23,7 @@ router.get('/overview', async (req, res) => {
       `),
       
       // Account statistics
-      pool.query(`
+      db.query(`
         SELECT 
           COUNT(*) as total_accounts,
           COUNT(CASE WHEN status = 'active' THEN 1 END) as active_accounts,
@@ -33,7 +33,7 @@ router.get('/overview', async (req, res) => {
       `),
       
       // Follow statistics
-      pool.query(`
+      db.query(`
         SELECT 
           COUNT(*) as total_follows,
           COUNT(CASE WHEN status = 'active' THEN 1 END) as active_follows,
@@ -45,7 +45,7 @@ router.get('/overview', async (req, res) => {
       `),
       
       // Recent activity
-      pool.query(`
+      db.query(`
         SELECT 
           action_type,
           COUNT(*) as action_count,
@@ -159,7 +159,7 @@ router.get('/timeseries', async (req, res) => {
       if (model_id) params.push(model_id);
     }
 
-    const result = await pool.query(query, params);
+    const result = await db.query(query, params);
 
     res.json({
       success: true,
@@ -184,7 +184,7 @@ router.get('/timeseries', async (req, res) => {
 // Get model performance comparison
 router.get('/models/comparison', async (req, res) => {
   try {
-    const result = await pool.query(`
+    const result = await db.query(`
       SELECT 
         m.id,
         m.name,
@@ -247,7 +247,7 @@ router.get('/activity-feed', async (req, res) => {
     query += ` ORDER BY al.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(limit, offset);
 
-    const result = await pool.query(query, params);
+    const result = await db.query(query, params);
 
     res.json({
       success: true,
@@ -289,10 +289,10 @@ router.get('/models/:id/performance', async (req, res) => {
       dailyActivityResult
     ] = await Promise.all([
       // Model basic info
-      pool.query('SELECT * FROM models WHERE id = $1', [id]),
+      db.query('SELECT * FROM models WHERE id = $1', [id]),
       
       // Follow statistics
-      pool.query(`
+      db.query(`
         SELECT 
           COUNT(*) as total_follows,
           COUNT(CASE WHEN status = 'active' THEN 1 END) as active_follows,
@@ -308,7 +308,7 @@ router.get('/models/:id/performance', async (req, res) => {
       `, [dateRange, id]),
       
       // Account statistics
-      pool.query(`
+      db.query(`
         SELECT 
           COUNT(*) as total_accounts,
           COUNT(CASE WHEN status = 'active' THEN 1 END) as active_accounts,
@@ -320,7 +320,7 @@ router.get('/models/:id/performance', async (req, res) => {
       `, [id]),
       
       // Daily activity breakdown
-      pool.query(`
+      db.query(`
         SELECT 
           DATE(followed_at) as activity_date,
           COUNT(*) as follows_count,
