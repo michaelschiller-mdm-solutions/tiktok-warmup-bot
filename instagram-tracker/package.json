@@ -1,0 +1,35 @@
+{
+  "name": "instagram-tracker",
+  "version": "1.0.0",
+  "description": "Instagram Account Tracker - Full Stack Application",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"pnpm run backend:dev\" \"pnpm run frontend:dev\"",
+    "backend:dev": "cd backend && pnpm run dev",
+    "frontend:dev": "cd frontend && pnpm start",
+    "build": "pnpm run backend:build && pnpm run frontend:build",
+    "backend:build": "cd backend && pnpm run build",
+    "frontend:build": "cd frontend && pnpm run build",
+    "start": "concurrently \"pnpm run backend:start\" \"pnpm run frontend:start\"",
+    "backend:start": "cd backend && pnpm start",
+    "frontend:start": "cd frontend && pnpm start",
+    "db:start": "docker-compose up -d",
+    "db:stop": "docker-compose down",
+    "db:reset": "docker-compose down -v && docker-compose up -d",
+    "install:all": "pnpm install && cd frontend && pnpm install && cd ../backend && pnpm install",
+    "setup": "pnpm run db:start && pnpm run install:all"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+} 

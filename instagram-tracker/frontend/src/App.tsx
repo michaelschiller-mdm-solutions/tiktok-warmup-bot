@@ -1,0 +1,28 @@
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+import Layout from './components/Layout';
+import Dashboard from './pages/Dashboard';
+import Models from './pages/Models';
+import Analytics from './pages/Analytics';
+
+function App() {
+  return (
+    <Router>
+      <div className="App">
+        <Toaster position="top-right" />
+        <Layout>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/models" element={<Models />} />
+            <Route path="/models/:modelId" element={<Models />} />
+            <Route path="/analytics" element={<Analytics />} />
+          </Routes>
+        </Layout>
+      </div>
+    </Router>
+  );
+}
+
+export default App; 
