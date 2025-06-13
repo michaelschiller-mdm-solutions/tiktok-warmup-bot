@@ -1,0 +1,63 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Instagram Tracker - Project Architecture
+
+## Overview
+Instagram Tracker is a full-stack application for managing Instagram accounts, analytics, and automation. It follows a monorepo structure with separate backend and frontend applications.
+
+## Architecture Stack
+- **Backend**: Node.js + Express + TypeScript
+- **Frontend**: React + TypeScript + Tailwind CSS
+- **Database**: PostgreSQL with comprehensive analytics tables
+- **Development**: Docker Compose for local PostgreSQL
+- **Package Manager**: pnpm with workspace support
+
+## Directory Structure
+```
+instagram-tracker/
+├── backend/                 # Express API server
+│   ├── src/
+│   │   ├── routes/         # API route handlers
+│   │   ├── database.ts     # PostgreSQL connection
+│   │   └── index.ts        # Server entry point
+│   └── package.json
+├── frontend/               # React application
+│   ├── src/
+│   │   ├── components/     # Reusable UI components
+│   │   ├── pages/         # Page components
+│   │   ├── services/      # API client and utilities
+│   │   ├── types/         # TypeScript type definitions
+│   │   └── hooks/         # Custom React hooks
+│   └── package.json
+├── database/              # Database schema and migrations
+│   ├── init/             # Initial schema and sample data
+│   └── migrations/       # Schema evolution scripts
+├── docs/                 # Project documentation
+│   └── delivery/         # PBI and task documentation
+└── docker-compose.yml    # Local development setup
+```
+
+## Key Files
+- [docker-compose.yml](mdc:docker-compose.yml) - Local PostgreSQL setup
+- [backend/src/database.ts](mdc:backend/src/database.ts) - Database connection configuration
+- [backend/src/index.ts](mdc:backend/src/index.ts) - API server entry point
+- [frontend/src/services/api.ts](mdc:frontend/src/services/api.ts) - Centralized API client
+- [frontend/src/types/](mdc:frontend/src/types/) - TypeScript definitions for data models
+
+## Development Workflow
+1. Start PostgreSQL: `docker-compose up -d`
+2. Install dependencies: `pnpm install`
+3. Run development servers: `pnpm run dev`
+4. Frontend: http://localhost:3000
+5. Backend: http://localhost:3001
+6. Database: localhost:5432
+
+## Core Principles
+- TypeScript everywhere for type safety
+- Centralized API client pattern
+- Comprehensive error handling
+- Responsive design with Tailwind CSS
+- Modular component architecture

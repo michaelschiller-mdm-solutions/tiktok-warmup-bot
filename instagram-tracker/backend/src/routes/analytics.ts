@@ -36,7 +36,7 @@ router.get('/overview', async (req, res) => {
       db.query(`
         SELECT 
           COUNT(*) as total_follows,
-          COUNT(CASE WHEN status = 'active' THEN 1 END) as active_follows,
+          COUNT(CASE WHEN status = 'following' THEN 1 END) as active_follows,
           COUNT(CASE WHEN status = 'unfollowed' THEN 1 END) as unfollowed_follows,
           AVG(CASE WHEN unfollowed_at IS NOT NULL THEN 
             EXTRACT(EPOCH FROM (unfollowed_at - followed_at))/86400 
@@ -73,6 +73,518 @@ router.get('/overview', async (req, res) => {
       success: false,
       error: 'Internal Server Error',
       message: 'Failed to fetch analytics overview'
+    });
+  }
+});
+
+// Get comprehensive dashboard KPIs
+router.get('/dashboard', async (req: any, res: any) => {
+  try {
+    const { model_id, date_from, date_to } = req.query;
+    
+    // Date filters
+    const dateFilter = date_from && date_to 
+      ? `AND created_at BETWEEN '${date_from}' AND '${date_to}'`
+      : 'AND created_at >= NOW() - INTERVAL \'30 days\'';
+    
+    const modelFilter = model_id ? `AND model_id = ${model_id}` : '';
+
+    const [
+      followBackRateResult,
+      profitMarginResult,
+      conversionResult,
+      costBreakdownResult,
+      performanceTimelineResult,
+      bestPerformersResult
+    ] = await Promise.all([
+      // Overall follow-back rate
+      db.query(`
+        SELECT 
+          AVG(follow_back_rate) as overall_follow_back_rate,
+          COUNT(*) as total_accounts,
+          SUM(total_follows) as total_follows,
+          SUM(CASE WHEN follow_back_rate > 0 THEN total_follows * follow_back_rate / 100 ELSE 0 END) as total_follow_backs
+        FROM accounts 
+        WHERE status = 'active' ${modelFilter}
+      `),
+      
+      // Profit margin analysis
+      db.query(`
+        SELECT 
+          SUM(total_revenue) as total_revenue,
+          SUM(total_costs) as total_costs,
+          SUM(net_profit) as net_profit,
+          AVG(profit_margin_percentage) as avg_profit_margin
+        FROM model_profit_analysis
+        ${model_id ? `WHERE model_id = ${model_id}` : ''}
+      `),
+      
+      // Conversion analysis
+      db.query(`
+        SELECT 
+          AVG(conversion_rate) as overall_conversion_rate,
+          COUNT(*) as total_accounts,
+          SUM(total_conversions) as total_conversions
+        FROM accounts 
+        WHERE status = 'active' ${modelFilter}
+      `),
+      
+      // Cost breakdown by category
+      db.query(`
+        SELECT 
+          cc.name as category,
+          SUM(
+            CASE 
+              WHEN mc.cost_amount IS NOT NULL THEN mc.cost_amount
+              WHEN ac.cost_amount IS NOT NULL THEN ac.cost_amount
+              ELSE 0
+            END
+          ) as total_amount
+        FROM cost_categories cc
+        LEFT JOIN model_costs mc ON cc.id = mc.cost_category_id AND mc.is_active = true ${model_id ? `AND mc.model_id = ${model_id}` : ''}
+        LEFT JOIN account_costs ac ON cc.id = ac.cost_category_id AND ac.is_active = true
+        ${model_id ? `LEFT JOIN accounts a ON ac.account_id = a.id AND a.model_id = ${model_id}` : ''}
+        WHERE cc.is_active = true
+        GROUP BY cc.id, cc.name
+        ORDER BY total_amount DESC
+      `),
+      
+      // Performance over time (last 30 days)
+      db.query(`
+        SELECT 
+          DATE(ps.snapshot_date) as date,
+          SUM(ps.total_follows) as follows,
+          SUM(ps.total_follow_backs) as follow_backs,
+          SUM(ps.total_conversions) as conversions,
+          SUM(ps.revenue_generated) as revenue,
+          SUM(ps.costs_incurred) as costs
+        FROM performance_snapshots ps
+        ${model_id ? `WHERE ps.model_id = ${model_id}` : ''}
+        ${model_id ? 'AND' : 'WHERE'} ps.snapshot_date >= NOW() - INTERVAL '30 days'
+        GROUP BY DATE(ps.snapshot_date)
+        ORDER BY date DESC
+        LIMIT 30
+      `),
+      
+      // Best performing accounts
+      db.query(`
+        SELECT 
+          id,
+          username,
+          model_name,
+          follow_back_rate,
+          conversion_rate,
+          total_revenue,
+          monthly_cost,
+          net_profit,
+          follow_back_rank,
+          conversion_rank,
+          profit_rank
+        FROM account_performance_analysis
+        ${model_id ? `WHERE model_id = ${model_id}` : ''}
+        ORDER BY net_profit DESC
+        LIMIT 10
+      `)
+    ]);
+
+    // Calculate totals and percentages
+    const profitData = profitMarginResult.rows[0];
+    const costData = costBreakdownResult.rows;
+    const totalCosts = costData.reduce((sum, item) => sum + parseFloat(item.total_amount || 0), 0);
+    
+    const costBreakdownWithPercentages = costData.map(item => ({
+      category: item.category,
+      amount: parseFloat(item.total_amount || 0),
+      percentage: totalCosts > 0 ? (parseFloat(item.total_amount || 0) / totalCosts) * 100 : 0
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        // Follow Back Rate KPIs
+        overall_follow_back_rate: parseFloat(followBackRateResult.rows[0]?.overall_follow_back_rate || 0),
+        follow_back_rate_trend: 0, // Would need historical comparison
+        
+        // Profit Margin KPIs  
+        total_revenue: parseFloat(profitData?.total_revenue || 0),
+        total_costs: parseFloat(profitData?.total_costs || 0),
+        net_profit: parseFloat(profitData?.net_profit || 0),
+        profit_margin_percentage: parseFloat(profitData?.avg_profit_margin || 0),
+        
+        // Conversion KPIs
+        overall_conversion_rate: parseFloat(conversionResult.rows[0]?.overall_conversion_rate || 0),
+        conversion_trend: 0, // Would need historical comparison
+        
+        // Cost Analysis
+        cost_by_category: costBreakdownWithPercentages,
+        
+        // Performance Timeline
+        performance_over_time: performanceTimelineResult.rows,
+        
+        // Best Performers
+        best_performers: bestPerformersResult.rows
+      },
+      metadata: {
+        date_range: {
+          from: date_from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+          to: date_to || new Date().toISOString()
+        },
+        model_filter: model_id || null,
+        calculation_date: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Dashboard analytics error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error', 
+      message: 'Failed to fetch dashboard analytics'
+    });
+  }
+});
+
+// Get follow-back rate analysis per account
+router.get('/follow-back-rates', async (req: any, res: any) => {
+  try {
+    const { model_id, limit = 50, sort_by = 'follow_back_rate', sort_order = 'desc' } = req.query;
+    
+    const modelFilter = model_id ? 'WHERE a.model_id = $1' : '';
+    const params = model_id ? [model_id] : [];
+
+    const query = `
+      SELECT 
+        a.id as account_id,
+        a.username,
+        a.model_id,
+        m.name as model_name,
+        a.total_follows,
+        FLOOR(a.total_follows * a.follow_back_rate / 100) as total_follow_backs,
+        a.follow_back_rate,
+        a.conversion_rate,
+        a.total_conversions,
+        -- Recent performance (last 7 days)
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'date', ps.snapshot_date,
+              'follows', ps.total_follows,
+              'follow_backs', ps.total_follow_backs,
+              'rate', ps.follow_back_rate
+            ) ORDER BY ps.snapshot_date DESC
+          ) FILTER (WHERE ps.snapshot_date >= NOW() - INTERVAL '7 days'), '[]'
+        ) as recent_performance
+      FROM accounts a
+      LEFT JOIN models m ON a.model_id = m.id
+      LEFT JOIN performance_snapshots ps ON a.id = ps.account_id
+      ${modelFilter}
+      GROUP BY a.id, a.username, a.model_id, m.name, a.total_follows, a.follow_back_rate, a.conversion_rate, a.total_conversions
+      ORDER BY a.${sort_by} ${sort_order.toUpperCase()}
+      LIMIT ${limit}
+    `;
+
+    const result = await db.query(query, params);
+
+    res.json({
+      success: true,
+      data: result.rows,
+      metadata: {
+        total_records: result.rows.length,
+        sort_by,
+        sort_order,
+        model_filter: model_id || null
+      }
+    });
+
+  } catch (error) {
+    console.error('Follow-back rates analysis error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Failed to fetch follow-back rates analysis'
+    });
+  }
+});
+
+// Get profit margin breakdown for pie chart
+router.get('/profit-margin-breakdown', async (req: any, res: any) => {
+  try {
+    const { model_id } = req.query;
+    
+    const modelFilter = model_id ? `AND m.id = ${model_id}` : '';
+
+    // First get the basic cost breakdown
+    const query = `
+      SELECT 
+        cc.name as category_name,
+        SUM(
+          CASE 
+            WHEN mc.cost_amount IS NOT NULL THEN mc.cost_amount
+            WHEN ac.cost_amount IS NOT NULL THEN ac.cost_amount
+            ELSE 0
+          END
+        ) as total_amount,
+        cc.category_type,
+        cc.default_unit
+      FROM cost_categories cc
+      LEFT JOIN model_costs mc ON cc.id = mc.cost_category_id AND mc.is_active = true
+      LEFT JOIN models m ON mc.model_id = m.id ${modelFilter}
+      LEFT JOIN account_costs ac ON cc.id = ac.cost_category_id AND ac.is_active = true
+      LEFT JOIN accounts a ON ac.account_id = a.id ${model_id ? `AND a.model_id = ${model_id}` : ''}
+      WHERE cc.is_active = true
+      GROUP BY cc.id, cc.name, cc.category_type, cc.default_unit
+      HAVING SUM(
+        CASE 
+          WHEN mc.cost_amount IS NOT NULL THEN mc.cost_amount
+          WHEN ac.cost_amount IS NOT NULL THEN ac.cost_amount
+          ELSE 0
+        END
+      ) > 0
+      ORDER BY total_amount DESC
+    `;
+
+    const result = await db.query(query);
+    
+    // Calculate total and percentages
+    const totalAmount = result.rows.reduce((sum, row) => sum + parseFloat(row.total_amount), 0);
+    
+    const pieChartData = result.rows.map((row, index) => ({
+      category_name: row.category_name,
+      total_amount: parseFloat(row.total_amount),
+      percentage: totalAmount > 0 ? (parseFloat(row.total_amount) / totalAmount) * 100 : 0,
+      color: `hsl(${(index * 137.5) % 360}, 70%, 50%)`, // Generate colors
+      subcategories: [] // Simplified for now - can be enhanced later
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        breakdown: pieChartData,
+        total_amount: totalAmount,
+        chart_data: {
+          labels: pieChartData.map(item => item.category_name),
+          datasets: [{
+            data: pieChartData.map(item => item.total_amount),
+            backgroundColor: pieChartData.map(item => item.color),
+            label: 'Cost Breakdown'
+          }]
+        }
+      },
+      metadata: {
+        model_filter: model_id || null,
+        calculation_date: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    console.error('Profit margin breakdown error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Failed to fetch profit margin breakdown'
+    });
+  }
+});
+
+// Get conversion funnel analysis
+router.get('/conversion-funnel', async (req: any, res: any) => {
+  try {
+    const { model_id, account_id } = req.query;
+    
+    let whereConditions = [];
+    let params = [];
+    let paramIndex = 1;
+
+    if (model_id) {
+      whereConditions.push(`a.model_id = $${paramIndex}`);
+      params.push(model_id);
+      paramIndex++;
+    }
+
+    if (account_id) {
+      whereConditions.push(`a.id = $${paramIndex}`);
+      params.push(account_id);
+      paramIndex++;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = `
+      SELECT 
+        a.id as account_id,
+        a.username,
+        a.model_id,
+        m.name as model_name,
+        a.total_follows,
+        FLOOR(a.total_follows * a.follow_back_rate / 100) as total_follow_backs,
+        a.total_conversions,
+        a.follow_back_rate,
+        a.conversion_rate,
+        -- Calculate follow-to-conversion rate
+        CASE 
+          WHEN a.total_follows > 0 THEN (a.total_conversions::decimal / a.total_follows::decimal) * 100
+          ELSE 0
+        END as follow_to_conversion_rate,
+        -- Calculate average conversion value
+        COALESCE(
+          (SELECT AVG(revenue_amount) FROM revenue_events WHERE account_id = a.id), 0
+        ) as average_conversion_value,
+        -- Calculate total revenue
+        COALESCE(
+          (SELECT SUM(revenue_amount) FROM revenue_events WHERE account_id = a.id), 0
+        ) as total_revenue,
+        -- Calculate cost per conversion
+        CASE 
+          WHEN a.total_conversions > 0 THEN a.monthly_cost / a.total_conversions
+          ELSE 0
+        END as cost_per_conversion,
+        -- Calculate ROI percentage
+        CASE 
+          WHEN a.monthly_cost > 0 THEN 
+            ((COALESCE((SELECT SUM(revenue_amount) FROM revenue_events WHERE account_id = a.id), 0) - a.monthly_cost) / a.monthly_cost) * 100
+          ELSE 0
+        END as roi_percentage
+      FROM accounts a
+      LEFT JOIN models m ON a.model_id = m.id
+      ${whereClause}
+      ORDER BY total_revenue DESC
+    `;
+
+    const result = await db.query(query, params);
+
+    res.json({
+      success: true,
+      data: result.rows,
+      metadata: {
+        total_records: result.rows.length,
+        filters: {
+          model_id: model_id || null,
+          account_id: account_id || null
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Conversion funnel analysis error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Failed to fetch conversion funnel analysis'
+    });
+  }
+});
+
+// Get best performing accounts
+router.get('/best-performers', async (req: any, res: any) => {
+  try {
+    const { 
+      model_id, 
+      metric_type = 'profit', 
+      limit = 10,
+      minimum_follows = 0 
+    } = req.query;
+    
+    const modelFilter = model_id ? 'WHERE model_id = $1' : '';
+    const params = model_id ? [model_id] : [];
+
+    let orderBy = 'net_profit DESC';
+    switch (metric_type) {
+      case 'follow_back_rate':
+        orderBy = 'follow_back_rate DESC';
+        break;
+      case 'conversion_rate':
+        orderBy = 'conversion_rate DESC';
+        break;
+      case 'roi':
+        orderBy = '(total_revenue - monthly_cost) / NULLIF(monthly_cost, 0) DESC';
+        break;
+      default:
+        orderBy = 'net_profit DESC';
+    }
+
+    const query = `
+      SELECT 
+        id as account_id,
+        username,
+        model_id,
+        model_name,
+        '${metric_type}' as metric_type,
+        CASE 
+          WHEN '${metric_type}' = 'follow_back_rate' THEN follow_back_rate
+          WHEN '${metric_type}' = 'conversion_rate' THEN conversion_rate
+          WHEN '${metric_type}' = 'roi' THEN 
+            CASE WHEN monthly_cost > 0 THEN ((total_revenue - monthly_cost) / monthly_cost) * 100 ELSE 0 END
+          ELSE net_profit
+        END as metric_value,
+        follow_back_rank,
+        conversion_rank,
+        profit_rank,
+        total_revenue,
+        monthly_cost,
+        net_profit,
+        total_follows,
+        total_conversions,
+        follow_back_rate,
+        conversion_rate
+      FROM account_performance_analysis
+      ${modelFilter}
+      ${modelFilter ? 'AND' : 'WHERE'} total_follows >= ${minimum_follows}
+      ORDER BY ${orderBy}
+      LIMIT ${limit}
+    `;
+
+    const result = await db.query(query, params);
+
+    // Calculate comparison to average
+    const avgQuery = `
+      SELECT 
+        AVG(follow_back_rate) as avg_follow_back_rate,
+        AVG(conversion_rate) as avg_conversion_rate,
+        AVG(net_profit) as avg_net_profit
+      FROM account_performance_analysis
+      ${modelFilter}
+    `;
+    
+    const avgResult = await db.query(avgQuery, params);
+    const averages = avgResult.rows[0];
+
+    const dataWithComparison = result.rows.map(row => ({
+      ...row,
+      comparison_to_average: (() => {
+        switch (metric_type) {
+          case 'follow_back_rate':
+            return averages.avg_follow_back_rate > 0 
+              ? ((row.follow_back_rate - averages.avg_follow_back_rate) / averages.avg_follow_back_rate) * 100
+              : 0;
+          case 'conversion_rate':
+            return averages.avg_conversion_rate > 0
+              ? ((row.conversion_rate - averages.avg_conversion_rate) / averages.avg_conversion_rate) * 100
+              : 0;
+          default:
+            return averages.avg_net_profit > 0
+              ? ((row.net_profit - averages.avg_net_profit) / averages.avg_net_profit) * 100
+              : 0;
+        }
+      })()
+    }));
+
+    res.json({
+      success: true,
+      data: dataWithComparison,
+      metadata: {
+        metric_type,
+        model_filter: model_id || null,
+        minimum_follows,
+        averages: averages
+      }
+    });
+
+  } catch (error) {
+    console.error('Best performers analysis error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Failed to fetch best performers analysis'
     });
   }
 });
@@ -116,7 +628,7 @@ router.get('/timeseries', async (req, res) => {
         SELECT 
           DATE_TRUNC($1, followed_at) as period,
           COUNT(*) as follows_count,
-          COUNT(CASE WHEN status = 'active' THEN 1 END) as active_follows,
+          COUNT(CASE WHEN status = 'following' THEN 1 END) as active_follows,
           COUNT(CASE WHEN status = 'unfollowed' THEN 1 END) as unfollowed_follows
         FROM model_target_follows 
         WHERE followed_at >= NOW() - INTERVAL $2
@@ -185,26 +697,8 @@ router.get('/timeseries', async (req, res) => {
 router.get('/models/comparison', async (req, res) => {
   try {
     const result = await db.query(`
-      SELECT 
-        m.id,
-        m.name,
-        m.status,
-        m.unfollow_ratio,
-        m.daily_follow_limit,
-        COUNT(DISTINCT a.id) as account_count,
-        COUNT(DISTINCT CASE WHEN a.status = 'active' THEN a.id END) as active_accounts,
-        COUNT(DISTINCT f.id) as total_follows,
-        COUNT(DISTINCT CASE WHEN f.status = 'active' THEN f.id END) as active_follows,
-        AVG(CASE WHEN f.unfollowed_at IS NOT NULL THEN 
-          EXTRACT(EPOCH FROM (f.unfollowed_at - f.followed_at))/86400 
-        END) as avg_follow_duration_days,
-        COUNT(DISTINCT CASE WHEN f.followed_at >= NOW() - INTERVAL '7 days' THEN f.id END) as follows_last_7d,
-        COUNT(DISTINCT CASE WHEN f.unfollowed_at >= NOW() - INTERVAL '7 days' THEN f.id END) as unfollows_last_7d
-      FROM models m
-      LEFT JOIN accounts a ON m.id = a.model_id
-      LEFT JOIN model_target_follows f ON m.id = f.model_id
-      GROUP BY m.id, m.name, m.status, m.unfollow_ratio, m.daily_follow_limit
-      ORDER BY total_follows DESC, active_accounts DESC
+      SELECT * FROM model_profit_analysis
+      ORDER BY net_profit DESC
     `);
 
     res.json({
@@ -222,143 +716,35 @@ router.get('/models/comparison', async (req, res) => {
   }
 });
 
-// Get activity feed for monitoring
-router.get('/activity-feed', async (req, res) => {
+// Add proxy providers endpoints
+router.get('/proxy-providers', async (req: any, res: any) => {
   try {
-    const { limit = 50, offset = 0, model_id } = req.query;
-
-    let query = `
+    const result = await db.query(`
       SELECT 
-        al.*,
-        m.name as model_name,
-        a.username as account_username
-      FROM activity_logs al
-      LEFT JOIN models m ON (al.details->>'model_id')::integer = m.id
-      LEFT JOIN accounts a ON (al.details->>'account_id')::integer = a.id
-      WHERE 1=1
-    `;
-    
-    const params: any[] = [];
-    if (model_id) {
-      query += ` AND (al.details->>'model_id')::integer = $${params.length + 1}`;
-      params.push(model_id);
-    }
-
-    query += ` ORDER BY al.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-    params.push(limit, offset);
-
-    const result = await db.query(query, params);
+        pp.*,
+        COUNT(a.id) as accounts_count,
+        SUM(ac.cost_amount) as total_monthly_cost
+      FROM proxy_providers pp
+      LEFT JOIN accounts a ON pp.name = a.proxy_provider
+      LEFT JOIN account_costs ac ON a.id = ac.account_id 
+        AND ac.cost_category_id = (SELECT id FROM cost_categories WHERE name = 'Proxies')
+        AND ac.is_active = true
+      WHERE pp.is_active = true
+      GROUP BY pp.id
+      ORDER BY pp.name
+    `);
 
     res.json({
       success: true,
-      data: result.rows,
-      pagination: {
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
-        total: result.rowCount
-      }
+      data: result.rows
     });
 
   } catch (error) {
-    console.error('Activity feed error:', error);
+    console.error('Proxy providers error:', error);
     res.status(500).json({
       success: false,
       error: 'Internal Server Error',
-      message: 'Failed to fetch activity feed'
-    });
-  }
-});
-
-// Get performance metrics for a specific model
-router.get('/models/:id/performance', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { period = '30d' } = req.query;
-
-    let dateRange = '30 days';
-    switch (period) {
-      case '7d': dateRange = '7 days'; break;
-      case '30d': dateRange = '30 days'; break;
-      case '90d': dateRange = '90 days'; break;
-    }
-
-    const [
-      modelInfoResult,
-      followStatsResult,
-      accountStatsResult,
-      dailyActivityResult
-    ] = await Promise.all([
-      // Model basic info
-      db.query('SELECT * FROM models WHERE id = $1', [id]),
-      
-      // Follow statistics
-      db.query(`
-        SELECT 
-          COUNT(*) as total_follows,
-          COUNT(CASE WHEN status = 'active' THEN 1 END) as active_follows,
-          COUNT(CASE WHEN status = 'unfollowed' THEN 1 END) as unfollowed_follows,
-          COUNT(CASE WHEN followed_at >= NOW() - INTERVAL $1 THEN 1 END) as recent_follows,
-          AVG(CASE WHEN unfollowed_at IS NOT NULL THEN 
-            EXTRACT(EPOCH FROM (unfollowed_at - followed_at))/86400 
-          END) as avg_follow_duration_days,
-          (COUNT(CASE WHEN followed_at >= NOW() - INTERVAL $1 THEN 1 END)::float / 
-           EXTRACT(EPOCH FROM INTERVAL $1)/86400) as daily_follow_rate
-        FROM model_target_follows 
-        WHERE model_id = $2
-      `, [dateRange, id]),
-      
-      // Account statistics
-      db.query(`
-        SELECT 
-          COUNT(*) as total_accounts,
-          COUNT(CASE WHEN status = 'active' THEN 1 END) as active_accounts,
-          COUNT(CASE WHEN status = 'banned' THEN 1 END) as banned_accounts,
-          COUNT(CASE WHEN status = 'suspended' THEN 1 END) as suspended_accounts,
-          MAX(last_activity) as last_account_activity
-        FROM accounts 
-        WHERE model_id = $1
-      `, [id]),
-      
-      // Daily activity breakdown
-      db.query(`
-        SELECT 
-          DATE(followed_at) as activity_date,
-          COUNT(*) as follows_count,
-          COUNT(DISTINCT account_id) as active_accounts
-        FROM model_target_follows 
-        WHERE model_id = $1 
-          AND followed_at >= NOW() - INTERVAL $2
-        GROUP BY DATE(followed_at)
-        ORDER BY activity_date DESC
-        LIMIT 30
-      `, [id, dateRange])
-    ]);
-
-    if (modelInfoResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Not Found',
-        message: 'Model not found'
-      });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        model: modelInfoResult.rows[0],
-        follow_stats: followStatsResult.rows[0],
-        account_stats: accountStatsResult.rows[0],
-        daily_activity: dailyActivityResult.rows,
-        period
-      }
-    });
-
-  } catch (error) {
-    console.error('Model performance error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      message: 'Failed to fetch model performance data'
+      message: 'Failed to fetch proxy providers'
     });
   }
 });

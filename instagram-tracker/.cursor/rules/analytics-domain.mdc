@@ -1,0 +1,226 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Analytics Domain and Business Logic
+
+## Analytics Overview
+The Instagram Tracker includes comprehensive analytics for tracking Instagram account performance, cost analysis, and profit optimization. The analytics system provides insights into follow-back rates, conversion tracking, and financial performance.
+
+## Core Metrics and KPIs
+
+### Follow-Back Rate Analysis
+- **Definition**: Percentage of followed accounts that follow back
+- **Calculation**: `(accounts_that_followed_back / total_follows) * 100`
+- **Tracking**: Real-time updates with historical trending
+- **Usage**: Model performance comparison and optimization
+
+### Conversion Tracking
+- **Follow-to-Subscription Rate**: Conversion from follow-back to paid subscription
+- **Revenue per Conversion**: Average revenue generated per conversion
+- **Conversion Funnel**: Complete tracking from follow → follow-back → subscription
+- **Best Performers**: Top-performing accounts by conversion metrics
+
+### Cost Analysis Categories
+The system tracks costs across these categories:
+1. **Cupid** - AI chatbot service costs
+2. **Proxies** - Proxy service provider costs
+3. **VPS** - Virtual private server hosting
+4. **Accounts** - Instagram account purchase/setup costs
+5. **iPhones** - Device costs for account management
+6. **Tunnelbear** - VPN service costs
+7. **Chatter** - Human chat operator costs
+8. **Model** - Model/creator compensation
+9. **Payment Provider** - Payment processing fees
+
+### Profit Margin Analysis
+- **Revenue Sources**: Subscription fees, tips, custom content
+- **Cost Allocation**: Per-account and per-model cost breakdown
+- **Net Profit**: Revenue minus allocated costs
+- **ROI Calculation**: Return on investment per account/model
+
+## Data Models and Relationships
+
+### Account Performance Structure
+```typescript
+// From types/accounts.ts
+interface AccountPerformance {
+  id: number;
+  username: string;
+  model_id: number;
+  total_follows: number;
+  follow_back_rate: number;     // Percentage
+  total_conversions: number;
+  conversion_rate: number;      // Percentage
+  monthly_cost: number;         // Allocated costs
+  total_revenue: number;        // Generated revenue
+  net_profit: number;           // Revenue - costs
+  proxy_status: 'active' | 'inactive' | 'error';
+  adspower_profile_id?: string;
+  cupid_profile_id?: string;
+}
+```
+
+### Cost Tracking Structure
+```typescript
+// From types/analytics.ts
+interface CostBreakdown {
+  category_name: string;
+  total_amount: number;
+  percentage: number;
+  subcategories?: Array<{
+    name: string;
+    amount: number;
+    accounts_affected: number;
+  }>;
+}
+
+interface ProfitAnalysis {
+  total_revenue: number;
+  total_costs: number;
+  net_profit: number;
+  profit_margin_percentage: number;
+  cost_breakdown: CostBreakdown[];
+}
+```
+
+## Key Analytics Endpoints
+
+### Dashboard KPIs
+- **Endpoint**: `/api/analytics/dashboard`
+- **Returns**: Overall follow-back rate, revenue trends, cost summaries
+- **Usage**: Main dashboard overview cards
+
+### Follow-Back Rate Analysis
+- **Endpoint**: `/api/analytics/follow-back-rates`
+- **Returns**: Account-level follow-back rates with trends
+- **Filters**: Model, date range, minimum follows threshold
+
+### Profit Margin Breakdown
+- **Endpoint**: `/api/analytics/profit-margin-breakdown`
+- **Returns**: Cost category breakdown for pie chart visualization
+- **Usage**: Financial overview and cost optimization
+
+### Conversion Funnel
+- **Endpoint**: `/api/analytics/conversion-funnel`
+- **Returns**: Follow → follow-back → subscription conversion data
+- **Usage**: Performance optimization and bottleneck identification
+
+### Best Performers
+- **Endpoint**: `/api/analytics/best-performers`
+- **Returns**: Top-performing accounts by selected metric
+- **Metrics**: Profit, follow-back rate, conversion rate, ROI
+
+## Business Logic Rules
+
+### Follow-Back Rate Calculation
+```sql
+-- From analytics.ts route handler
+follow_back_rate = (
+  COUNT(follows WHERE followed_back = true) / 
+  COUNT(total_follows)
+) * 100
+```
+
+### Cost Allocation Logic
+1. **Direct Costs**: Account-specific costs (proxies, devices)
+2. **Shared Costs**: Model-level costs distributed across accounts
+3. **Overhead**: General costs allocated by account activity percentage
+
+### Revenue Attribution
+- **Subscription Revenue**: Attributed to converting account
+- **Tip Revenue**: Attributed to active engagement account
+- **Custom Content**: Attributed to requesting account interaction
+
+### Performance Ranking
+Accounts are ranked by:
+1. **Profit Rank**: Net profit (revenue - allocated costs)
+2. **Conversion Rank**: Follow-to-subscription conversion rate
+3. **Follow-Back Rank**: Follow-back rate percentage
+4. **ROI Rank**: Return on investment calculation
+
+## Proxy Management Integration
+
+### Adspower Integration
+- **Profile Management**: Links Instagram accounts to Adspower browser profiles
+- **Proxy Assignment**: Each profile uses dedicated proxy credentials
+- **Status Monitoring**: Track proxy connection health and performance
+
+### Cupid Integration
+- **AI Chat Profiles**: Links accounts to Cupid AI chatbot profiles
+- **Automation Settings**: Configure automated responses and engagement
+- **Performance Tracking**: Monitor AI chat conversion rates
+
+### Proxy Provider Management
+```typescript
+interface ProxyProvider {
+  id: number;
+  name: string;
+  monthly_cost_per_proxy: number;
+  active_proxies: number;
+  total_accounts: number;
+  status: 'active' | 'inactive';
+}
+```
+
+## Analytics Views and Aggregations
+
+### Account Performance Analysis View
+- **Purpose**: Pre-calculated performance metrics for fast dashboard loading
+- **Updates**: Triggered by data changes via database triggers
+- **Includes**: Rankings, ratios, profit calculations
+
+### Cost Summary Views
+- **Model-Level Costs**: Aggregated costs per model
+- **Account-Level Costs**: Individual account cost allocation
+- **Category Totals**: Total spending per cost category
+
+## Chart and Visualization Data
+
+### KPI Cards
+- **Follow-Back Rate**: Current rate with trend indicator
+- **Total Revenue**: Monthly/daily revenue with growth percentage
+- **Net Profit**: Profit with margin percentage
+- **Active Accounts**: Count with proxy status overview
+
+### Chart Data Formats
+```typescript
+// Pie chart data for profit margins
+interface PieChartData {
+  labels: string[];
+  datasets: [{
+    data: number[];
+    backgroundColor: string[];
+    label: string;
+  }];
+}
+
+// Line chart data for trends
+interface LineChartData {
+  labels: string[];  // Date labels
+  datasets: [{
+    label: string;
+    data: number[];
+    borderColor: string;
+    backgroundColor: string;
+  }];
+}
+```
+
+## Performance Optimization
+
+### Caching Strategy
+- **Dashboard KPIs**: Cache for 5 minutes
+- **Historical Data**: Cache for 1 hour
+- **Real-time Metrics**: No caching, direct database queries
+
+### Database Optimization
+- **Indexed Queries**: All analytics queries use proper indexes
+- **Materialized Views**: Pre-calculated expensive aggregations
+- **Query Limits**: Paginated results for large datasets
+
+### API Response Optimization
+- **Parallel Queries**: Multiple analytics endpoints called simultaneously
+- **Data Minimization**: Only return required fields for charts
+- **Compression**: Gzip compression for large analytics responses

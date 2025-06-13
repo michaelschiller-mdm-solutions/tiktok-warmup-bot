@@ -1,0 +1,248 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# API Patterns and Backend Conventions
+
+## API Architecture
+- **Framework**: Express.js with TypeScript
+- **Entry Point**: [backend/src/index.ts](mdc:backend/src/index.ts)
+- **Routes**: Organized in [backend/src/routes/](mdc:backend/src/routes/) directory
+- **Database**: PostgreSQL with connection pooling
+
+## Route Organization
+
+### Core Route Files
+- [backend/src/routes/models.ts](mdc:backend/src/routes/models.ts) - Model CRUD operations
+- [backend/src/routes/accounts.ts](mdc:backend/src/routes/accounts.ts) - Account management with proxy support
+- [backend/src/routes/analytics.ts](mdc:backend/src/routes/analytics.ts) - Comprehensive analytics endpoints
+
+### URL Structure
+```
+/api/models                    # Model management
+/api/accounts                  # Account operations
+/api/analytics/dashboard       # KPI overview
+/api/analytics/follow-back-rates
+/api/analytics/profit-margin-breakdown
+/api/analytics/conversion-funnel
+/api/analytics/best-performers
+/api/analytics/proxy-providers
+```
+
+## Response Patterns
+
+### Standard Success Response
+```typescript
+{
+  success: true,
+  data: any,           // Actual response data
+  metadata?: {         // Optional metadata
+    total_records?: number,
+    page?: number,
+    filters?: object
+  }
+}
+```
+
+### Standard Error Response
+```typescript
+{
+  success: false,
+  error: string,       // Error type
+  message: string,     // Human-readable message
+  details?: any        // Additional error context
+}
+```
+
+### Pagination Pattern
+```typescript
+{
+  success: true,
+  data: Array<T>,
+  metadata: {
+    total_records: number,
+    page: number,
+    limit: number,
+    total_pages: number,
+    has_next: boolean,
+    has_previous: boolean
+  }
+}
+```
+
+## Request Handling Patterns
+
+### Query Parameter Processing
+```typescript
+// Standard pagination and filtering
+const {
+  page = 1,
+  limit = 50,
+  model_id,
+  status,
+  search
+} = req.query;
+
+// Build dynamic WHERE conditions
+let whereConditions = [];
+let params = [];
+let paramIndex = 1;
+
+if (model_id) {
+  whereConditions.push(`model_id = $${paramIndex}`);
+  params.push(model_id);
+  paramIndex++;
+}
+```
+
+### Error Handling Pattern
+```typescript
+router.get('/endpoint', async (req: any, res: any) => {
+  try {
+    // Main logic here
+    const result = await db.query(query, params);
+    
+    res.json({
+      success: true,
+      data: result.rows
+    });
+    
+  } catch (error) {
+    console.error('Endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Descriptive error message'
+    });
+  }
+});
+```
+
+## Database Query Patterns
+
+### Simple CRUD Operations
+```typescript
+// SELECT with error handling
+const query = `
+  SELECT id, name, status, created_at 
+  FROM models 
+  WHERE status = $1 
+  ORDER BY created_at DESC
+`;
+const result = await db.query(query, [status]);
+```
+
+### Complex Analytics Queries
+```typescript
+// Multi-table joins with calculations
+const query = `
+  SELECT 
+    a.id,
+    a.username,
+    m.name as model_name,
+    COALESCE(SUM(re.revenue_amount), 0) as total_revenue,
+    a.monthly_cost,
+    (COALESCE(SUM(re.revenue_amount), 0) - a.monthly_cost) as net_profit
+  FROM accounts a
+  LEFT JOIN models m ON a.model_id = m.id
+  LEFT JOIN revenue_events re ON a.id = re.account_id
+  GROUP BY a.id, a.username, m.name, a.monthly_cost
+  ORDER BY net_profit DESC
+`;
+```
+
+### Bulk Operations
+```typescript
+// Batch insert with validation
+const insertQuery = `
+  INSERT INTO accounts (username, model_id, proxy_host, proxy_port)
+  VALUES ${values.map((_, i) => `($${i*4+1}, $${i*4+2}, $${i*4+3}, $${i*4+4})`).join(', ')}
+  RETURNING id, username
+`;
+```
+
+## Validation Patterns
+
+### Request Validation
+```typescript
+// Parameter validation
+if (!username || username.length < 3) {
+  return res.status(400).json({
+    success: false,
+    error: 'Validation Error',
+    message: 'Username must be at least 3 characters'
+  });
+}
+```
+
+### Data Sanitization
+```typescript
+// Clean and validate input data
+const cleanData = {
+  username: String(username).trim().toLowerCase(),
+  proxy_port: parseInt(proxy_port) || null,
+  follow_back_rate: Math.max(0, Math.min(100, parseFloat(follow_back_rate) || 0))
+};
+```
+
+## Security Patterns
+
+### Proxy Credential Encryption
+```typescript
+// Sensitive data handling (proxy passwords should be encrypted)
+const account = {
+  proxy_username: proxy_username,
+  proxy_password: encrypt(proxy_password), // Implement encryption
+  proxy_host: proxy_host,
+  proxy_port: parseInt(proxy_port)
+};
+```
+
+### SQL Injection Prevention
+- Always use parameterized queries (`$1, $2, etc.`)
+- Never interpolate user input directly into SQL strings
+- Validate and sanitize all input parameters
+
+## Performance Optimizations
+
+### Connection Pooling
+```typescript
+// Proper connection management
+const client = await db.connect();
+try {
+  await client.query('BEGIN');
+  // Multiple queries
+  await client.query('COMMIT');
+} catch (error) {
+  await client.query('ROLLBACK');
+  throw error;
+} finally {
+  client.release();
+}
+```
+
+### Caching Strategy
+- Use Redis for frequently accessed data
+- Cache expensive analytics calculations
+- Implement cache invalidation on data updates
+
+### Query Optimization
+- Add LIMIT clauses for large datasets
+- Use indexes for common WHERE conditions
+- Prefer JOINs over N+1 query patterns
+- Use EXPLAIN ANALYZE for performance tuning
+
+## CORS and Middleware
+```typescript
+// Standard middleware setup
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Request logging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+```

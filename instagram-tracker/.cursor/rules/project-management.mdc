@@ -1,0 +1,184 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Project Management and Task Tracking
+
+## Project Policy Framework
+This project follows a strict **AI Coding Agent Policy** with structured Product Backlog Items (PBIs) and detailed task management. All work must be explicitly defined, approved, and tracked through formal documentation.
+
+## Documentation Structure
+
+### PBI Management
+- **Location**: [docs/delivery/](mdc:docs/delivery/) directory
+- **Structure**: Each PBI has its own numbered directory (e.g., `docs/delivery/2/`)
+- **Required Files**:
+  - `prd.md` - Product Requirements Document for the PBI
+  - `tasks.md` - Task index with status overview
+  - Individual task files: `{PBI-ID}-{TASK-ID}.md`
+
+### Current PBI Status
+1. **PBI 1**: Model Management System ✅ **COMPLETE**
+2. **PBI 2**: Excel-like Account Management Interface 🔄 **IN PROGRESS**
+   - Task 2-1: Database Schema Extensions ✅ **COMPLETE**
+   - Tasks 2-2 through 2-9: Various components **PROPOSED**
+   - Task 2-E2E: End-to-end testing **PROPOSED**
+
+## Task Management Workflow
+
+### Task Status Definitions
+- **Proposed**: Task defined but not yet approved
+- **Agreed**: Task approved and ready for implementation
+- **InProgress**: Actively being worked on
+- **Review**: Implementation complete, awaiting validation
+- **Done**: Completed and accepted
+- **Blocked**: Cannot proceed due to dependencies
+
+### Task Documentation Requirements
+Each task file must contain:
+```markdown
+# [Task-ID] [Task-Name]
+
+## Description
+Clear description of what needs to be accomplished
+
+## Status History
+| Timestamp | Event Type | From Status | To Status | Details | User |
+
+## Requirements
+Detailed requirements and acceptance criteria
+
+## Implementation Plan
+Step-by-step implementation approach
+
+## Test Plan
+Testing strategy and verification steps
+
+## Verification
+Checklist of completion criteria
+
+## Files Modified
+List of all files created or modified
+```
+
+### Change Management Rules
+1. **No Unauthorized Changes**: All code changes must be associated with an approved task
+2. **Task Association**: Every modification must reference a specific task ID
+3. **Single Task Focus**: Only one task per PBI should be 'InProgress' at a time
+4. **Status Synchronization**: Task status must be updated in both individual files and task index
+
+## Current System Capabilities
+
+### Completed Features (PBI 1 & Task 2-1)
+✅ **Model Management System**
+- Complete CRUD operations for Instagram models
+- Model configuration and settings management
+- Analytics integration and performance tracking
+
+✅ **Enhanced Database Schema**
+- Comprehensive account management with proxy integration
+- Cost tracking across 9 categories (Cupid, Proxies, VPS, etc.)
+- Advanced analytics with conversion tracking
+- Account relationship management (mother-slave hierarchies)
+- Dynamic custom fields support
+
+✅ **Analytics API**
+- Dashboard KPIs and overview metrics
+- Follow-back rate analysis with trending
+- Profit margin breakdown for pie charts
+- Conversion funnel tracking
+- Best performers identification
+- Proxy provider management
+
+### In Development (PBI 2 Remaining Tasks)
+
+🔄 **Excel-like Account Management Interface**
+- **Task 2-2**: Core DataGrid component with virtual scrolling
+- **Task 2-3**: Inline cell editing with validation
+- **Task 2-4**: Column management (show/hide, reorder)
+- **Task 2-5**: Account relationship management UI
+- **Task 2-6**: Bulk operations and multi-select
+- **Task 2-7**: Import/export system (CSV/Excel)
+- **Task 2-8**: Advanced filtering and search
+- **Task 2-9**: Integration with main account page
+- **Task 2-E2E**: End-to-end testing
+
+## Development Standards
+
+### Code Quality Requirements
+- **TypeScript**: All code must use TypeScript with proper type definitions
+- **Error Handling**: Comprehensive error handling with user-friendly messages
+- **Validation**: Input validation on both frontend and backend
+- **Testing**: Unit tests for complex logic, integration tests for API endpoints
+- **Documentation**: Inline code documentation for complex functions
+
+### Git Workflow
+- **Commit Messages**: Format: `{task_id} {task_description}`
+- **Branch Strategy**: Feature branches for each task
+- **Pull Requests**: Required for all changes with task documentation links
+
+### Performance Standards
+- **Database Queries**: < 100ms for typical operations
+- **API Responses**: < 200ms for standard endpoints
+- **Frontend Loading**: < 2s initial page load
+- **Memory Usage**: Efficient memory management for large datasets
+
+## Security and Privacy
+
+### Data Protection
+- **Proxy Credentials**: Encrypted storage for sensitive proxy passwords
+- **API Security**: Input validation and SQL injection prevention
+- **Access Control**: Role-based access (when implemented)
+- **Audit Trail**: Complete change tracking and user attribution
+
+### Compliance Requirements
+- **Data Retention**: Configurable data retention policies
+- **Export Functionality**: Data export for compliance requirements
+- **Logging**: Comprehensive activity logging for audit purposes
+
+## Integration Points
+
+### External Services
+- **Adspower**: Browser profile management integration
+- **Cupid**: AI chatbot profile integration
+- **Proxy Providers**: Multiple proxy service integrations
+- **Payment Processors**: Revenue tracking integration
+
+### System Dependencies
+- **PostgreSQL**: Primary database with connection pooling
+- **Docker**: Local development environment
+- **pnpm**: Package management and workspace support
+- **React**: Frontend framework with TypeScript
+
+## Future Roadmap
+
+### Planned Enhancements
+1. **Real-time Dashboard**: WebSocket integration for live updates
+2. **Advanced Analytics**: Machine learning for performance prediction
+3. **Automation Engine**: Automated follow/unfollow strategies
+4. **Mobile App**: React Native mobile application
+5. **API Versioning**: Versioned API with backward compatibility
+
+### Technical Debt
+- **Test Coverage**: Increase unit test coverage to 80%+
+- **Documentation**: Complete API documentation with OpenAPI
+- **Performance**: Optimize complex analytics queries
+- **Security**: Implement comprehensive authentication system
+
+## Project Metrics
+
+### Current Status
+- **Total PBIs**: 2 defined
+- **Completed PBIs**: 1 (Model Management)
+- **Active PBIs**: 1 (Account Management Interface)
+- **Database Tables**: 15+ with comprehensive relationships
+- **API Endpoints**: 20+ with full CRUD operations
+- **Frontend Components**: 10+ reusable components
+- **Lines of Code**: ~5000+ TypeScript/JavaScript
+
+### Quality Metrics
+- **TypeScript Coverage**: 100% (all files use TypeScript)
+- **Error Handling**: Comprehensive across all endpoints
+- **Response Consistency**: Standardized API response format
+- **Database Performance**: All queries under performance thresholds

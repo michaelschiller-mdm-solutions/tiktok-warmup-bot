@@ -1,7 +1,11 @@
-import express from 'express';
+import express, { Router } from 'express';
 import { db } from '../database';
+import accountImportRouter from './accounts/import';
 
-const router = express.Router();
+const router: Router = express.Router();
+
+// Mount account import routes
+router.use('/accounts', accountImportRouter);
 
 // Import accounts from text format
 // Format: username:password:email:account_code

@@ -1,0 +1,440 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# TypeScript Conventions and Type Safety
+
+## TypeScript Configuration
+- **Version**: TypeScript 4.9+ with strict mode enabled
+- **Target**: ES2020 with modern browser support
+- **Module System**: ES Modules throughout the application
+- **Strict Mode**: All strict TypeScript checks enabled
+
+## Type Organization
+
+### Directory Structure
+```
+frontend/src/types/
+├── models.ts        # Model-related type definitions
+├── accounts.ts      # Account management types
+├── analytics.ts     # Analytics and dashboard types
+└── common.ts        # Shared utility types
+```
+
+### Type Definition Patterns
+
+#### Entity Types
+```typescript
+// Base entity interface pattern
+interface BaseEntity {
+  id: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// Domain entity extending base
+interface Model extends BaseEntity {
+  name: string;
+  description?: string;
+  status: 'active' | 'inactive' | 'paused';
+  unfollow_ratio: number;
+  daily_follow_limit: number;
+  posting_schedule: Record<string, any>;
+}
+```
+
+#### Request/Response Types
+```typescript
+// API request types
+interface CreateModelRequest {
+  name: string;
+  description?: string;
+  status: 'active' | 'inactive' | 'paused';
+  unfollow_ratio: number;
+  daily_follow_limit: number;
+  posting_schedule: Record<string, any>;
+}
+
+interface UpdateModelRequest extends Partial<CreateModelRequest> {}
+
+// API response wrapper
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  metadata?: {
+    total_records?: number;
+    page?: number;
+    limit?: number;
+    has_next?: boolean;
+    has_previous?: boolean;
+  };
+}
+
+// Error response
+interface ApiError {
+  success: false;
+  error: string;
+  message: string;
+  details?: any;
+}
+```
+
+#### Enum Types
+```typescript
+// Use const assertions for string unions
+const AccountStatus = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+  SUSPENDED: 'suspended'
+} as const;
+
+type AccountStatus = typeof AccountStatus[keyof typeof AccountStatus];
+
+// Alternatively, use string literal unions
+type ProxyStatus = 'active' | 'inactive' | 'error' | 'testing';
+```
+
+## Component Type Patterns
+
+### React Component Props
+```typescript
+// Component props interface
+interface ComponentProps {
+  // Required props
+  data: DataType;
+  onAction: (id: string) => void;
+  
+  // Optional props with defaults
+  isLoading?: boolean;
+  className?: string;
+  
+  // Children when needed
+  children?: React.ReactNode;
+}
+
+// Use React.FC for functional components
+const Component: React.FC<ComponentProps> = ({ 
+  data, 
+  onAction, 
+  isLoading = false,
+  className = '',
+  children 
+}) => {
+  // Component implementation
+};
+```
+
+### Event Handler Types
+```typescript
+// Form event handlers
+const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  event.preventDefault();
+  // Handle form submission
+};
+
+const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const { name, value } = event.target;
+  // Handle input change
+};
+
+// Custom event handlers
+const handleItemClick = (item: ItemType) => {
+  // Handle item click
+};
+```
+
+### Hook Types
+```typescript
+// Custom hook with return type
+interface UseFormReturn<T> {
+  values: T;
+  errors: Partial<Record<keyof T, string>>;
+  isValid: boolean;
+  isSubmitting: boolean;
+  handleSubmit: (event: React.FormEvent) => void;
+  setValue: <K extends keyof T>(field: K, value: T[K]) => void;
+  getFieldProps: (field: keyof T) => {
+    name: string;
+    value: any;
+    onChange: (event: React.ChangeEvent<any>) => void;
+  };
+  getFieldState: (field: keyof T) => {
+    hasError: boolean;
+    error?: string;
+  };
+}
+
+function useForm<T extends Record<string, any>>(config: FormConfig<T>): UseFormReturn<T> {
+  // Hook implementation
+}
+```
+
+## API Client Type Safety
+
+### Centralized API Client Types
+```typescript
+// From frontend/src/services/api.ts
+class ApiClient {
+  private baseURL = 'http://localhost:3001/api';
+  
+  // Generic GET method with type safety
+  private async get<T>(endpoint: string): Promise<ApiResponse<T>> {
+    const response = await fetch(`${this.baseURL}${endpoint}`);
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.statusText}`);
+    }
+    return response.json() as Promise<ApiResponse<T>>;
+  }
+  
+  // Typed API methods
+  async getModels(): Promise<ApiResponse<Model[]>> {
+    return this.get<Model[]>('/models');
+  }
+  
+  async getModel(id: number): Promise<ApiResponse<Model>> {
+    return this.get<Model>(`/models/${id}`);
+  }
+  
+  async createModel(data: CreateModelRequest): Promise<ApiResponse<Model>> {
+    return this.post<Model>('/models', data);
+  }
+}
+```
+
+### Query Parameter Types
+```typescript
+// Analytics query parameters
+interface AnalyticsQueryParams {
+  model_id?: number;
+  account_id?: number;
+  start_date?: string;
+  end_date?: string;
+  metric_type?: 'profit' | 'follow_back_rate' | 'conversion_rate' | 'roi';
+  limit?: number;
+  page?: number;
+}
+
+// URL builder with type safety
+const buildAnalyticsUrl = (endpoint: string, params: AnalyticsQueryParams): string => {
+  const url = new URL(`/api/analytics/${endpoint}`, 'http://localhost:3001');
+  
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined) {
+      url.searchParams.append(key, String(value));
+    }
+  });
+  
+  return url.toString();
+};
+```
+
+## Database Type Safety
+
+### Database Query Result Types
+```typescript
+// Database row types matching schema
+interface AccountRow {
+  id: number;
+  username: string;
+  model_id: number;
+  status: string;
+  proxy_host: string | null;
+  proxy_port: number | null;
+  proxy_username: string | null;
+  proxy_password: string | null;
+  follow_back_rate: number;
+  total_follows: number;
+  total_conversions: number;
+  monthly_cost: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// Transform database rows to API types
+const transformAccountRow = (row: AccountRow): Account => ({
+  id: row.id,
+  username: row.username,
+  model_id: row.model_id,
+  status: row.status as AccountStatus,
+  proxy_host: row.proxy_host || undefined,
+  proxy_port: row.proxy_port || undefined,
+  proxy_username: row.proxy_username || undefined,
+  follow_back_rate: row.follow_back_rate,
+  total_follows: row.total_follows,
+  total_conversions: row.total_conversions,
+  monthly_cost: row.monthly_cost,
+  created_at: row.created_at.toISOString(),
+  updated_at: row.updated_at.toISOString(),
+});
+```
+
+## Utility Types
+
+### Common Utility Types
+```typescript
+// Pick specific fields for updates
+type AccountUpdate = Pick<Account, 'username' | 'status' | 'proxy_host' | 'proxy_port'>;
+
+// Make all fields optional for partial updates
+type PartialAccountUpdate = Partial<AccountUpdate>;
+
+// Exclude certain fields (like timestamps)
+type AccountInput = Omit<Account, 'id' | 'created_at' | 'updated_at'>;
+
+// Create ID types for better type safety
+type ModelId = number & { readonly brand: unique symbol };
+type AccountId = number & { readonly brand: unique symbol };
+
+// Helper function to create branded IDs
+const createModelId = (id: number): ModelId => id as ModelId;
+const createAccountId = (id: number): AccountId => id as AccountId;
+```
+
+### Generic Types for Reusability
+```typescript
+// Generic table props
+interface TableProps<T> {
+  data: T[];
+  columns: ColumnDefinition<T>[];
+  onRowClick?: (row: T) => void;
+  onRowSelect?: (rows: T[]) => void;
+  loading?: boolean;
+  error?: string;
+}
+
+// Column definition
+interface ColumnDefinition<T> {
+  key: keyof T;
+  header: string;
+  sortable?: boolean;
+  filterable?: boolean;
+  render?: (value: T[keyof T], row: T) => React.ReactNode;
+  width?: string;
+}
+
+// Form field configuration
+interface FieldConfig<T> {
+  type: 'text' | 'number' | 'email' | 'password' | 'select' | 'textarea';
+  label: string;
+  placeholder?: string;
+  required?: boolean;
+  validation?: ValidationRule<T[keyof T]>;
+  options?: Array<{ value: any; label: string }>; // For select fields
+}
+```
+
+## Error Handling Types
+
+### Typed Error Classes
+```typescript
+// Custom error types
+class ValidationError extends Error {
+  constructor(
+    message: string,
+    public field: string,
+    public code: string
+  ) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public endpoint: string
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+// Error result type
+type Result<T, E = Error> = 
+  | { success: true; data: T }
+  | { success: false; error: E };
+
+// Safe API call wrapper
+const safeApiCall = async <T>(
+  operation: () => Promise<T>
+): Promise<Result<T, ApiError>> => {
+  try {
+    const data = await operation();
+    return { success: true, data };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { success: false, error };
+    }
+    return { success: false, error: new ApiError('Unknown error', 500, 'unknown') };
+  }
+};
+```
+
+## Type Guards and Validation
+
+### Runtime Type Checking
+```typescript
+// Type guard functions
+const isModel = (obj: any): obj is Model => {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof obj.id === 'number' &&
+    typeof obj.name === 'string' &&
+    ['active', 'inactive', 'paused'].includes(obj.status)
+  );
+};
+
+const isAccount = (obj: any): obj is Account => {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    typeof obj.id === 'number' &&
+    typeof obj.username === 'string' &&
+    typeof obj.model_id === 'number'
+  );
+};
+
+// Validation with type narrowing
+const validateAndTransformAccount = (data: unknown): Account => {
+  if (!isAccount(data)) {
+    throw new ValidationError('Invalid account data', 'account', 'INVALID_TYPE');
+  }
+  return data;
+};
+```
+
+## Performance and Optimization
+
+### Lazy Loading Types
+```typescript
+// Dynamic imports with proper types
+const LazyAnalytics = React.lazy(() => 
+  import('./pages/Analytics').then(module => ({ default: module.Analytics }))
+);
+
+// Type-safe lazy loading hook
+const useLazyComponent = <T extends React.ComponentType<any>>(
+  importFunc: () => Promise<{ default: T }>
+) => {
+  const [Component, setComponent] = React.useState<T | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<Error | null>(null);
+
+  React.useEffect(() => {
+    importFunc()
+      .then(module => {
+        setComponent(() => module.default);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err);
+        setLoading(false);
+      });
+  }, []);
+
+  return { Component, loading, error };
+};
+```

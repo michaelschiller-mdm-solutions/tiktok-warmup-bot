@@ -10,9 +10,11 @@
   "license": "ISC",
   "description": "♨️ TikTok warmup bot",
   "dependencies": {
+    "@types/react-dropzone": "^4.2.2",
     "chalk": "^4.1.2",
     "cli-table3": "^0.6.5",
     "ora": "^5.4.1",
+    "react-dropzone": "^14.3.8",
     "tree-cli": "^0.6.7"
   }
 }

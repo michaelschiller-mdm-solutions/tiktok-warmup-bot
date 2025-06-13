@@ -1,0 +1,120 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Instagram Tracker - Cursor Rules Overview
+
+## About This Project
+Instagram Tracker is a comprehensive full-stack application for managing Instagram accounts, tracking analytics, and optimizing automation strategies. It provides detailed insights into follow-back rates, conversion tracking, cost analysis, and profit optimization for Instagram marketing operations.
+
+## Rule Structure
+This `.cursor/rules` directory contains comprehensive rules to help AI assistants understand and work with the codebase effectively. Each rule file covers a specific domain:
+
+### 🏗️ Architecture and Structure
+- **[project-architecture.mdc](mdc:project-architecture.mdc)** - Overall project structure, tech stack, and development workflow
+- **[database-patterns.mdc](mdc:database-patterns.mdc)** - PostgreSQL schema patterns, migration conventions, and data modeling
+- **[api-patterns.mdc](mdc:api-patterns.mdc)** - Backend API conventions, request/response patterns, and security
+
+### 🎨 Frontend Development
+- **[frontend-patterns.mdc](mdc:frontend-patterns.mdc)** - React component patterns, styling conventions, and state management
+- **[typescript-conventions.mdc](mdc:typescript-conventions.mdc)** - TypeScript usage, type definitions, and type safety patterns
+
+### 📊 Business Domain
+- **[analytics-domain.mdc](mdc:analytics-domain.mdc)** - Analytics business logic, metrics calculations, and domain knowledge
+- **[project-management.mdc](mdc:project-management.mdc)** - Task tracking, PBI management, and development standards
+
+## Quick Start for AI Assistants
+
+### Current System Status
+✅ **Fully Functional System** with:
+- PostgreSQL database with comprehensive schema
+- Express.js backend API with analytics endpoints
+- React frontend with dashboard components
+- Complete type safety with TypeScript
+- Docker-based development environment
+
+### Key Capabilities
+1. **Model Management**: Full CRUD for Instagram model configurations
+2. **Account Management**: Comprehensive account tracking with proxy integration
+3. **Analytics Dashboard**: KPIs, follow-back rates, profit margins, conversion funnels
+4. **Cost Tracking**: 9 cost categories with profit analysis
+5. **Proxy Management**: Adspower and Cupid integration with credential security
+
+### Development Environment
+```bash
+# Start PostgreSQL
+docker-compose up -d
+
+# Install dependencies
+pnpm install
+
+# Run development servers
+pnpm run dev
+
+# Access points
+Frontend: http://localhost:3000
+Backend:  http://localhost:3001
+Database: localhost:5432
+```
+
+## Key Files to Understand
+
+### Essential Configuration
+- [docker-compose.yml](mdc:docker-compose.yml) - PostgreSQL development setup
+- [backend/src/database.ts](mdc:backend/src/database.ts) - Database connection
+- [frontend/src/services/api.ts](mdc:frontend/src/services/api.ts) - API client
+
+### Core Business Logic
+- [backend/src/routes/analytics.ts](mdc:backend/src/routes/analytics.ts) - Analytics endpoints
+- [backend/src/routes/accounts.ts](mdc:backend/src/routes/accounts.ts) - Account management
+- [frontend/src/pages/Analytics.tsx](mdc:frontend/src/pages/Analytics.tsx) - Analytics dashboard
+
+### Type Definitions
+- [frontend/src/types/accounts.ts](mdc:frontend/src/types/accounts.ts) - Account types
+- [frontend/src/types/analytics.ts](mdc:frontend/src/types/analytics.ts) - Analytics types
+- [frontend/src/types/models.ts](mdc:frontend/src/types/models.ts) - Model types
+
+### Database Schema
+- [database/migrations/](mdc:database/migrations/) - Schema evolution
+- [database/init/](mdc:database/init/) - Initial schema and sample data
+
+## Current Development Status
+
+### Completed (PBI 1 & Task 2-1)
+- ✅ Model management system
+- ✅ Enhanced database schema with proxy/cost tracking
+- ✅ Analytics API with comprehensive endpoints
+- ✅ Frontend dashboard foundation
+
+### In Progress (PBI 2)
+- 🔄 Excel-like account management interface
+- 📋 9 remaining tasks for complete DataGrid implementation
+- 🧪 End-to-end testing planned
+
+## Working with This Codebase
+
+### Before Making Changes
+1. **Check Project Management**: Review [project-management.mdc](mdc:project-management.mdc) for task workflow
+2. **Understand Architecture**: Read [project-architecture.mdc](mdc:project-architecture.mdc) for system overview
+3. **Follow Patterns**: Use established patterns from relevant rule files
+
+### Development Principles
+- **Task-Driven**: All changes must be associated with approved tasks
+- **Type Safety**: Maintain strict TypeScript usage throughout
+- **Consistent Patterns**: Follow established API and component patterns
+- **Documentation**: Update task files and maintain audit trail
+
+### Testing and Validation
+- **API Testing**: Use `Invoke-RestMethod` for endpoint validation
+- **Database Migrations**: Test with PostgreSQL Docker instance
+- **Frontend Testing**: Verify component integration and styling
+- **Performance**: Monitor query performance and response times
+
+## Support and Reference
+- **Database Schema**: Comprehensive tables for accounts, analytics, costs
+- **API Endpoints**: 20+ endpoints with standardized responses
+- **Component Library**: Reusable React components with Tailwind CSS
+- **Type Definitions**: Complete TypeScript coverage for all data models
+
+This rule system provides everything needed to understand, maintain, and extend the Instagram Tracker application effectively.

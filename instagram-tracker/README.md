@@ -38,7 +38,7 @@ A comprehensive web application for tracking and managing Instagram automation a
    ```
 
 3. **Access the Application**:
-   - Frontend: http://localhost:3000
+   - Frontend: http://localhost:3090
    - Backend API: http://localhost:3001
    - Database: localhost:5432
 
@@ -55,7 +55,7 @@ A comprehensive web application for tracking and managing Instagram automation a
 
 ```
 instagram-tracker/
-├── frontend/          # React TypeScript app (port 3000)
+├── frontend/          # React TypeScript app (port 3090)
 ├── backend/           # Node.js API server (port 3001)
 ├── database/          # SQL scripts and migrations
 ├── docker-compose.yml # PostgreSQL container only

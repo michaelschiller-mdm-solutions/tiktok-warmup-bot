@@ -1,0 +1,377 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Frontend Patterns and React Conventions
+
+## Frontend Architecture
+- **Framework**: React 18+ with TypeScript
+- **Styling**: Tailwind CSS with custom component classes
+- **State Management**: React hooks (useState, useEffect, useContext)
+- **API Client**: Centralized service in [frontend/src/services/api.ts](mdc:frontend/src/services/api.ts)
+- **Build Tool**: Create React App with TypeScript template
+
+## Directory Structure
+
+### Component Organization
+```
+frontend/src/
+├── components/           # Reusable UI components
+│   ├── charts/          # Data visualization components
+│   │   ├── KPICard.tsx  # Dashboard metrics cards
+│   │   ├── FollowBackRateChart.tsx
+│   │   ├── ProfitMarginChart.tsx
+│   │   └── ConversionFunnelChart.tsx
+│   ├── Modal.tsx        # Reusable modal component
+│   └── ModelSettings.tsx # Model configuration form
+├── pages/               # Page-level components
+│   ├── Models.tsx       # Model management page
+│   ├── Analytics.tsx    # Analytics dashboard
+│   └── Accounts.tsx     # Account management
+├── hooks/               # Custom React hooks
+│   └── useForm.ts       # Form handling hook
+├── services/            # External service integration
+│   └── api.ts          # Centralized API client
+└── types/              # TypeScript definitions
+    ├── models.ts       # Model-related types
+    ├── accounts.ts     # Account-related types
+    └── analytics.ts    # Analytics types
+```
+
+## Component Patterns
+
+### Standard Component Structure
+```typescript
+import React, { useState, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
+import { ComponentIcon } from 'lucide-react';
+
+interface ComponentProps {
+  // Props with explicit types
+  data: DataType;
+  onAction: (id: string) => void;
+  isLoading?: boolean;
+}
+
+const Component: React.FC<ComponentProps> = ({ 
+  data, 
+  onAction, 
+  isLoading = false 
+}) => {
+  const [localState, setLocalState] = useState<StateType>({});
+
+  useEffect(() => {
+    // Side effects here
+  }, [dependencies]);
+
+  const handleAction = () => {
+    try {
+      // Action logic
+      onAction(data.id);
+      toast.success('Action completed successfully');
+    } catch (error) {
+      toast.error('Action failed');
+    }
+  };
+
+  return (
+    <div className="component-container">
+      {/* Component JSX */}
+    </div>
+  );
+};
+
+export default Component;
+```
+
+### Form Component Pattern
+```typescript
+// Using the custom useForm hook from hooks/useForm.ts
+const form = useForm<FormDataType>({
+  initialValues: {
+    name: '',
+    status: 'active'
+  },
+  validationRules: {
+    name: { required: true, minLength: 3 },
+    status: { required: true }
+  },
+  onSubmit: async (values) => {
+    await apiClient.updateItem(id, values);
+    toast.success('Updated successfully');
+  }
+});
+
+// In render
+<form onSubmit={form.handleSubmit}>
+  <input
+    {...form.getFieldProps('name')}
+    className={`form-input ${form.getFieldState('name').hasError ? 'border-red-500' : ''}`}
+  />
+  {form.getFieldState('name').error && (
+    <p className="text-red-600 text-sm">{form.getFieldState('name').error}</p>
+  )}
+</form>
+```
+
+## API Integration Patterns
+
+### Centralized API Client
+The [frontend/src/services/api.ts](mdc:frontend/src/services/api.ts) provides a centralized API client:
+
+```typescript
+// Usage in components
+import { apiClient } from '../services/api';
+
+const [data, setData] = useState<DataType[]>([]);
+const [loading, setLoading] = useState(true);
+
+useEffect(() => {
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const response = await apiClient.getModels();
+      setData(response.data);
+    } catch (error) {
+      toast.error('Failed to load data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchData();
+}, []);
+```
+
+### Error Handling Pattern
+```typescript
+// Consistent error handling across components
+const handleApiCall = async (operation: () => Promise<any>) => {
+  try {
+    const result = await operation();
+    toast.success('Operation completed successfully');
+    return result;
+  } catch (error: any) {
+    console.error('API Error:', error);
+    toast.error(error.message || 'Operation failed');
+    throw error;
+  }
+};
+```
+
+## Styling Patterns
+
+### Tailwind CSS Classes
+```typescript
+// Standard component classes
+const styles = {
+  container: "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+  card: "bg-white rounded-lg shadow-md p-6",
+  button: {
+    primary: "btn-primary", // Custom class in globals.css
+    secondary: "btn-secondary",
+    ghost: "btn-ghost"
+  },
+  form: {
+    input: "form-input", // Custom form styles
+    textarea: "form-textarea",
+    select: "form-select"
+  }
+};
+```
+
+### Responsive Design
+```typescript
+// Mobile-first responsive classes
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+  <div className="col-span-1 lg:col-span-2">
+    {/* Content */}
+  </div>
+</div>
+```
+
+## State Management Patterns
+
+### Local Component State
+```typescript
+// Simple local state for UI interactions
+const [isOpen, setIsOpen] = useState(false);
+const [selectedItem, setSelectedItem] = useState<ItemType | null>(null);
+const [filters, setFilters] = useState<FilterType>({
+  status: 'all',
+  search: ''
+});
+```
+
+### Data Fetching and Caching
+```typescript
+// Data fetching with loading states
+const [data, setData] = useState<DataType[]>([]);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState<string | null>(null);
+
+useEffect(() => {
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await apiClient.getData();
+      setData(response.data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchData();
+}, [/* dependencies */]);
+```
+
+## Chart and Visualization Patterns
+
+### Chart Component Structure
+```typescript
+// Example from KPICard.tsx
+interface KPICardProps {
+  title: string;
+  value: string | number;
+  change?: {
+    value: number;
+    type: 'increase' | 'decrease';
+  };
+  icon: React.ComponentType<any>;
+  color?: string;
+}
+
+const KPICard: React.FC<KPICardProps> = ({ title, value, change, icon: Icon, color = 'blue' }) => {
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-600">{title}</p>
+          <p className="text-2xl font-bold text-gray-900">{value}</p>
+        </div>
+        <Icon className={`h-8 w-8 text-${color}-600`} />
+      </div>
+      {change && (
+        <div className="mt-4 flex items-center">
+          <span className={`text-sm font-medium ${
+            change.type === 'increase' ? 'text-green-600' : 'text-red-600'
+          }`}>
+            {change.type === 'increase' ? '+' : ''}{change.value}%
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+### Chart.js Integration
+```typescript
+// Standard chart configuration
+const chartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      position: 'top' as const,
+    },
+    title: {
+      display: true,
+      text: 'Chart Title'
+    }
+  },
+  scales: {
+    y: {
+      beginAtZero: true
+    }
+  }
+};
+```
+
+## TypeScript Patterns
+
+### Type Definitions
+Types are organized in [frontend/src/types/](mdc:frontend/src/types/) directory:
+
+```typescript
+// Example from types/accounts.ts
+export interface Account {
+  id: number;
+  username: string;
+  model_id: number;
+  status: 'active' | 'inactive' | 'suspended';
+  proxy_host?: string;
+  proxy_port?: number;
+  proxy_username?: string;
+  follow_back_rate: number;
+  total_follows: number;
+  total_conversions: number;
+  monthly_cost: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAccountRequest {
+  username: string;
+  model_id: number;
+  proxy_host?: string;
+  proxy_port?: number;
+  proxy_username?: string;
+  proxy_password?: string;
+}
+```
+
+### Generic Component Types
+```typescript
+// Reusable generic interfaces
+interface TableProps<T> {
+  data: T[];
+  columns: ColumnDef<T>[];
+  onRowClick?: (row: T) => void;
+  loading?: boolean;
+}
+
+interface APIResponse<T> {
+  success: boolean;
+  data: T;
+  metadata?: {
+    total_records: number;
+    page: number;
+    limit: number;
+  };
+}
+```
+
+## Performance Optimization
+
+### React.memo for Expensive Components
+```typescript
+// Memoize expensive chart components
+const ExpensiveChart = React.memo<ChartProps>(({ data, options }) => {
+  return <Chart data={data} options={options} />;
+});
+```
+
+### useCallback for Event Handlers
+```typescript
+// Prevent unnecessary re-renders
+const handleItemClick = useCallback((item: ItemType) => {
+  setSelectedItem(item);
+  setModalOpen(true);
+}, []);
+```
+
+### Lazy Loading
+```typescript
+// Lazy load heavy components
+const Analytics = React.lazy(() => import('./pages/Analytics'));
+
+// Usage with Suspense
+<Suspense fallback={<div>Loading...</div>}>
+  <Analytics />
+</Suspense>
+```

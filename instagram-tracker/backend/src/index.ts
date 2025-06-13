@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
@@ -12,15 +12,17 @@ import followsRouter from './routes/follows';
 import postsRouter from './routes/posts';
 import analyticsRouter from './routes/analytics';
 import importRouter from './routes/import';
+import reviewsRouter from './routes/reviews';
+import botAccountsRouter from './routes/bot/accounts';
 
 // Load environment variables
 dotenv.config();
 
 const PORT = process.env.PORT || 3001;
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3090';
 
 // Initialize Express app
-const app = express();
+const app: Express = express();
 
 // Test database connection on startup
 testConnection().then(connected => {
@@ -61,6 +63,10 @@ app.use('/api/follows', followsRouter);
 app.use('/api/posts', postsRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/import', importRouter);
+app.use('/api/reviews', reviewsRouter);
+
+// Bot API Routes
+app.use('/api/bot/accounts', botAccountsRouter);
 
 // 404 handler
 app.use('*', (req, res) => {

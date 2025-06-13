@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Settings, Users, Activity, Calendar, Trash2, Edit, CheckSquare, Square } from 'lucide-react';
 import { Model } from '../types/models';
 
@@ -18,6 +18,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
   onEdit, 
   onDelete 
 }) => {
+  const navigate = useNavigate();
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active': return 'bg-green-100 text-green-800';
@@ -41,6 +42,10 @@ const ModelCard: React.FC<ModelCardProps> = ({
     { label: 'Banned', value: model.banned_accounts || 0, color: 'text-red-600' },
     { label: 'Suspended', value: model.suspended_accounts || 0, color: 'text-yellow-600' },
   ];
+
+  const handleManageAccounts = () => {
+    navigate(`/models/${model.id}/accounts`);
+  };
 
   return (
     <div className={`bg-white rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition-shadow duration-200 ${
@@ -111,11 +116,22 @@ const ModelCard: React.FC<ModelCardProps> = ({
       <div className="p-6">
         {/* Account Statistics */}
         <div className="mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Users className="h-4 w-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">Accounts</span>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-gray-500" />
+              <span className="text-sm font-medium text-gray-700">Accounts</span>
+            </div>
+            <button
+              onClick={handleManageAccounts}
+              className="text-xs text-primary-600 hover:text-primary-800 font-medium transition-colors"
+            >
+              Manage →
+            </button>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div 
+            className="grid grid-cols-2 gap-3 cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
+            onClick={handleManageAccounts}
+          >
             {accountStats.map((stat) => (
               <div key={stat.label} className="text-center">
                 <div className={`text-lg font-semibold ${stat.color}`}>{stat.value}</div>
