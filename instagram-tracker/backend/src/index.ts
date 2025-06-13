@@ -15,6 +15,7 @@ import analyticsRouter from './routes/analytics';
 import importRouter from './routes/import';
 import reviewsRouter from './routes/reviews';
 import botAccountsRouter from './routes/bot/accounts';
+import centralContentRouter from './routes/centralContent';
 
 // Load environment variables
 dotenv.config();
@@ -79,6 +80,9 @@ app.use('/api/reviews', reviewsRouter);
 
 // Bot API Routes
 app.use('/api/bot/accounts', botAccountsRouter);
+
+// Central Content API Routes
+app.use('/api/central', centralContentRouter);
 
 // 404 handler
 app.use('*', (req, res) => {
