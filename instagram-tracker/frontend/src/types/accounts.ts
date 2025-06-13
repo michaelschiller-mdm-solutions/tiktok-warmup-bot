@@ -26,19 +26,6 @@ export interface Account {
   state_changed_by?: string;
   state_notes?: string;
   
-  // Warmup tracking (computed from account_warmup_phases)
-  warmup_phases?: {
-    pfp: WarmupPhaseStatus;
-    bio: WarmupPhaseStatus;
-    post: WarmupPhaseStatus;
-    highlight: WarmupPhaseStatus;
-    story: WarmupPhaseStatus;
-  };
-  current_warmup_phase?: 'pfp' | 'bio' | 'post' | 'highlight' | 'story';
-  warmup_completed_phases?: number;
-  warmup_total_phases?: number;
-  requires_human_review?: boolean;
-  
   // Extended fields
   content_type?: string;
   campus?: string;
@@ -75,9 +62,6 @@ export interface Account {
   mother_account?: Account;
   slave_accounts?: Account[];
 }
-
-// Warmup phase status type
-export type WarmupPhaseStatus = 'pending' | 'available' | 'content_assigned' | 'in_progress' | 'completed' | 'failed' | 'requires_review';
 
 export interface CreateAccountRequest {
   model_id: number;

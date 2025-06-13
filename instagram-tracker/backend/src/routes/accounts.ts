@@ -69,8 +69,9 @@ router.get('/', async (req: any, res: any) => {
     }
 
     if (proxy_status) {
-      whereConditions.push(`a.proxy_status = $${paramIndex}`);
-      params.push(proxy_status);
+      const proxyStatusArray = Array.isArray(proxy_status) ? proxy_status : [proxy_status];
+      whereConditions.push(`a.proxy_status = ANY($${paramIndex})`);
+      params.push(proxyStatusArray);
       paramIndex++;
     }
 

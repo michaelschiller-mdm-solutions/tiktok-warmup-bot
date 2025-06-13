@@ -58,11 +58,11 @@ export const useAccountsData = ({
         };
       
       case 'warmup':
-        // Show accounts in warm-up process for this model 
+        // Show accounts in warm-up pipeline for this model (imported, ready, and warmup)
         return {
           ...baseFilters,
           model_id: modelId,
-          lifecycle_state: ['warmup'], // Only accounts in warmup state
+          lifecycle_state: ['imported', 'ready', 'warmup'], // Accounts in warmup pipeline
         };
       
       case 'proxy':
@@ -70,7 +70,7 @@ export const useAccountsData = ({
         return {
           ...baseFilters,
           model_id: modelId,
-          proxy_status: ['active', 'inactive', 'error'], // Accounts with any proxy status
+          proxy_status: ['active', 'inactive', 'error', 'unknown'], // Include unknown status
         };
       
       case 'content':
@@ -78,7 +78,7 @@ export const useAccountsData = ({
         return {
           ...baseFilters,
           model_id: modelId,
-          status: ['active'], // Only active accounts for content management
+          // Show all accounts for content management, regardless of status
         };
       
       default:

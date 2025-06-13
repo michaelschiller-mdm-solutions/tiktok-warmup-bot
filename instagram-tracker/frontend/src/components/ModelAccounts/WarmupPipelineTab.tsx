@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Play, Pause, RotateCcw, TrendingUp, Clock, Circle, CheckCircle, XCircle, AlertCircle, Loader } from 'lucide-react';
+import { Activity, Play, Pause, RotateCcw, TrendingUp, Clock, Eye, ChevronRight } from 'lucide-react';
 import { DataGrid } from '../DataGrid';
 import { DataGridColumn } from '../../types/dataGrid';
 import { Account } from '../../types/accounts';
 import { useAccountsData } from '../../hooks/useAccountsData';
 import LoadingSpinner from '../LoadingSpinner';
+import WarmupPhaseTracker from '../AccountLifecycle/WarmupPhaseTracker';
 
 interface WarmupPipelineTabProps {
   modelId: number;
@@ -13,6 +14,8 @@ interface WarmupPipelineTabProps {
 const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [showPhaseDetails, setShowPhaseDetails] = useState(false);
 
   const { 
     accounts, 
@@ -31,82 +34,12 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
   useEffect(() => {
     updateFilters({
       search: searchTerm || undefined,
-      lifecycle_state: statusFilter === 'all' ? undefined : [statusFilter]
+      status: statusFilter === 'all' ? undefined : [statusFilter]
     });
   }, [searchTerm, statusFilter, updateFilters]);
 
-  // Component to render warmup phase progression
-  const renderWarmupPhases = (account: Account) => {
-    const phases = ['pfp', 'bio', 'post', 'highlight', 'story'];
-    const currentPhase = account.warmup_step || 0;
-    const lifecycleState = account.lifecycle_state;
-
-    return (
-      <div className="flex items-center gap-1">
-        {phases.map((phase, index) => {
-          const phaseNumber = index + 1;
-          let icon;
-          let colorClass;
-
-          if (lifecycleState === 'warmup' && phaseNumber === currentPhase) {
-            // Current phase - in progress
-            icon = <Loader className="h-3 w-3 animate-spin" />;
-            colorClass = 'text-blue-600 bg-blue-100';
-          } else if (phaseNumber < currentPhase) {
-            // Completed phase
-            icon = <CheckCircle className="h-3 w-3" />;
-            colorClass = 'text-green-600 bg-green-100';
-          } else if (lifecycleState === 'human_review' && phaseNumber === currentPhase) {
-            // Failed phase requiring review
-            icon = <AlertCircle className="h-3 w-3" />;
-            colorClass = 'text-red-600 bg-red-100';
-          } else {
-            // Pending phase
-            icon = <Circle className="h-3 w-3" />;
-            colorClass = 'text-gray-400 bg-gray-100';
-          }
-
-          return (
-            <div
-              key={phase}
-              className={`flex items-center justify-center w-6 h-6 rounded-full ${colorClass}`}
-              title={`${phase.toUpperCase()} (${phaseNumber}/5) - ${phaseNumber < currentPhase ? 'Completed' : phaseNumber === currentPhase ? 'Current' : 'Pending'}`}
-            >
-              {icon}
-            </div>
-          );
-        })}
-        <span className="ml-2 text-xs text-gray-500">
-          {currentPhase}/5
-        </span>
-      </div>
-    );
-  };
-
-  // Component to render lifecycle state
-  const renderLifecycleState = (lifecycleState: string) => {
-    const stateConfig = {
-      imported: { color: 'bg-gray-100 text-gray-800', label: 'Imported' },
-      ready: { color: 'bg-blue-100 text-blue-800', label: 'Ready' },
-      warmup: { color: 'bg-yellow-100 text-yellow-800', label: 'Warming Up' },
-      active: { color: 'bg-green-100 text-green-800', label: 'Active' },
-      human_review: { color: 'bg-red-100 text-red-800', label: 'Needs Review' },
-      cleanup: { color: 'bg-purple-100 text-purple-800', label: 'Cleanup' },
-      archived: { color: 'bg-gray-100 text-gray-800', label: 'Archived' }
-    };
-
-    const config = stateConfig[lifecycleState as keyof typeof stateConfig] || 
-                  { color: 'bg-gray-100 text-gray-800', label: 'Unknown' };
-
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
-        {config.label}
-      </span>
-    );
-  };
-
   // Define columns for warmup accounts
-  const columns: DataGridColumn<Account>[] = [
+  const columns: DataGridColumn<Account & { warmup_progress?: any; actions?: any }>[] = [
     {
       id: 'username',
       field: 'username',
@@ -136,11 +69,11 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       )
     },
     {
-      id: 'lifecycle_state',
-      field: 'lifecycle_state',
-      header: 'Lifecycle State',
-      width: 120,
-      minWidth: 100,
+      id: 'status',
+      field: 'status',
+      header: 'Status',
+      width: 100,
+      minWidth: 80,
       resizable: true,
       sortable: true,
       filterable: true,
@@ -152,33 +85,24 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       editable: false,
       required: true,
       options: [
-        { value: 'imported', label: 'Imported' },
-        { value: 'ready', label: 'Ready' },
-        { value: 'warmup', label: 'Warming Up' },
         { value: 'active', label: 'Active' },
-        { value: 'human_review', label: 'Needs Review' },
-        { value: 'cleanup', label: 'Cleanup' },
-        { value: 'archived', label: 'Archived' }
+        { value: 'banned', label: 'Banned' },
+        { value: 'suspended', label: 'Suspended' },
+        { value: 'inactive', label: 'Inactive' }
       ],
-      render: (value) => renderLifecycleState(value)
-    },
-    {
-      id: 'warmup_phases',
-      field: 'warmup_step',
-      header: 'Warmup Progress',
-      width: 180,
-      minWidth: 150,
-      resizable: true,
-      sortable: true,
-      filterable: false,
-      type: 'custom',
-      align: 'center',
-      visible: true,
-      order: 3,
-      frozen: false,
-      editable: false,
-      required: false,
-      render: (value, row) => renderWarmupPhases(row)
+      render: (value) => {
+        const statusColors = {
+          active: 'bg-green-100 text-green-800',
+          banned: 'bg-red-100 text-red-800',
+          suspended: 'bg-yellow-100 text-yellow-800',
+          inactive: 'bg-gray-100 text-gray-800'
+        };
+        return (
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[value as keyof typeof statusColors]}`}>
+            {value}
+          </span>
+        );
+      }
     },
     {
       id: 'total_follows',
@@ -192,7 +116,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       type: 'number',
       align: 'right',
       visible: true,
-      order: 4,
+      order: 3,
       frozen: false,
       editable: false,
       required: false,
@@ -217,7 +141,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       type: 'number',
       align: 'right',
       visible: true,
-      order: 5,
+      order: 4,
       frozen: false,
       editable: false,
       required: false,
@@ -246,7 +170,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       type: 'select',
       align: 'center',
       visible: true,
-      order: 6,
+      order: 5,
       frozen: false,
       editable: false,
       required: false,
@@ -267,6 +191,54 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
           <span className={`px-2 py-1 rounded-full text-xs font-medium ${proxyColors[value as keyof typeof proxyColors] || proxyColors.unknown}`}>
             {value || 'unknown'}
           </span>
+        );
+      }
+    },
+    {
+      id: 'warmup_progress',
+      field: 'warmup_progress',
+      header: 'Warmup Progress',
+      width: 200,
+      minWidth: 180,
+      resizable: true,
+      sortable: false,
+      filterable: false,
+      type: 'custom',
+      align: 'left',
+      visible: true,
+      order: 6,
+      frozen: false,
+      editable: false,
+      required: false,
+      render: (value, row) => {
+        // Mock progress data - this would come from the API in real implementation
+        const phases = ['pfp', 'bio', 'post', 'highlight', 'story'];
+        const completedPhases = Math.floor(Math.random() * phases.length); // Mock data
+        const currentPhase = phases[completedPhases] || null;
+        
+        return (
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1">
+              {phases.map((phase, index) => (
+                <div
+                  key={phase}
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                    index < completedPhases
+                      ? 'bg-green-100 text-green-800'
+                      : index === completedPhases
+                      ? 'bg-blue-100 text-blue-800'
+                      : 'bg-gray-100 text-gray-600'
+                  }`}
+                  title={phase.toUpperCase()}
+                >
+                  {index < completedPhases ? '✓' : phase.charAt(0).toUpperCase()}
+                </div>
+              ))}
+            </div>
+            <span className="text-sm text-gray-600">
+              {completedPhases}/{phases.length}
+            </span>
+          </div>
         );
       }
     },
@@ -297,6 +269,36 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         if (diffHours < 168) return <span className="text-yellow-600">{Math.floor(diffHours / 24)}d ago</span>;
         return <span className="text-red-600">{date.toLocaleDateString()}</span>;
       }
+    },
+    {
+      id: 'actions',
+      field: 'id',
+      header: 'Actions',
+      width: 120,
+      minWidth: 100,
+      resizable: false,
+      sortable: false,
+      filterable: false,
+      type: 'custom',
+      align: 'center',
+      visible: true,
+      order: 8,
+      frozen: false,
+      editable: false,
+      required: false,
+      render: (value, row) => (
+        <button
+          onClick={() => {
+            setSelectedAccountId(row.id);
+            setShowPhaseDetails(true);
+          }}
+          className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors"
+          title="View phase details"
+        >
+          <Eye className="h-3 w-3" />
+          Details
+        </button>
+      )
     }
   ];
 
@@ -327,18 +329,6 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
     );
   }
 
-  // Calculate statistics for warmup accounts
-  const warmupStats = {
-    activeWarmup: accounts.filter(a => a.lifecycle_state === 'warmup').length,
-    needsReview: accounts.filter(a => a.lifecycle_state === 'human_review').length,
-    ready: accounts.filter(a => a.lifecycle_state === 'ready').length,
-    active: accounts.filter(a => a.lifecycle_state === 'active').length,
-    avgFollowRate: accounts.length > 0 
-      ? (accounts.reduce((sum, a) => sum + (a.follow_back_rate || 0), 0) / accounts.length)
-      : 0,
-    totalFollows: accounts.reduce((sum, a) => sum + (a.total_follows || 0), 0)
-  };
-
   return (
     <div className="p-6 h-full flex flex-col">
       {/* Header */}
@@ -346,7 +336,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         <div>
           <h3 className="text-lg font-medium text-gray-900">Warmup Pipeline</h3>
           <p className="text-sm text-gray-500">
-            {filteredCount} of {totalCount} accounts • {warmupStats.activeWarmup} actively warming up
+            {filteredCount} of {totalCount} accounts in warmup process
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -362,7 +352,6 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
             className="btn-primary flex items-center gap-2"
             onClick={() => {
               // TODO: Implement bulk warmup actions
-              console.log('Start warmup for selected accounts');
             }}
           >
             <Play className="h-4 w-4" />
@@ -377,7 +366,9 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Active Warmup</p>
-              <p className="text-2xl font-bold text-green-600">{warmupStats.activeWarmup}</p>
+              <p className="text-2xl font-bold text-green-600">
+                {accounts.filter(a => a.status === 'active').length}
+              </p>
             </div>
             <Activity className="h-8 w-8 text-green-600" />
           </div>
@@ -386,30 +377,39 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Needs Review</p>
-              <p className="text-2xl font-bold text-red-600">{warmupStats.needsReview}</p>
+              <p className="text-sm font-medium text-gray-600">Avg Follow Rate</p>
+              <p className="text-2xl font-bold text-blue-600">
+                {accounts.length > 0 
+                  ? (accounts.reduce((sum, a) => sum + (a.follow_back_rate || 0), 0) / accounts.length).toFixed(1)
+                  : '0.0'
+                }%
+              </p>
             </div>
-            <AlertCircle className="h-8 w-8 text-red-600" />
+            <TrendingUp className="h-8 w-8 text-blue-600" />
           </div>
         </div>
         
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Ready Accounts</p>
-              <p className="text-2xl font-bold text-blue-600">{warmupStats.ready}</p>
+              <p className="text-sm font-medium text-gray-600">Total Follows</p>
+              <p className="text-2xl font-bold text-purple-600">
+                {accounts.reduce((sum, a) => sum + (a.total_follows || 0), 0).toLocaleString()}
+              </p>
             </div>
-            <Clock className="h-8 w-8 text-blue-600" />
+            <Activity className="h-8 w-8 text-purple-600" />
           </div>
         </div>
         
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Active Accounts</p>
-              <p className="text-2xl font-bold text-purple-600">{warmupStats.active}</p>
+              <p className="text-sm font-medium text-gray-600">Needs Attention</p>
+              <p className="text-2xl font-bold text-red-600">
+                {accounts.filter(a => a.status === 'banned' || a.status === 'suspended').length}
+              </p>
             </div>
-            <CheckCircle className="h-8 w-8 text-purple-600" />
+            <Clock className="h-8 w-8 text-red-600" />
           </div>
         </div>
       </div>
@@ -430,64 +430,68 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
           onChange={(e) => setStatusFilter(e.target.value)}
           className="form-select"
         >
-          <option value="all">All Lifecycle States</option>
-          <option value="imported">Imported</option>
-          <option value="ready">Ready</option>
-          <option value="warmup">Warming Up</option>
+          <option value="all">All Status</option>
           <option value="active">Active</option>
-          <option value="human_review">Needs Review</option>
-          <option value="cleanup">Cleanup</option>
-          <option value="archived">Archived</option>
+          <option value="banned">Banned</option>
+          <option value="suspended">Suspended</option>
+          <option value="inactive">Inactive</option>
         </select>
       </div>
 
-      {/* Accounts Grid */}
-      <div className="flex-1 bg-white rounded-lg shadow">
-        {accounts.length === 0 && !loading ? (
-          <div className="p-8 text-center">
-            <Activity className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Accounts in Pipeline</h3>
-            <p className="text-gray-500 mb-6">
-              {searchTerm || statusFilter !== 'all' 
-                ? 'No accounts match your current filters.' 
-                : 'No accounts are currently in the warmup pipeline.'
-              }
-            </p>
-            <div className="text-sm text-gray-400 mt-4">
-              <p><strong>Phase Legend:</strong></p>
-              <div className="flex items-center justify-center gap-4 mt-2">
-                <div className="flex items-center gap-1">
-                  <Circle className="h-3 w-3 text-gray-400" />
-                  <span>Pending</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Loader className="h-3 w-3 text-blue-600" />
-                  <span>In Progress</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <CheckCircle className="h-3 w-3 text-green-600" />
-                  <span>Completed</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3 text-red-600" />
-                  <span>Failed</span>
-                </div>
-              </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex gap-6">
+        {/* Accounts Grid */}
+        <div className={`bg-white rounded-lg shadow ${showPhaseDetails ? 'flex-1' : 'w-full'}`}>
+          {accounts.length === 0 && !loading ? (
+            <div className="p-8 text-center">
+              <Activity className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Accounts in Warmup</h3>
+              <p className="text-gray-500 mb-6">
+                {searchTerm || statusFilter !== 'all' 
+                  ? 'No accounts match your current filters.' 
+                  : 'No accounts are currently in the warmup process.'
+                }
+              </p>
+            </div>
+          ) : (
+            <DataGrid
+              data={accounts}
+              columns={columns}
+              loading={loading}
+              error={error}
+              height={400}
+              virtualScrolling={true}
+              multiSelect={true}
+              rowSelection={true}
+              keyboardNavigation={true}
+              className="h-full"
+            />
+          )}
+        </div>
+
+        {/* Phase Details Panel */}
+        {showPhaseDetails && selectedAccountId && (
+          <div className="w-96 flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-lg font-medium text-gray-900">Phase Details</h4>
+              <button
+                onClick={() => {
+                  setShowPhaseDetails(false);
+                  setSelectedAccountId(null);
+                }}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1">
+              <WarmupPhaseTracker 
+                accountId={selectedAccountId} 
+                showTitle={false}
+                compact={true}
+              />
             </div>
           </div>
-        ) : (
-          <DataGrid
-            data={accounts}
-            columns={columns}
-            loading={loading}
-            error={error}
-            height={400}
-            virtualScrolling={true}
-            multiSelect={true}
-            rowSelection={true}
-            keyboardNavigation={true}
-            className="h-full"
-          />
         )}
       </div>
     </div>
