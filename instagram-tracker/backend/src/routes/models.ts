@@ -446,6 +446,75 @@ router.post('/:id/content', validateParams(modelIdSchema), upload.single('file')
       JSON.stringify(categories)
     ]);
 
+    // Also add to central registry and model bundle
+    try {
+      // Get model name for bundle
+      const modelResult = await db.query('SELECT name FROM models WHERE id = $1', [id]);
+      const modelName = modelResult.rows[0].name;
+      const bundleName = `Model: ${modelName} Content`;
+
+      // Add to central content registry
+      const centralContentResult = await db.query(`
+        INSERT INTO central_content (
+          filename, original_name, file_path, content_type, 
+          file_size, mime_type, categories, tags, uploaded_by, content_status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')
+        RETURNING *
+      `, [
+        file.filename,
+        file.originalname,
+        file.path,
+        contentType,
+        file.size,
+        file.mimetype,
+        categories,
+        [], // empty tags for model uploads
+        `model_${id}`,
+      ]);
+
+      // Check if model bundle exists, create if not
+      let bundleResult = await db.query(`
+        SELECT id FROM content_bundles 
+        WHERE name = $1 AND created_by = $2
+      `, [bundleName, `model_${id}`]);
+
+      let bundleId;
+      if (bundleResult.rows.length === 0) {
+        // Create model bundle
+        bundleResult = await db.query(`
+          INSERT INTO content_bundles (name, description, bundle_type, categories, tags, created_by, status)
+          VALUES ($1, $2, 'mixed', $3, $4, $5, 'active')
+          RETURNING id
+        `, [
+          bundleName,
+          `Auto-generated bundle for ${modelName} model content`,
+          categories,
+          [],
+          `model_${id}`
+        ]);
+        bundleId = bundleResult.rows[0].id;
+
+        // Assign bundle to model
+        await db.query(`
+          INSERT INTO model_bundle_assignments (model_id, bundle_id, assignment_type, assigned_by)
+          VALUES ($1, $2, 'auto', $3)
+          ON CONFLICT (model_id, bundle_id) DO NOTHING
+        `, [id, bundleId, `model_${id}`]);
+      } else {
+        bundleId = bundleResult.rows[0].id;
+      }
+
+      // Add content to bundle
+      await db.query(`
+        INSERT INTO bundle_content_assignments (bundle_id, content_id, assignment_order)
+        VALUES ($1, $2, 0)
+      `, [bundleId, centralContentResult.rows[0].id]);
+
+    } catch (centralError) {
+      console.error('Error adding to central registry:', centralError);
+      // Don't fail the upload if central registry fails
+    }
+
     // Handle text content if provided
     const textContent = req.body.textContent;
     if (textContent && textContent.trim()) {

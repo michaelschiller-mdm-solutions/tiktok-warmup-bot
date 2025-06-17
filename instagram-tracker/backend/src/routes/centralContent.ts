@@ -6,6 +6,50 @@ import { db } from '../database';
 
 const router = express.Router();
 
+// Migration endpoint (for development only)
+router.post('/migrate', async (req, res) => {
+  try {
+    console.log('🔄 Running central content registry migration...');
+    
+    // Read the migration file
+    const migrationPath = path.join(__dirname, '../../../run-migration.sql');
+    const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
+    
+    // Execute the migration
+    await db.query(migrationSQL);
+    
+    console.log('✅ Central content registry migration completed successfully!');
+    
+    // Test the new functions
+    console.log('🧪 Testing new database functions...');
+    
+    // Test get_central_content_with_texts function
+    const testResult = await db.query('SELECT * FROM get_central_content_with_texts() LIMIT 1');
+    console.log('✅ get_central_content_with_texts function working');
+    
+    // Test get_bundle_contents function
+    try {
+      const bundleResult = await db.query('SELECT * FROM get_bundle_contents(1)');
+      console.log('✅ get_bundle_contents function working');
+    } catch (err) {
+      console.log('ℹ️  get_bundle_contents function working (no bundles exist yet)');
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Central content registry migration completed successfully!' 
+    });
+    
+  } catch (error) {
+    console.error('❌ Migration failed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Migration failed', 
+      details: error.message 
+    });
+  }
+});
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -93,6 +137,18 @@ router.post('/content/upload', upload.array('files', 10), async (req, res) => {
       return res.status(400).json({ error: 'No files uploaded' });
     }
 
+    // Parse categories and tags safely
+    let parsedCategories: string[] = [];
+    let parsedTags: string[] = [];
+    
+    try {
+      parsedCategories = typeof categories === 'string' ? JSON.parse(categories) : categories;
+      parsedTags = typeof tags === 'string' ? JSON.parse(tags) : tags;
+    } catch (parseError) {
+      console.error('Error parsing categories/tags:', parseError);
+      return res.status(400).json({ error: 'Invalid categories or tags format' });
+    }
+
     const uploadedContent = [];
 
     for (const file of files) {
@@ -111,8 +167,8 @@ router.post('/content/upload', upload.array('files', 10), async (req, res) => {
         contentType,
         file.size,
         file.mimetype,
-        JSON.parse(categories),
-        JSON.parse(tags),
+        parsedCategories,
+        parsedTags,
         uploaded_by
       ]);
 
@@ -149,12 +205,16 @@ router.post('/text-content', async (req, res) => {
       return res.status(400).json({ error: 'Text content is required' });
     }
 
+    // Ensure categories and tags are arrays
+    const safeCategories = Array.isArray(categories) ? categories : [];
+    const safeTags = Array.isArray(tags) ? tags : [];
+
     const result = await db.query(`
       INSERT INTO central_text_content (
         text_content, categories, tags, template_name, language, created_by
       ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
-    `, [text_content, JSON.stringify(categories), JSON.stringify(tags), template_name, language, created_by]);
+    `, [text_content, safeCategories, safeTags, template_name, language, created_by]);
 
     res.json(result.rows[0]);
   } catch (error) {
@@ -278,13 +338,39 @@ router.post('/bundles/:bundleId/add-content', async (req, res) => {
       return res.status(400).json({ error: 'Either content_id or text_content_id is required' });
     }
 
-    const result = await db.query(`
-      INSERT INTO bundle_content_assignments (bundle_id, content_id, text_content_id, assignment_order)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `, [bundleId, content_id || null, text_content_id || null, assignment_order]);
+    // Check if bundle exists
+    const bundleResult = await db.query(
+      'SELECT id FROM content_bundles WHERE id = $1',
+      [bundleId]
+    );
 
-    res.json(result.rows[0]);
+    if (bundleResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Bundle not found' });
+    }
+
+    if (content_id) {
+      // Add content to bundle
+      await db.query(`
+        INSERT INTO bundle_content_assignments (bundle_id, content_id, assignment_order, assigned_at, assigned_by)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP, 'user')
+        ON CONFLICT (bundle_id, content_id) DO UPDATE SET
+          assignment_order = EXCLUDED.assignment_order,
+          assigned_at = CURRENT_TIMESTAMP
+      `, [bundleId, content_id, assignment_order]);
+    }
+
+    if (text_content_id) {
+      // Add text content to bundle
+      await db.query(`
+        INSERT INTO bundle_content_assignments (bundle_id, text_content_id, assignment_order, assigned_at, assigned_by)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP, 'user')
+        ON CONFLICT (bundle_id, text_content_id) DO UPDATE SET
+          assignment_order = EXCLUDED.assignment_order,
+          assigned_at = CURRENT_TIMESTAMP
+      `, [bundleId, text_content_id, assignment_order]);
+    }
+
+    res.json({ success: true, message: 'Content added to bundle successfully' });
   } catch (error) {
     console.error('Error adding content to bundle:', error);
     res.status(500).json({ error: 'Failed to add content to bundle' });
@@ -363,6 +449,137 @@ router.get('/models/:modelId/bundles', async (req, res) => {
   } catch (error) {
     console.error('Error fetching model bundles:', error);
     res.status(500).json({ error: 'Failed to fetch model bundles' });
+  }
+});
+
+// Sync existing model content to central registry
+router.post('/sync-model-content', async (req, res) => {
+  try {
+    console.log('🔄 Syncing existing model content to central registry...');
+    
+    // Get all existing model content that's not in central registry
+    const modelContentResult = await db.query(`
+      SELECT DISTINCT
+        mc.id,
+        mc.model_id,
+        mc.filename,
+        mc.original_name,
+        mc.file_path,
+        mc.content_type,
+        mc.file_size,
+        mc.mime_type,
+        mc.categories,
+        mc.created_at,
+        m.name as model_name
+      FROM model_content mc
+      JOIN models m ON mc.model_id = m.id
+      WHERE mc.status = 'active'
+        AND NOT EXISTS (
+          SELECT 1 FROM central_content cc 
+          WHERE cc.filename = mc.filename 
+          AND cc.uploaded_by = CONCAT('model_', mc.model_id)
+        )
+      ORDER BY mc.created_at DESC
+    `);
+
+    const modelContent = modelContentResult.rows;
+    console.log(`Found ${modelContent.length} model content items to sync`);
+
+    let syncedCount = 0;
+    const bundleMap = new Map<number, number>(); // model_id -> bundle_id
+
+    for (const content of modelContent) {
+      try {
+        // Add to central content registry
+        const centralContentResult = await db.query(`
+          INSERT INTO central_content (
+            filename, original_name, file_path, content_type, 
+            file_size, mime_type, categories, tags, uploaded_by
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING *
+        `, [
+          content.filename,
+          content.original_name,
+          content.file_path,
+          content.content_type,
+          content.file_size,
+          content.mime_type,
+          content.categories || [],
+          [], // empty tags for model content
+          `model_${content.model_id}`
+        ]);
+
+        const centralContentId = centralContentResult.rows[0].id;
+
+        // Get or create model bundle
+        let bundleId = bundleMap.get(content.model_id);
+        if (!bundleId) {
+          const bundleName = `Model: ${content.model_name} Content`;
+          
+          // Check if bundle exists
+          let bundleResult = await db.query(`
+            SELECT id FROM content_bundles 
+            WHERE name = $1 AND created_by = $2
+          `, [bundleName, `model_${content.model_id}`]);
+
+          if (bundleResult.rows.length === 0) {
+            // Create model bundle
+            bundleResult = await db.query(`
+              INSERT INTO content_bundles (name, description, bundle_type, categories, tags, created_by, status)
+              VALUES ($1, $2, 'mixed', $3, $4, $5, 'active')
+              RETURNING id
+            `, [
+              bundleName,
+              `Auto-generated bundle for ${content.model_name} model content`,
+              content.categories || [],
+              [],
+              `model_${content.model_id}`
+            ]);
+
+            // Assign bundle to model
+            await db.query(`
+              INSERT INTO model_bundle_assignments (model_id, bundle_id, assignment_type, assigned_by)
+              VALUES ($1, $2, 'auto', $3)
+              ON CONFLICT (model_id, bundle_id) DO NOTHING
+            `, [content.model_id, bundleResult.rows[0].id, `model_${content.model_id}`]);
+          }
+          
+          bundleId = bundleResult.rows[0].id;
+          bundleMap.set(content.model_id, bundleId);
+        }
+
+        // Add content to bundle
+        await db.query(`
+          INSERT INTO bundle_content_assignments (bundle_id, content_id, assignment_order)
+          VALUES ($1, $2, 0)
+          ON CONFLICT (bundle_id, content_id) DO NOTHING
+        `, [bundleId, centralContentId]);
+
+        syncedCount++;
+        console.log(`✅ Synced: ${content.original_name} from model ${content.model_name}`);
+
+      } catch (itemError) {
+        console.error(`❌ Failed to sync ${content.original_name}:`, itemError);
+      }
+    }
+
+    console.log(`🎉 Sync completed! ${syncedCount}/${modelContent.length} items synced`);
+
+    res.json({
+      success: true,
+      message: `Successfully synced ${syncedCount} model content items to central registry`,
+      synced_count: syncedCount,
+      total_found: modelContent.length,
+      bundles_created: bundleMap.size
+    });
+
+  } catch (error) {
+    console.error('❌ Sync failed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to sync model content', 
+      details: error.message 
+    });
   }
 });
 

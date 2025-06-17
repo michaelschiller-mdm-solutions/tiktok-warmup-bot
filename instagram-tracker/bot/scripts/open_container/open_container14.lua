@@ -1,0 +1,166 @@
+;(function(old_init_orien)  -- record begin
+
+local play_speed = 1.0  -- Speed
+local play_times = 1    -- Repeat Times
+
+local sys_ = {}
+for k, v in pairs(sys) do
+	if k == 'msleep' or k == 'sleep' then
+		sys_[k] = function(s) v(s / play_speed) end
+	else
+		sys_[k] = v
+	end
+end
+
+local sys = sys_
+local mSleep = sys.msleep
+local function actions()
+
+
+key.down(12,64)
+  -- HOMEBUTTON
+key.up(12,64)
+  -- HOMEBUTTON
+
+sys.msleep(1220)
+touch.on(5, 641, 1021)
+sys.msleep(35)
+touch.move(5, 641, 1021, 17, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 100, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 183, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 267, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 317, 50)
+sys.msleep(16)
+touch.move(5, 641, 1021, 350, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 367, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 383, 50)
+sys.msleep(33)
+touch.move(5, 641, 1021, 400, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 417, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 433, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 450, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 467, 50)
+sys.msleep(117)
+touch.move(5, 641, 1021, 483, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 500, 50)
+sys.msleep(83)
+touch.move(5, 641, 1021, 517, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 550, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 567, 50)
+sys.msleep(16)
+touch.move(5, 641, 1021, 583, 50)
+sys.msleep(34)
+touch.move(5, 641, 1021, 600, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 617, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 633, 50)
+sys.msleep(250)
+touch.move(5, 641, 1021, 667, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 683, 50)
+sys.msleep(83)
+touch.move(5, 641, 1021, 567, 50)
+sys.msleep(17)
+touch.move(5, 641, 1021, 350, 50)
+touch.off(5, 641, 1021)
+
+sys.msleep(819)
+touch.on(6, 407, 1042)
+sys.msleep(33)
+touch.move(6, 407, 1042, 83, 50)
+sys.msleep(17)
+touch.move(6, 407, 1042, 250, 50)
+sys.msleep(17)
+touch.move(6, 425, 1011, 433, 50)
+sys.msleep(16)
+touch.move(6, 430, 992, 583, 50)
+sys.msleep(17)
+touch.move(6, 437, 970, 650, 50)
+sys.msleep(16)
+touch.move(6, 442, 945, 683, 50)
+sys.msleep(17)
+touch.move(6, 446, 918, 717, 50)
+sys.msleep(17)
+touch.move(6, 449, 881, 750, 50)
+sys.msleep(17)
+touch.move(6, 451, 835, 800, 50)
+sys.msleep(16)
+touch.move(6, 455, 767, 850, 50)
+sys.msleep(17)
+touch.move(6, 462, 711, 867, 50)
+sys.msleep(17)
+touch.move(6, 474, 638, 867, 50)
+sys.msleep(17)
+touch.move(6, 485, 585, 867, 50)
+sys.msleep(17)
+touch.move(6, 501, 530, 850, 50)
+sys.msleep(17)
+touch.move(6, 520, 476, 850, 50)
+sys.msleep(17)
+touch.move(6, 543, 420, 850, 50)
+sys.msleep(17)
+touch.move(6, 567, 352, 850, 50)
+sys.msleep(17)
+touch.move(6, 585, 290, 850, 50)
+sys.msleep(17)
+touch.move(6, 599, 238, 850, 50)
+sys.msleep(17)
+touch.move(6, 611, 189, 850, 50)
+sys.msleep(17)
+touch.move(6, 618, 151, 867, 50)
+sys.msleep(17)
+touch.move(6, 624, 113, 900, 50)
+sys.msleep(17)
+touch.move(6, 633, 77, 950, 50)
+sys.msleep(17)
+touch.move(6, 643, 41, 967, 50)
+sys.msleep(17)
+touch.move(6, 655, 18, 967, 0)
+sys.msleep(17)
+touch.move(6, 666, 2, 967, 50)
+sys.msleep(17)
+touch.move(6, 676, -6, 967, 2)
+sys.msleep(17)
+touch.move(6, 695, -11, 850, 0)
+touch.off(6, 699, -15)
+
+sys.msleep(2048)
+touch.on(5, 599, 991)
+sys.msleep(18)
+touch.move(5, 599, 991, 233, 50)
+sys.msleep(17)
+touch.move(5, 599, 991, 583, 50)
+sys.msleep(17)
+touch.move(5, 599, 991, 850, 50)
+sys.msleep(17)
+touch.move(5, 599, 991, 950, 50)
+sys.msleep(33)
+touch.move(5, 599, 991, 933, 50)
+sys.msleep(16)
+touch.move(5, 599, 991, 633, 50)
+touch.off(5, 599, 991)
+
+
+
+end
+
+for l____________i = 1, play_times do
+actions()
+end
+
+touch.init(old_init_orien)
+end)(touch.init(0));  -- record end

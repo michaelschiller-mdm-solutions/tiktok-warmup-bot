@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Image, Video, FileText, Upload, RefreshCw, Eye, Calendar, Download, Trash2 } from 'lucide-react';
+import { Image, Video, FileText, Upload, RefreshCw, Eye, Calendar, Download, Trash2, Package, Plus } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import LoadingSpinner from '../LoadingSpinner';
 import ContentUploadModal from '../ContentUploadModal';
@@ -31,12 +31,24 @@ interface ModelContentResponse {
   total_count: number;
 }
 
+interface ContentBundle {
+  id: number;
+  name: string;
+  description?: string;
+  bundle_type: string;
+  content_count: number;
+  text_count: number;
+}
+
 interface ContentManagementTabProps {
   modelId: number;
 }
 
 const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) => {
   const [content, setContent] = useState<ModelContent[]>([]);
+  const [bundles, setBundles] = useState<ContentBundle[]>([]);
+  const [selectedBundleId, setSelectedBundleId] = useState<number | null>(null);
+  const [contentSource, setContentSource] = useState<'model' | 'bundles'>('model');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,6 +56,63 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showTextModal, setShowTextModal] = useState(false);
+
+  // Fetch model bundles
+  const fetchBundles = async () => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/central/models/${modelId}/bundles`);
+      if (response.ok) {
+        const bundleData = await response.json();
+        setBundles(bundleData);
+      }
+    } catch (err) {
+      console.error('Failed to fetch bundles:', err);
+    }
+  };
+
+  // Fetch content from central registry bundles
+  const fetchBundleContent = async (bundleId: number) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch(`http://localhost:3001/api/central/bundles/${bundleId}/contents`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch bundle content: ${response.statusText}`);
+      }
+      
+      const bundleData = await response.json();
+      
+      // Transform bundle content to match ModelContent interface
+      const transformedContent = bundleData.content_items?.map((item: any) => ({
+        content_id: item.content_id,
+        filename: item.filename,
+        original_name: item.original_name,
+        content_type: item.content_type,
+        file_size: item.file_size,
+        categories: item.categories || [],
+        content_status: item.content_status,
+        content_created_at: item.content_created_at,
+        image_url: `/uploads/content/${item.filename}`,
+        // Include assigned texts
+        text_content: item.assigned_texts?.[0]?.text_content,
+        text_content_id: item.assigned_texts?.[0]?.text_id,
+        template_name: item.assigned_texts?.[0]?.template_name,
+        assignment_type: item.assigned_texts?.[0]?.assignment_type,
+        assigned_at: item.assigned_texts?.[0]?.assigned_at
+      })) || [];
+      
+      setContent(transformedContent);
+    } catch (err: any) {
+      console.error('Failed to fetch bundle content:', err);
+      setError(err.message || 'Failed to fetch bundle content');
+      setContent([]);
+      toast.error('Failed to load bundle content');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Fetch model content
   const fetchContent = async () => {
@@ -82,10 +151,20 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
     }
   };
 
+  // Load content based on source
+  const loadContent = () => {
+    if (contentSource === 'bundles' && selectedBundleId) {
+      fetchBundleContent(selectedBundleId);
+    } else {
+      fetchContent();
+    }
+  };
+
   // Initial load and when filters change
   useEffect(() => {
-    fetchContent();
-  }, [modelId, contentTypeFilter, categoryFilter]);
+    fetchBundles();
+    loadContent();
+  }, [modelId, contentTypeFilter, categoryFilter, contentSource, selectedBundleId]);
 
   // Filter content based on search term
   const filteredContent = content.filter(item => {
@@ -170,11 +249,16 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
           <h3 className="text-lg font-medium text-gray-900">Content Management</h3>
           <p className="text-sm text-gray-500">
             {filteredContent.length} of {content.length} content files
+            {contentSource === 'bundles' && selectedBundleId && (
+              <span className="ml-2 text-blue-600">
+                from {bundles.find(b => b.id === selectedBundleId)?.name}
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">
           <button 
-            onClick={fetchContent}
+            onClick={loadContent}
             className="btn-secondary flex items-center gap-2"
             disabled={loading}
           >
@@ -196,6 +280,64 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
             Upload Content
           </button>
         </div>
+      </div>
+
+      {/* Content Source Selection */}
+      <div className="bg-white rounded-lg shadow p-4 mb-6">
+        <div className="flex items-center gap-4 mb-4">
+          <h4 className="text-sm font-medium text-gray-900">Content Source:</h4>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setContentSource('model');
+                setSelectedBundleId(null);
+              }}
+              className={`px-3 py-1 rounded-full text-sm font-medium ${
+                contentSource === 'model'
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Model Content
+            </button>
+            <button
+              onClick={() => setContentSource('bundles')}
+              className={`px-3 py-1 rounded-full text-sm font-medium ${
+                contentSource === 'bundles'
+                  ? 'bg-blue-100 text-blue-800'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <Package className="w-4 h-4 inline mr-1" />
+              Content Bundles
+            </button>
+          </div>
+        </div>
+
+        {contentSource === 'bundles' && (
+          <div className="flex items-center gap-4">
+            <label className="text-sm font-medium text-gray-700">Select Bundle:</label>
+            <select
+              value={selectedBundleId || ''}
+              onChange={(e) => setSelectedBundleId(e.target.value ? parseInt(e.target.value) : null)}
+              className="form-select flex-1 max-w-md"
+            >
+              <option value="">Choose a bundle...</option>
+              {bundles.map((bundle) => (
+                <option key={bundle.id} value={bundle.id}>
+                  {bundle.name} ({bundle.content_count} items)
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => window.open('/content', '_blank')}
+              className="btn-secondary flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Manage Bundles
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Content Stats */}

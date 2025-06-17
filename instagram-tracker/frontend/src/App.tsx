@@ -7,6 +7,7 @@ import Models from './pages/Models';
 import ModelDetail from './pages/ModelDetail';
 import ModelAccountsPage from './pages/ModelAccountsPage';
 import Analytics from './pages/Analytics';
+import CentralContentRegistry from './components/CentralContentRegistry';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
             <Route path="/models/:modelId" element={<ModelDetail />} />
             <Route path="/models/:id/accounts" element={<ModelAccountsPage />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/content" element={<CentralContentRegistry />} />
           </Routes>
         </Layout>
       </div>
