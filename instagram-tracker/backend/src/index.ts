@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import path from 'path';
 import { testConnection } from './database';
+import { runMigrations } from './scripts/migrate';
 
 // Import routes
 import modelsRouter from './routes/models';
@@ -16,6 +17,7 @@ import importRouter from './routes/import';
 import reviewsRouter from './routes/reviews';
 import botAccountsRouter from './routes/bot/accounts';
 import centralContentRouter from './routes/centralContent';
+import iphoneManagementRouter from './routes/iphone-management';
 
 // Load environment variables
 dotenv.config();
@@ -84,6 +86,9 @@ app.use('/api/bot/accounts', botAccountsRouter);
 // Central Content API Routes
 app.use('/api/central', centralContentRouter);
 
+// iPhone Management API Routes
+app.use('/api/iphones', iphoneManagementRouter);
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
@@ -108,6 +113,11 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 // Start server
 async function startServer() {
   try {
+    // Run migrations first to ensure database schema is up-to-date
+    console.log('🔄 Running database migrations...');
+    await runMigrations();
+    console.log('✅ Migrations completed successfully.');
+
     await testConnection();
     console.log('✅ Database connected successfully');
     

@@ -8,10 +8,9 @@
     "backend"
   ],
   "scripts": {
-    "dev": "pnpm run db:migrate && concurrently \"pnpm run backend:dev\" \"pnpm run frontend:dev\"",
+    "dev": "concurrently \"pnpm run backend:dev\" \"pnpm run frontend:dev\"",
     "backend:dev": "cd backend && pnpm run dev",
     "frontend:dev": "cd frontend && pnpm start",
-    "db:migrate": "docker cp run-migration.sql instagram-tracker-db:/tmp/migration.sql && docker-compose exec postgres psql -U admin -d instagram_tracker -f /tmp/migration.sql || echo 'Migration completed or database not ready'",
     "build": "pnpm run backend:build && pnpm run frontend:build",
     "backend:build": "cd backend && pnpm run build",
     "frontend:build": "cd frontend && pnpm run build",

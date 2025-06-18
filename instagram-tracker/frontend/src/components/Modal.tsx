@@ -83,7 +83,7 @@ const Modal: React.FC<ModalProps> = ({
           )}
           
           {/* Content */}
-          <div className={title ? '' : 'p-6'}>
+          <div className="p-6">
             {children}
           </div>
         </div>

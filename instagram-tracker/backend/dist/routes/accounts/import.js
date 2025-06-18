@@ -54,12 +54,13 @@ router.post('/check-existing', async (req, res) => {
 });
 router.post('/import', async (req, res) => {
     try {
-        const { usernames, model_id, batch_index, total_batches } = req.body;
-        if (!usernames || !Array.isArray(usernames)) {
+        const { usernames, accounts_data, model_id, batch_index, total_batches } = req.body;
+        const accountsInput = accounts_data || usernames;
+        if (!accountsInput || !Array.isArray(accountsInput)) {
             return res.status(400).json({
                 success: false,
                 error: 'Validation Error',
-                message: 'usernames array is required'
+                message: 'usernames or accounts_data array is required'
             });
         }
         if (!model_id || typeof model_id !== 'number') {
@@ -69,7 +70,7 @@ router.post('/import', async (req, res) => {
                 message: 'model_id is required and must be a number'
             });
         }
-        if (usernames.length === 0) {
+        if (accountsInput.length === 0) {
             return res.json({
                 success: true,
                 data: {
@@ -80,11 +81,11 @@ router.post('/import', async (req, res) => {
                 }
             });
         }
-        if (usernames.length > 1000) {
+        if (accountsInput.length > 1000) {
             return res.status(400).json({
                 success: false,
                 error: 'Validation Error',
-                message: 'Maximum 1,000 usernames per batch'
+                message: 'Maximum 1,000 accounts per batch'
             });
         }
         const modelCheck = await database_1.db.query('SELECT id FROM models WHERE id = $1', [model_id]);
@@ -95,8 +96,8 @@ router.post('/import', async (req, res) => {
                 message: `Model with ID ${model_id} does not exist`
             });
         }
-        console.log(`Starting import batch ${batch_index + 1}/${total_batches || 1} for model ${model_id} with ${usernames.length} accounts`);
-        const result = await importService.importAccountsBatch(usernames, model_id);
+        console.log(`Starting import batch ${batch_index + 1}/${total_batches || 1} for model ${model_id} with ${accountsInput.length} accounts`);
+        const result = await importService.importAccountsBatch(accountsInput, model_id);
         console.log(`Import batch completed:`, {
             successful: result.successful,
             failed: result.failed,

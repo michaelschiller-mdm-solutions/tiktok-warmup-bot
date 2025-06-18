@@ -168,7 +168,7 @@ JOIN models m ON a.model_id = m.id
 LEFT JOIN account_warmup_phases awp ON a.id = awp.account_id
 WHERE a.lifecycle_state IN ('ready', 'warmup')
   AND a.status = 'active'
-  AND a.proxy_id IS NOT NULL
+  AND a.proxy_host IS NOT NULL
 GROUP BY a.id, a.username, a.model_id, a.lifecycle_state, m.name
 HAVING COUNT(CASE WHEN awp.status = 'available' AND awp.available_at <= CURRENT_TIMESTAMP THEN 1 END) > 0;
 

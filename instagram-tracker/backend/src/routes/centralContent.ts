@@ -167,8 +167,8 @@ router.post('/content/upload', upload.array('files', 10), async (req, res) => {
         contentType,
         file.size,
         file.mimetype,
-        parsedCategories,
-        parsedTags,
+        JSON.stringify(parsedCategories),
+        JSON.stringify(parsedTags),
         uploaded_by
       ]);
 
@@ -214,12 +214,167 @@ router.post('/text-content', async (req, res) => {
         text_content, categories, tags, template_name, language, created_by
       ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
-    `, [text_content, safeCategories, safeTags, template_name, language, created_by]);
+    `, [text_content, JSON.stringify(safeCategories), JSON.stringify(safeTags), template_name, language, created_by]);
 
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error adding text content:', error);
     res.status(500).json({ error: 'Failed to add text content' });
+  }
+});
+
+// Get all text content
+router.get('/text-content', async (req, res) => {
+  try {
+    const { status = 'active', language, template_name } = req.query;
+
+    let query = `
+      SELECT 
+        id,
+        text_content,
+        categories,
+        tags,
+        template_name,
+        language,
+        status,
+        created_by,
+        created_at,
+        updated_at
+      FROM central_text_content
+      WHERE status = $1
+    `;
+    const params = [status];
+
+    if (language) {
+      query += ` AND language = $${params.length + 1}`;
+      params.push(language as string);
+    }
+
+    if (template_name) {
+      query += ` AND template_name = $${params.length + 1}`;
+      params.push(template_name as string);
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    const result = await db.query(query, params);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching text content:', error);
+    res.status(500).json({ error: 'Failed to fetch text content' });
+  }
+});
+
+// Update text content
+router.put('/text-content/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      text_content, 
+      categories = [], 
+      tags = [], 
+      template_name,
+      language = 'en'
+    } = req.body;
+
+    if (!text_content) {
+      return res.status(400).json({ error: 'Text content is required' });
+    }
+
+    // Ensure categories and tags are arrays
+    const safeCategories = Array.isArray(categories) ? categories : [];
+    const safeTags = Array.isArray(tags) ? tags : [];
+
+    const result = await db.query(`
+      UPDATE central_text_content 
+      SET 
+        text_content = $1,
+        categories = $2,
+        tags = $3,
+        template_name = $4,
+        language = $5,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $6
+      RETURNING *
+    `, [text_content, JSON.stringify(safeCategories), JSON.stringify(safeTags), template_name, language, id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Text content not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating text content:', error);
+    res.status(500).json({ error: 'Failed to update text content' });
+  }
+});
+
+// Delete content
+router.delete('/content/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // First check if content exists and get file info
+    const contentResult = await db.query(`
+      SELECT id, filename, file_path, original_name 
+      FROM central_content 
+      WHERE id = $1
+    `, [id]);
+
+    if (contentResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Content not found' });
+    }
+
+    const content = contentResult.rows[0];
+
+    // Delete from database first
+    const result = await db.query(`
+      DELETE FROM central_content 
+      WHERE id = $1 
+      RETURNING *
+    `, [id]);
+
+    // Try to delete the physical file (don't fail if file doesn't exist)
+    try {
+      if (content.file_path && fs.existsSync(content.file_path)) {
+        fs.unlinkSync(content.file_path);
+        console.log(`🗑️ Deleted physical file: ${content.file_path}`);
+      }
+    } catch (fileError) {
+      console.warn(`⚠️ Could not delete physical file ${content.file_path}:`, fileError);
+      // Continue with success since database deletion worked
+    }
+
+    res.json({ 
+      success: true, 
+      deleted: result.rows[0],
+      message: `Content "${content.original_name}" deleted successfully`
+    });
+  } catch (error) {
+    console.error('Error deleting content:', error);
+    res.status(500).json({ error: 'Failed to delete content' });
+  }
+});
+
+// Delete text content
+router.delete('/text-content/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await db.query(`
+      DELETE FROM central_text_content 
+      WHERE id = $1 
+      RETURNING *
+    `, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Text content not found' });
+    }
+
+    res.json({ success: true, deleted: result.rows[0] });
+  } catch (error) {
+    console.error('Error deleting text content:', error);
+    res.status(500).json({ error: 'Failed to delete text content' });
   }
 });
 
@@ -310,18 +465,64 @@ router.post('/bundles', async (req, res) => {
   }
 });
 
-// Get bundle contents
+// Get bundle contents with detailed information
 router.get('/bundles/:bundleId/contents', async (req, res) => {
   try {
     const { bundleId } = req.params;
-    
-    const result = await db.query('SELECT * FROM get_bundle_contents($1)', [bundleId]);
-    
-    if (result.rows.length === 0) {
+
+    // Get bundle info
+    const bundleResult = await db.query(`
+      SELECT * FROM content_bundles WHERE id = $1
+    `, [bundleId]);
+
+    if (bundleResult.rows.length === 0) {
       return res.status(404).json({ error: 'Bundle not found' });
     }
 
-    res.json(result.rows[0]);
+    const bundle = bundleResult.rows[0];
+
+    // Get content assignments
+    const contentResult = await db.query(`
+      SELECT 
+        bca.id as assignment_id,
+        bca.assignment_order,
+        bca.created_at as assigned_at,
+        cc.id as content_id,
+        cc.filename,
+        cc.original_name,
+        cc.content_type,
+        cc.file_size,
+        cc.categories as content_categories,
+        cc.tags as content_tags
+      FROM bundle_content_assignments bca
+      JOIN central_content cc ON bca.content_id = cc.id
+      WHERE bca.bundle_id = $1 AND bca.content_id IS NOT NULL
+      ORDER BY bca.assignment_order, bca.created_at
+    `, [bundleId]);
+
+    // Get text assignments
+    const textResult = await db.query(`
+      SELECT 
+        bca.id as assignment_id,
+        bca.assignment_order,
+        bca.created_at as assigned_at,
+        ctc.id as text_content_id,
+        ctc.text_content,
+        ctc.template_name,
+        ctc.categories as text_categories,
+        ctc.tags as text_tags
+      FROM bundle_content_assignments bca
+      JOIN central_text_content ctc ON bca.text_content_id = ctc.id
+      WHERE bca.bundle_id = $1 AND bca.text_content_id IS NOT NULL
+      ORDER BY bca.assignment_order, bca.created_at
+    `, [bundleId]);
+
+    res.json({
+      bundle,
+      content_items: contentResult.rows,
+      text_items: textResult.rows,
+      total_items: contentResult.rows.length + textResult.rows.length
+    });
   } catch (error) {
     console.error('Error fetching bundle contents:', error);
     res.status(500).json({ error: 'Failed to fetch bundle contents' });
@@ -334,50 +535,60 @@ router.post('/bundles/:bundleId/add-content', async (req, res) => {
     const { bundleId } = req.params;
     const { content_id, text_content_id, assignment_order = 0 } = req.body;
 
+    // Validate that at least one content type is provided
     if (!content_id && !text_content_id) {
-      return res.status(400).json({ error: 'Either content_id or text_content_id is required' });
+      return res.status(400).json({ error: 'Either content_id or text_content_id must be provided' });
     }
 
     // Check if bundle exists
-    const bundleResult = await db.query(
-      'SELECT id FROM content_bundles WHERE id = $1',
-      [bundleId]
-    );
-
-    if (bundleResult.rows.length === 0) {
+    const bundleCheck = await db.query('SELECT id FROM content_bundles WHERE id = $1', [bundleId]);
+    if (bundleCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Bundle not found' });
     }
 
+    // Check if content/text exists
     if (content_id) {
-      // Add content to bundle
-      await db.query(`
-        INSERT INTO bundle_content_assignments (bundle_id, content_id, assignment_order, assigned_at, assigned_by)
-        VALUES ($1, $2, $3, CURRENT_TIMESTAMP, 'user')
-        ON CONFLICT (bundle_id, content_id) DO UPDATE SET
-          assignment_order = EXCLUDED.assignment_order,
-          assigned_at = CURRENT_TIMESTAMP
-      `, [bundleId, content_id, assignment_order]);
+      const contentCheck = await db.query('SELECT id FROM central_content WHERE id = $1', [content_id]);
+      if (contentCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Content not found' });
+      }
     }
 
     if (text_content_id) {
-      // Add text content to bundle
-      await db.query(`
-        INSERT INTO bundle_content_assignments (bundle_id, text_content_id, assignment_order, assigned_at, assigned_by)
-        VALUES ($1, $2, $3, CURRENT_TIMESTAMP, 'user')
-        ON CONFLICT (bundle_id, text_content_id) DO UPDATE SET
-          assignment_order = EXCLUDED.assignment_order,
-          assigned_at = CURRENT_TIMESTAMP
-      `, [bundleId, text_content_id, assignment_order]);
+      const textCheck = await db.query('SELECT id FROM central_text_content WHERE id = $1', [text_content_id]);
+      if (textCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Text content not found' });
+      }
     }
 
-    res.json({ success: true, message: 'Content added to bundle successfully' });
+    // Check if assignment already exists
+    const existingAssignment = await db.query(`
+      SELECT id FROM bundle_content_assignments 
+      WHERE bundle_id = $1 AND 
+            (($2::INTEGER IS NOT NULL AND content_id = $2) OR 
+             ($3::INTEGER IS NOT NULL AND text_content_id = $3))
+    `, [bundleId, content_id || null, text_content_id || null]);
+
+    if (existingAssignment.rows.length > 0) {
+      return res.status(409).json({ error: 'Content already assigned to this bundle' });
+    }
+
+    // Add assignment
+    const result = await db.query(`
+      INSERT INTO bundle_content_assignments (
+        bundle_id, content_id, text_content_id, assignment_order
+      ) VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `, [bundleId, content_id || null, text_content_id || null, assignment_order]);
+
+    res.json({ success: true, assignment: result.rows[0] });
   } catch (error) {
     console.error('Error adding content to bundle:', error);
     res.status(500).json({ error: 'Failed to add content to bundle' });
   }
 });
 
-// Remove content from bundle
+// Remove content/text from bundle
 router.delete('/bundles/:bundleId/content/:assignmentId', async (req, res) => {
   try {
     const { bundleId, assignmentId } = req.params;
@@ -392,7 +603,7 @@ router.delete('/bundles/:bundleId/content/:assignmentId', async (req, res) => {
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    res.json({ success: true, deleted: result.rows[0] });
+    res.json({ success: true, removed: result.rows[0] });
   } catch (error) {
     console.error('Error removing content from bundle:', error);
     res.status(500).json({ error: 'Failed to remove content from bundle' });
@@ -424,26 +635,25 @@ router.post('/models/:modelId/assign-bundle', async (req, res) => {
   }
 });
 
-// Get model's assigned bundles
+// Get bundles for a specific model
 router.get('/models/:modelId/bundles', async (req, res) => {
   try {
     const { modelId } = req.params;
+    const { status = 'active' } = req.query;
 
+    // Get all bundles (for now, we'll return all bundles since there's no model-specific assignment yet)
+    // In the future, you might want to add a model_bundles table for model-specific bundle assignments
     const result = await db.query(`
       SELECT 
         cb.*,
-        mba.assignment_type,
-        mba.priority,
-        mba.assigned_at,
         COUNT(DISTINCT bca.content_id) as content_count,
         COUNT(DISTINCT bca.text_content_id) as text_count
-      FROM model_bundle_assignments mba
-      JOIN content_bundles cb ON mba.bundle_id = cb.id
+      FROM content_bundles cb
       LEFT JOIN bundle_content_assignments bca ON cb.id = bca.bundle_id
-      WHERE mba.model_id = $1 AND cb.status = 'active'
-      GROUP BY cb.id, mba.assignment_type, mba.priority, mba.assigned_at
-      ORDER BY mba.priority DESC, mba.assigned_at DESC
-    `, [modelId]);
+      WHERE cb.status = $1
+      GROUP BY cb.id
+      ORDER BY cb.created_at DESC
+    `, [status]);
 
     res.json(result.rows);
   } catch (error) {
@@ -504,8 +714,8 @@ router.post('/sync-model-content', async (req, res) => {
           content.content_type,
           content.file_size,
           content.mime_type,
-          content.categories || [],
-          [], // empty tags for model content
+          JSON.stringify(content.categories || []),
+          JSON.stringify([]), // empty tags for model content
           `model_${content.model_id}`
         ]);
 
@@ -531,8 +741,8 @@ router.post('/sync-model-content', async (req, res) => {
             `, [
               bundleName,
               `Auto-generated bundle for ${content.model_name} model content`,
-              content.categories || [],
-              [],
+              JSON.stringify(content.categories || []),
+              JSON.stringify([]),
               `model_${content.model_id}`
             ]);
 
@@ -580,6 +790,165 @@ router.post('/sync-model-content', async (req, res) => {
       error: 'Failed to sync model content', 
       details: error.message 
     });
+  }
+});
+
+// Delete bundle
+router.delete('/bundles/:bundleId', async (req, res) => {
+  try {
+    const { bundleId } = req.params;
+
+    // First, delete all assignments
+    await db.query(`
+      DELETE FROM bundle_content_assignments WHERE bundle_id = $1
+    `, [bundleId]);
+
+    // Then delete the bundle
+    const result = await db.query(`
+      DELETE FROM content_bundles WHERE id = $1 RETURNING *
+    `, [bundleId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Bundle not found' });
+    }
+
+    res.json({ success: true, deleted: result.rows[0] });
+  } catch (error) {
+    console.error('Error deleting bundle:', error);
+    res.status(500).json({ error: 'Failed to delete bundle' });
+  }
+});
+
+// Batch add content to bundle
+router.post('/bundles/:bundleId/add-content/batch', async (req, res) => {
+  try {
+    const { bundleId } = req.params;
+    const { content_ids = [], text_content_ids = [], assignment_order = 0 } = req.body;
+
+    // Validate that at least one content array is provided
+    if ((!content_ids || content_ids.length === 0) && (!text_content_ids || text_content_ids.length === 0)) {
+      return res.status(400).json({ error: 'At least one content_ids or text_content_ids array must be provided' });
+    }
+
+    // Check if bundle exists
+    const bundleCheck = await db.query('SELECT id FROM content_bundles WHERE id = $1', [bundleId]);
+    if (bundleCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Bundle not found' });
+    }
+
+    const results = {
+      success: [],
+      errors: [],
+      total_processed: 0,
+      total_success: 0,
+      total_errors: 0
+    };
+
+    // Process content items
+    if (content_ids && content_ids.length > 0) {
+      for (const content_id of content_ids) {
+        try {
+          results.total_processed++;
+
+          // Check if content exists
+          const contentCheck = await db.query('SELECT id, original_name FROM central_content WHERE id = $1', [content_id]);
+          if (contentCheck.rows.length === 0) {
+            results.errors.push({ content_id, error: 'Content not found' });
+            results.total_errors++;
+            continue;
+          }
+
+          // Check if assignment already exists
+          const existingAssignment = await db.query(`
+            SELECT id FROM bundle_content_assignments 
+            WHERE bundle_id = $1 AND content_id = $2
+          `, [bundleId, content_id]);
+
+          if (existingAssignment.rows.length > 0) {
+            results.errors.push({ content_id, error: 'Content already assigned to this bundle' });
+            results.total_errors++;
+            continue;
+          }
+
+          // Add assignment
+          const result = await db.query(`
+            INSERT INTO bundle_content_assignments (
+              bundle_id, content_id, assignment_order
+            ) VALUES ($1, $2, $3)
+            RETURNING *
+          `, [bundleId, content_id, assignment_order]);
+
+          results.success.push({ 
+            content_id, 
+            assignment_id: result.rows[0].id,
+            name: contentCheck.rows[0].original_name
+          });
+          results.total_success++;
+
+        } catch (error) {
+          results.errors.push({ content_id, error: error instanceof Error ? error.message : 'Unknown error' });
+          results.total_errors++;
+        }
+      }
+    }
+
+    // Process text content items
+    if (text_content_ids && text_content_ids.length > 0) {
+      for (const text_content_id of text_content_ids) {
+        try {
+          results.total_processed++;
+
+          // Check if text content exists
+          const textCheck = await db.query('SELECT id, text_content FROM central_text_content WHERE id = $1', [text_content_id]);
+          if (textCheck.rows.length === 0) {
+            results.errors.push({ text_content_id, error: 'Text content not found' });
+            results.total_errors++;
+            continue;
+          }
+
+          // Check if assignment already exists
+          const existingAssignment = await db.query(`
+            SELECT id FROM bundle_content_assignments 
+            WHERE bundle_id = $1 AND text_content_id = $2
+          `, [bundleId, text_content_id]);
+
+          if (existingAssignment.rows.length > 0) {
+            results.errors.push({ text_content_id, error: 'Text content already assigned to this bundle' });
+            results.total_errors++;
+            continue;
+          }
+
+          // Add assignment
+          const result = await db.query(`
+            INSERT INTO bundle_content_assignments (
+              bundle_id, text_content_id, assignment_order
+            ) VALUES ($1, $2, $3)
+            RETURNING *
+          `, [bundleId, text_content_id, assignment_order]);
+
+          results.success.push({ 
+            text_content_id, 
+            assignment_id: result.rows[0].id,
+            name: textCheck.rows[0].text_content.substring(0, 50) + '...'
+          });
+          results.total_success++;
+
+        } catch (error) {
+          results.errors.push({ text_content_id, error: error instanceof Error ? error.message : 'Unknown error' });
+          results.total_errors++;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Batch assignment completed: ${results.total_success} successful, ${results.total_errors} errors`,
+      results
+    });
+
+  } catch (error) {
+    console.error('Error in batch content assignment:', error);
+    res.status(500).json({ error: 'Failed to batch assign content to bundle' });
   }
 });
 

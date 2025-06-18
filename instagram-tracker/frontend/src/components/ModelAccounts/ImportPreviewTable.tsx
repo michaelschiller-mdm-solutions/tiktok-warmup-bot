@@ -5,7 +5,7 @@ interface ParsedAccount {
   username: string;
   password?: string;
   email?: string;
-  account_code?: string;
+  token?: string; // Email password
   lineNumber: number;
   originalLine: string;
 }
@@ -105,9 +105,9 @@ const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({ validationResul
                         Has Email
                       </div>
                     )}
-                    {account.account_code && (
+                    {account.token && (
                       <div className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded">
-                        Has Code
+                        Has Token
                       </div>
                     )}
                     {reason && (
@@ -118,7 +118,7 @@ const ImportPreviewTable: React.FC<ImportPreviewTableProps> = ({ validationResul
                   </div>
                   <div className="text-xs text-gray-500">Line #{account.lineNumber}</div>
                 </div>
-                {(account.password || account.email || account.account_code) && (
+                {(account.password || account.email || account.token) && (
                   <div className="mt-2 text-xs text-gray-600 font-mono bg-gray-50 p-2 rounded">
                     {account.originalLine}
                   </div>

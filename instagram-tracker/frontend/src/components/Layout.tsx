@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { BarChart3, Home, Database, Package } from 'lucide-react';
+import { BarChart3, Home, Package, Users, Settings, Smartphone } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -11,9 +11,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home },
-    { name: 'Models', href: '/models', icon: Database },
+    { name: 'Models', href: '/models', icon: Settings },
+    { name: 'All Accounts', href: '/accounts', icon: Users },
     { name: 'Content Registry', href: '/content', icon: Package },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
+    { name: 'iPhone Settings', href: '/iphones', icon: Smartphone },
   ];
 
   const isActive = (href: string) => {
@@ -27,9 +29,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         {/* Logo */}
         <div className="flex h-16 items-center px-6 border-b border-gray-200">
           <div className="flex items-center">
-            <Database className="h-8 w-8 text-primary-600" />
-            <span className="ml-2 text-xl font-bold text-gray-900">
-              Instagram Tracker
+            <img 
+              src="/logo.png" 
+              alt="NoduNet Logo" 
+              className="h-8 w-8 object-contain"
+            />
+            <span className="ml-3 text-xl font-bold text-gray-900">
+              NoduNet - Marketing
             </span>
           </div>
         </div>

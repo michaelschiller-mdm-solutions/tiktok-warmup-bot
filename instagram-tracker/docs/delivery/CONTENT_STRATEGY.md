@@ -172,7 +172,116 @@ interface TextPoolStructure {
 }
 ```
 
+## **Central Content Registry System**
+
+### **Overview**
+The Central Content Registry provides a unified content management system that enables cross-model content sharing, efficient batch operations, and organized content bundling for different campaign types.
+
+### **Key Features**
+
+#### **1. Centralized Content Storage**
+- **Unified Repository**: Single location for all content assets across models
+- **Cross-Model Sharing**: Content can be reused across multiple campaigns
+- **Flexible Categorization**: JSONB-based tagging and categorization system
+- **Mixed Media Support**: Images, videos, and text content in unified interface
+
+#### **2. Content Bundle Management**
+```typescript
+interface ContentBundle {
+  id: number;
+  name: string;
+  description: string;
+  bundle_type: 'mixed' | 'images_only' | 'text_only';
+  categories: string[];
+  tags: string[];
+  content_items: Array<{
+    type: 'image' | 'video' | 'text';
+    id: number;
+    assignment_order: number;
+  }>;
+}
+```
+
+#### **3. Batch Operations**
+- **Multi-Select Interface**: Select multiple content items simultaneously
+- **Batch Assignment**: Assign multiple items to multiple bundles at once
+- **Conflict Detection**: Prevent duplicate assignments with clear feedback
+- **Progress Tracking**: Real-time feedback on batch operation results
+
+#### **4. Enhanced Upload Experience**
+- **Per-File Customization**: Individual settings for each uploaded file
+- **Bundle Assignment During Upload**: Assign content to bundles during upload
+- **Split-Panel Interface**: Global settings with per-file overrides
+- **Visual Preview**: Thumbnail previews with status indicators
+
+### **Content Organization Hierarchy**
+
+```
+Central Content Registry
+├── Content Library (Images/Videos)
+│   ├── Individual Content Items
+│   │   ├── Categories: ["fashion", "lifestyle", "summer"]
+│   │   ├── Tags: ["outfit", "trendy", "casual"]
+│   │   └── Bundle Assignments: [Bundle1, Bundle2]
+│   └── Batch Operations
+├── Content Bundles
+│   ├── Bundle Creation/Management
+│   ├── Bundle Contents View
+│   └── Bundle Assignment Operations
+└── Text Library
+    ├── Text Content Items
+    │   ├── Categories: ["bio", "post", "story"]
+    │   ├── Template Names
+    │   └── Language Settings
+    └── Text Management Operations
+```
+
+### **Integration with Model Content Management**
+
+#### **Bundle Selection Interface**
+Models can now select content from two sources:
+1. **Model-Specific Content**: Traditional model-only content
+2. **Central Content Bundles**: Shared content bundles from central registry
+
+```typescript
+interface ModelContentSource {
+  type: 'model_content' | 'central_bundles';
+  source_id?: number; // Bundle ID for central bundles
+  content_items: ContentItem[];
+}
+```
+
+#### **Content Assignment Priority**
+1. **Bundle Content**: Content from assigned bundles (higher priority)
+2. **Model Content**: Model-specific content (fallback)
+3. **Template Content**: Default template content (last resort)
+
 ## **Content Assignment Algorithms**
+
+### **Enhanced Assignment Logic with Bundle Support**
+
+#### **Step 1: Content Source Selection**
+```typescript
+const getContentForAssignment = async (accountId: number, modelId: number, contentType: string) => {
+  // 1. Check for assigned bundles
+  const bundles = await getModelBundles(modelId);
+  if (bundles.length > 0) {
+    const bundleContent = await getBundleContent(bundles, contentType);
+    if (bundleContent.length > 0) {
+      return selectFromBundleContent(bundleContent, accountId);
+    }
+  }
+  
+  // 2. Fallback to model-specific content
+  const modelContent = await getModelContent(modelId, contentType);
+  if (modelContent.length > 0) {
+    return selectFromModelContent(modelContent, accountId);
+  }
+  
+  // 3. Use template content as last resort
+  return getTemplateContent(contentType);
+};
+```
 
 ### **Warm-up Content Assignment**
 

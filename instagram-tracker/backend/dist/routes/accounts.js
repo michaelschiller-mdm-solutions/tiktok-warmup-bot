@@ -1,14 +1,397 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const database_1 = require("../database");
+const lifecycle_1 = __importDefault(require("./accounts/lifecycle"));
 const router = express_1.default.Router();
+router.use('/lifecycle', lifecycle_1.default);
+router.get('/statistics', async (req, res) => {
+    try {
+        const query = `
+      SELECT 
+        COUNT(*) as total_accounts,
+        COUNT(CASE WHEN a.model_id IS NOT NULL THEN 1 END) as assigned_accounts,
+        COUNT(CASE WHEN a.model_id IS NULL THEN 1 END) as unassigned_accounts,
+        COUNT(DISTINCT a.model_id) FILTER (WHERE a.model_id IS NOT NULL) as total_models,
+        COUNT(CASE WHEN a.lifecycle_state = 'imported' THEN 1 END) as imported_accounts,
+        COUNT(CASE WHEN a.lifecycle_state = 'warmup' THEN 1 END) as warmup_accounts,
+        COUNT(CASE WHEN a.lifecycle_state = 'ready' THEN 1 END) as ready_accounts,
+        COUNT(CASE WHEN a.lifecycle_state = 'active' THEN 1 END) as active_accounts,
+        COUNT(CASE WHEN a.status = 'active' THEN 1 END) as active_status_accounts,
+        COUNT(CASE WHEN a.status = 'banned' THEN 1 END) as banned_accounts,
+        COUNT(CASE WHEN a.status = 'suspended' THEN 1 END) as suspended_accounts,
+        COUNT(CASE WHEN a.requires_human_review = true THEN 1 END) as accounts_needing_review,
+        COUNT(CASE WHEN a.proxy_id IS NOT NULL THEN 1 END) as accounts_with_proxy,
+        MAX(a.created_at) as latest_import_date
+      FROM accounts a
+    `;
+        const result = await database_1.db.query(query);
+        const stats = result.rows[0];
+        const lifecycleQuery = `
+      SELECT 
+        lifecycle_state,
+        COUNT(*) as count
+      FROM accounts 
+      GROUP BY lifecycle_state
+      ORDER BY count DESC
+    `;
+        const lifecycleResult = await database_1.db.query(lifecycleQuery);
+        const modelQuery = `
+      SELECT 
+        COALESCE(m.name, 'Unassigned') as model_name,
+        COUNT(a.id) as account_count
+      FROM accounts a
+      LEFT JOIN models m ON a.model_id = m.id
+      GROUP BY m.id, m.name
+      ORDER BY account_count DESC
+    `;
+        const modelResult = await database_1.db.query(modelQuery);
+        res.json({
+            success: true,
+            data: {
+                overview: {
+                    total_accounts: parseInt(stats.total_accounts) || 0,
+                    assigned_accounts: parseInt(stats.assigned_accounts) || 0,
+                    unassigned_accounts: parseInt(stats.unassigned_accounts) || 0,
+                    total_models: parseInt(stats.total_models) || 0,
+                    latest_import_date: stats.latest_import_date
+                },
+                lifecycle_states: {
+                    imported: parseInt(stats.imported_accounts) || 0,
+                    warmup: parseInt(stats.warmup_accounts) || 0,
+                    ready: parseInt(stats.ready_accounts) || 0,
+                    active: parseInt(stats.active_accounts) || 0
+                },
+                account_status: {
+                    active: parseInt(stats.active_status_accounts) || 0,
+                    banned: parseInt(stats.banned_accounts) || 0,
+                    suspended: parseInt(stats.suspended_accounts) || 0,
+                    needs_review: parseInt(stats.accounts_needing_review) || 0
+                },
+                infrastructure: {
+                    accounts_with_proxy: parseInt(stats.accounts_with_proxy) || 0,
+                    proxy_coverage_percent: stats.total_accounts > 0 ?
+                        Math.round((parseInt(stats.accounts_with_proxy) / parseInt(stats.total_accounts)) * 100) : 0
+                },
+                breakdown: {
+                    by_lifecycle: lifecycleResult.rows.map(row => ({
+                        state: row.lifecycle_state,
+                        count: parseInt(row.count)
+                    })),
+                    by_model: modelResult.rows.map(row => ({
+                        model_name: row.model_name,
+                        count: parseInt(row.account_count)
+                    }))
+                }
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error fetching account statistics:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: 'Failed to fetch account statistics'
+        });
+    }
+});
+router.post('/assign-to-model', async (req, res) => {
+    try {
+        const { account_ids, model_id } = req.body;
+        if (!account_ids || !Array.isArray(account_ids) || account_ids.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation Error',
+                message: 'account_ids array is required'
+            });
+        }
+        if (!model_id || typeof model_id !== 'number') {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation Error',
+                message: 'model_id is required and must be a number'
+            });
+        }
+        const modelCheck = await database_1.db.query('SELECT id, name FROM models WHERE id = $1', [model_id]);
+        if (modelCheck.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Not Found',
+                message: `Model with ID ${model_id} does not exist`
+            });
+        }
+        const model = modelCheck.rows[0];
+        const results = [];
+        let successCount = 0;
+        let failedCount = 0;
+        for (const accountId of account_ids) {
+            try {
+                const accountResult = await database_1.db.query('SELECT id, username, model_id, lifecycle_state FROM accounts WHERE id = $1', [accountId]);
+                if (accountResult.rows.length === 0) {
+                    results.push({
+                        account_id: accountId,
+                        success: false,
+                        error: 'Account not found'
+                    });
+                    failedCount++;
+                    continue;
+                }
+                const account = accountResult.rows[0];
+                await database_1.db.query(`
+          UPDATE accounts 
+          SET model_id = $2, 
+              assigned_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [accountId, model_id]);
+                if (account.lifecycle_state === 'imported') {
+                    try {
+                        await database_1.db.query('SELECT initialize_warmup_phases_with_content($1)', [accountId]);
+                        try {
+                            const { ProxyAssignmentService } = await Promise.resolve().then(() => __importStar(require('../services/ProxyAssignmentService')));
+                            const proxyService = new ProxyAssignmentService();
+                            const proxyResult = await proxyService.assignProxyToAccount(accountId);
+                            if (proxyResult.success) {
+                                console.log(`Proxy assigned to account ${accountId}: ${proxyResult.message}`);
+                            }
+                        }
+                        catch (proxyError) {
+                            console.warn(`Proxy assignment failed for account ${accountId}:`, proxyError);
+                        }
+                    }
+                    catch (contentError) {
+                        console.warn(`Content assignment failed for account ${accountId}:`, contentError);
+                    }
+                }
+                results.push({
+                    account_id: accountId,
+                    username: account.username,
+                    success: true,
+                    previous_model_id: account.model_id,
+                    new_model_id: model_id
+                });
+                successCount++;
+            }
+            catch (error) {
+                console.error(`Error assigning account ${accountId} to model:`, error);
+                results.push({
+                    account_id: accountId,
+                    success: false,
+                    error: error.message || 'Unknown error occurred'
+                });
+                failedCount++;
+            }
+        }
+        res.json({
+            success: true,
+            message: `Model assignment completed: ${successCount} successful, ${failedCount} failed`,
+            data: {
+                model_id: model_id,
+                model_name: model.name,
+                total_processed: account_ids.length,
+                successful: successCount,
+                failed: failedCount,
+                results: results
+            }
+        });
+    }
+    catch (error) {
+        console.error('Assign accounts to model error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: error.message || 'Failed to assign accounts to model'
+        });
+    }
+});
+router.put('/:id/assign-model', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { model_id } = req.body;
+        if (!model_id || typeof model_id !== 'number') {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation Error',
+                message: 'model_id is required and must be a number'
+            });
+        }
+        const accountResult = await database_1.db.query('SELECT id, username, model_id, lifecycle_state FROM accounts WHERE id = $1', [id]);
+        if (accountResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Not Found',
+                message: 'Account not found'
+            });
+        }
+        const modelResult = await database_1.db.query('SELECT id, name FROM models WHERE id = $1', [model_id]);
+        if (modelResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Not Found',
+                message: 'Model not found'
+            });
+        }
+        const account = accountResult.rows[0];
+        const model = modelResult.rows[0];
+        await database_1.db.query(`
+      UPDATE accounts 
+      SET model_id = $2, 
+          assigned_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+    `, [id, model_id]);
+        if (account.lifecycle_state === 'imported') {
+            try {
+                await database_1.db.query('SELECT initialize_warmup_phases_with_content($1)', [id]);
+                try {
+                    const { ProxyAssignmentService } = await Promise.resolve().then(() => __importStar(require('../services/ProxyAssignmentService')));
+                    const proxyService = new ProxyAssignmentService();
+                    await proxyService.assignProxyToAccount(parseInt(id));
+                }
+                catch (proxyError) {
+                    console.warn(`Proxy assignment failed for account ${id}:`, proxyError);
+                }
+            }
+            catch (contentError) {
+                console.warn(`Content assignment failed for account ${id}:`, contentError);
+            }
+        }
+        res.json({
+            success: true,
+            message: `Account ${account.username} assigned to model ${model.name}`,
+            data: {
+                account_id: parseInt(id),
+                username: account.username,
+                previous_model_id: account.model_id,
+                new_model_id: model_id,
+                model_name: model.name
+            }
+        });
+    }
+    catch (error) {
+        console.error('Assign account to model error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: error.message || 'Failed to assign account to model'
+        });
+    }
+});
+router.get('/unassigned', async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search, lifecycle_state, status, sort_by = 'created_at', sort_order = 'DESC' } = req.query;
+        let whereConditions = ['a.model_id IS NULL'];
+        let params = [];
+        let paramIndex = 1;
+        if (lifecycle_state) {
+            whereConditions.push(`a.lifecycle_state = $${paramIndex}`);
+            params.push(lifecycle_state);
+            paramIndex++;
+        }
+        if (status) {
+            whereConditions.push(`a.status = $${paramIndex}`);
+            params.push(status);
+            paramIndex++;
+        }
+        if (search) {
+            whereConditions.push(`(a.username ILIKE $${paramIndex} OR a.email ILIKE $${paramIndex})`);
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+        const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const query = `
+      SELECT 
+        a.id,
+        a.username,
+        a.email,
+        a.password,
+        a.account_code as email_password,
+        a.status,
+        a.lifecycle_state,
+        a.created_at,
+        a.updated_at,
+        a.proxy_host,
+        a.proxy_port,
+        a.proxy_username,
+        a.proxy_provider,
+        a.proxy_status
+      FROM accounts a
+      ${whereClause}
+      ORDER BY a.${sort_by} ${sort_order.toUpperCase()}
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+        params.push(parseInt(limit));
+        params.push(offset);
+        const result = await database_1.db.query(query, params);
+        const countQuery = `
+      SELECT COUNT(*) as total_count
+      FROM accounts a
+      ${whereClause}
+    `;
+        const countResult = await database_1.db.query(countQuery, params.slice(0, -2));
+        const totalCount = parseInt(countResult.rows[0].total_count);
+        res.json({
+            success: true,
+            data: result.rows,
+            metadata: {
+                total_records: totalCount,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total_pages: Math.ceil(totalCount / parseInt(limit)),
+                has_next: (parseInt(page) * parseInt(limit)) < totalCount,
+                has_previous: parseInt(page) > 1
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error fetching unassigned accounts:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: 'Failed to fetch unassigned accounts'
+        });
+    }
+});
 router.get('/', async (req, res) => {
     try {
-        const { model_id, status, content_type, niche, proxy_provider, proxy_status, page = 1, limit = 50, sort_by = 'created_at', sort_order = 'desc', search } = req.query;
+        const { model_id, status, lifecycle_state, content_type, niche, proxy_provider, proxy_status, page = 1, limit = 50, sort_by = 'created_at', sort_order = 'desc', search } = req.query;
         let whereConditions = [];
         let params = [];
         let paramIndex = 1;
@@ -21,6 +404,12 @@ router.get('/', async (req, res) => {
             const statusArray = Array.isArray(status) ? status : [status];
             whereConditions.push(`a.status = ANY($${paramIndex})`);
             params.push(statusArray);
+            paramIndex++;
+        }
+        if (lifecycle_state) {
+            const lifecycleStateArray = Array.isArray(lifecycle_state) ? lifecycle_state : [lifecycle_state];
+            whereConditions.push(`a.lifecycle_state = ANY($${paramIndex})`);
+            params.push(lifecycleStateArray);
             paramIndex++;
         }
         if (content_type) {
@@ -39,8 +428,9 @@ router.get('/', async (req, res) => {
             paramIndex++;
         }
         if (proxy_status) {
-            whereConditions.push(`a.proxy_status = $${paramIndex}`);
-            params.push(proxy_status);
+            const proxyStatusArray = Array.isArray(proxy_status) ? proxy_status : [proxy_status];
+            whereConditions.push(`a.proxy_status = ANY($${paramIndex})`);
+            params.push(proxyStatusArray);
             paramIndex++;
         }
         if (search) {
@@ -55,6 +445,12 @@ router.get('/', async (req, res) => {
         a.*,
         m.name as model_name,
         ma.username as mother_account_username,
+        -- New fields for warmup pipeline
+        a.container_number,
+        -- Account password (stored in plain text)
+        a.password,
+        -- Email password (stored in account_code field)
+        a.account_code as email_password,
         -- Performance metrics (calculated in real-time if needed)
         COALESCE(a.follow_back_rate, 0) as follow_back_rate,
         COALESCE(a.conversion_rate, 0) as conversion_rate,
@@ -82,7 +478,8 @@ router.get('/', async (req, res) => {
       ORDER BY a.${sort_by} ${sort_order.toUpperCase()}
       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
-        params.push(parseInt(limit), offset);
+        params.push(parseInt(limit));
+        params.push(offset);
         const result = await database_1.db.query(query, params);
         const countQuery = `
       SELECT COUNT(*) as total_count
@@ -113,12 +510,142 @@ router.get('/', async (req, res) => {
         });
     }
 });
+router.get('/all-fields', async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search, model_id, lifecycle_state, status, sort_by = 'created_at', sort_order = 'DESC' } = req.query;
+        let whereConditions = [];
+        let params = [];
+        let paramIndex = 1;
+        if (model_id) {
+            whereConditions.push(`a.model_id = $${paramIndex}`);
+            params.push(model_id);
+            paramIndex++;
+        }
+        if (lifecycle_state) {
+            whereConditions.push(`a.lifecycle_state = $${paramIndex}`);
+            params.push(lifecycle_state);
+            paramIndex++;
+        }
+        if (status) {
+            whereConditions.push(`a.status = $${paramIndex}`);
+            params.push(status);
+            paramIndex++;
+        }
+        if (search) {
+            whereConditions.push(`(a.username ILIKE $${paramIndex} OR a.display_name ILIKE $${paramIndex} OR a.email ILIKE $${paramIndex})`);
+            params.push(`%${search}%`);
+            paramIndex++;
+        }
+        const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const query = `
+      SELECT 
+        a.id,
+        a.model_id,
+        a.username,
+        a.password,
+        a.email,
+        a.account_code as email_password,
+        a.display_name,
+        a.bio,
+        a.status,
+        a.creation_date,
+        a.device_info,
+        a.profile_picture_url,
+        a.location,
+        a.birth_date,
+        a.last_activity,
+        a.created_at,
+        a.updated_at,
+        a.content_type,
+        a.campus,
+        a.niche,
+        a.cta_text,
+        a.mother_account_id,
+        a.proxy_host,
+        a.proxy_port,
+        a.proxy_username,
+        a.proxy_password_encrypted,
+        a.proxy_provider,
+        a.proxy_status,
+        a.proxy_location,
+        a.proxy_last_checked,
+        a.adspower_profile_id,
+        a.cupid_profile_id,
+        a.cupid_system_prompt,
+        a.follow_back_rate,
+        a.conversion_rate,
+        a.total_follows,
+        a.total_conversions,
+        a.last_activity_check,
+        a.monthly_cost,
+        a.lifecycle_state,
+        a.state_changed_at,
+        a.state_changed_by,
+        a.state_notes,
+        a.last_bot_action_by,
+        a.last_bot_action_at,
+        a.requires_human_review,
+        a.last_error_message,
+        a.last_error_at,
+        a.cooldown_until,
+        a.warmup_completed_phases,
+        a.container_number,
+        a.proxy_id,
+        a.proxy_assigned_at,
+        -- Additional computed fields
+        m.name as model_name,
+        ma.username as mother_account_username,
+        -- Proxy password (encrypted - will be decrypted on frontend if needed)
+        a.proxy_password_encrypted
+      FROM accounts a
+      LEFT JOIN models m ON a.model_id = m.id
+      LEFT JOIN accounts ma ON a.mother_account_id = ma.id
+      ${whereClause}
+      ORDER BY a.${sort_by} ${sort_order.toUpperCase()}
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+        params.push(parseInt(limit), offset);
+        const result = await database_1.db.query(query, params);
+        const countQuery = `
+      SELECT COUNT(*) as total_count
+      FROM accounts a
+      ${whereClause}
+    `;
+        const countResult = await database_1.db.query(countQuery, params.slice(0, -2));
+        const totalCount = parseInt(countResult.rows[0].total_count);
+        res.json({
+            success: true,
+            data: result.rows,
+            metadata: {
+                total_records: totalCount,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total_pages: Math.ceil(totalCount / parseInt(limit)),
+                has_next: (parseInt(page) * parseInt(limit)) < totalCount,
+                has_previous: parseInt(page) > 1
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error fetching accounts with all fields:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: 'Failed to fetch accounts'
+        });
+    }
+});
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const query = `
       SELECT 
         a.*,
+        -- Account password (stored in plain text)
+        a.password,
+        -- Email password (stored in account_code field)
+        a.account_code as email_password,
         m.name as model_name,
         ma.username as mother_account_username,
         -- Dynamic columns data
@@ -182,15 +709,17 @@ router.get('/:id', async (req, res) => {
 });
 router.post('/', async (req, res) => {
     try {
-        const { model_id, username, password, email, account_code, display_name, bio, content_type, campus, niche, cta_text, mother_account_id, proxy_host, proxy_port, proxy_username, proxy_password, proxy_provider, proxy_location, adspower_profile_id, cupid_profile_id, cupid_system_prompt, monthly_cost = 0 } = req.body;
+        const { model_id, username, password, email, email_password, container_number, account_code, display_name, bio, content_type, campus, niche, cta_text, mother_account_id, proxy_host, proxy_port, proxy_username, proxy_password, proxy_provider, proxy_location, adspower_profile_id, cupid_profile_id, cupid_system_prompt, monthly_cost = 0 } = req.body;
         let encryptedProxyPassword = null;
         if (proxy_password) {
             const encryptResult = await database_1.db.query('SELECT encrypt_proxy_password($1) as encrypted', [proxy_password]);
             encryptedProxyPassword = encryptResult.rows[0].encrypted;
         }
+        const emailPasswordForAccountCode = email_password || account_code;
         const insertQuery = `
       INSERT INTO accounts (
-        model_id, username, password, email, account_code, display_name, bio,
+        model_id, username, password, email, container_number,
+        account_code, display_name, bio,
         content_type, campus, niche, cta_text, mother_account_id,
         proxy_host, proxy_port, proxy_username, proxy_password_encrypted, 
         proxy_provider, proxy_location, proxy_status,
@@ -202,7 +731,8 @@ router.post('/', async (req, res) => {
       ) RETURNING *
     `;
         const result = await database_1.db.query(insertQuery, [
-            model_id, username, password, email, account_code, display_name, bio,
+            model_id, username, password, email, container_number,
+            emailPasswordForAccountCode, display_name, bio,
             content_type, campus, niche, cta_text, mother_account_id,
             proxy_host, proxy_port, proxy_username, encryptedProxyPassword,
             proxy_provider, proxy_location, 'unknown',
@@ -256,6 +786,10 @@ router.put('/:id', async (req, res) => {
             updateData.proxy_password_encrypted = encryptResult.rows[0].encrypted;
             delete updateData.proxy_password;
         }
+        if (updateData.email_password) {
+            updateData.account_code = updateData.email_password;
+            delete updateData.email_password;
+        }
         const updateFields = Object.keys(updateData).filter(key => key !== 'id');
         const setClause = updateFields.map((field, index) => `${field} = $${index + 2}`).join(', ');
         const values = [id, ...updateFields.map(field => updateData[field])];
@@ -292,6 +826,69 @@ router.put('/:id', async (req, res) => {
             success: false,
             error: 'Internal Server Error',
             message: 'Failed to update account'
+        });
+    }
+});
+router.delete('/batch', async (req, res) => {
+    try {
+        const { account_ids } = req.body;
+        if (!account_ids || !Array.isArray(account_ids) || account_ids.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Validation Error',
+                message: 'account_ids array is required'
+            });
+        }
+        const results = [];
+        let successCount = 0;
+        let failedCount = 0;
+        for (const accountId of account_ids) {
+            try {
+                const result = await database_1.db.query('DELETE FROM accounts WHERE id = $1 RETURNING username', [accountId]);
+                if (result.rows.length > 0) {
+                    results.push({
+                        account_id: accountId,
+                        username: result.rows[0].username,
+                        success: true
+                    });
+                    successCount++;
+                }
+                else {
+                    results.push({
+                        account_id: accountId,
+                        success: false,
+                        error: 'Account not found'
+                    });
+                    failedCount++;
+                }
+            }
+            catch (error) {
+                console.error(`Error deleting account ${accountId}:`, error);
+                results.push({
+                    account_id: accountId,
+                    success: false,
+                    error: error.message || 'Unknown error occurred'
+                });
+                failedCount++;
+            }
+        }
+        res.json({
+            success: true,
+            message: `Batch delete completed: ${successCount} successful, ${failedCount} failed`,
+            data: {
+                total_processed: account_ids.length,
+                successful: successCount,
+                failed: failedCount,
+                results: results
+            }
+        });
+    }
+    catch (error) {
+        console.error('Batch delete error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: error.message || 'Failed to delete accounts'
         });
     }
 });
@@ -482,6 +1079,406 @@ router.post('/:id/test-proxy', async (req, res) => {
             success: false,
             error: 'Internal Server Error',
             message: 'Failed to test proxy'
+        });
+    }
+});
+router.get('/content-assignment-status', async (req, res) => {
+    try {
+        const { model_id, lifecycle_state = 'warmup,ready,active' } = req.query;
+        let query = `
+      SELECT * FROM account_content_assignment_status
+      WHERE lifecycle_state = ANY($1::text[])
+    `;
+        const params = [lifecycle_state.split(',')];
+        if (model_id) {
+            query += ` AND model_id = $${params.length + 1}`;
+            params.push(parseInt(model_id));
+        }
+        query += ` ORDER BY account_id`;
+        const result = await database_1.db.query(query, params);
+        res.json({
+            success: true,
+            data: result.rows,
+            summary: {
+                total_accounts: result.rows.length,
+                complete_assignments: result.rows.filter(row => row.content_assignment_complete).length,
+                incomplete_assignments: result.rows.filter(row => !row.content_assignment_complete).length
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error fetching content assignment status:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch content assignment status'
+        });
+    }
+});
+router.post('/:id/assign-content', async (req, res) => {
+    try {
+        const accountId = parseInt(req.params.id);
+        if (isNaN(accountId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid account ID'
+            });
+        }
+        const accountResult = await database_1.db.query('SELECT id, username FROM accounts WHERE id = $1', [accountId]);
+        if (accountResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Account not found'
+            });
+        }
+        const result = await database_1.db.query('SELECT assign_content_to_all_phases($1) as assigned_count', [accountId]);
+        const assignedCount = result.rows[0].assigned_count;
+        res.json({
+            success: true,
+            data: {
+                account_id: accountId,
+                username: accountResult.rows[0].username,
+                assigned_phases: assignedCount
+            },
+            message: `Content assigned to ${assignedCount} phases for account ${accountId}`
+        });
+    }
+    catch (error) {
+        console.error('Error assigning content to account:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to assign content to account'
+        });
+    }
+});
+router.post('/bulk-assign-content', async (req, res) => {
+    try {
+        const { account_ids, model_id } = req.body;
+        if (!Array.isArray(account_ids) || account_ids.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'account_ids must be a non-empty array'
+            });
+        }
+        const validIds = account_ids.filter(id => Number.isInteger(id) && id > 0);
+        if (validIds.length !== account_ids.length) {
+            return res.status(400).json({
+                success: false,
+                error: 'All account_ids must be positive integers'
+            });
+        }
+        let accountFilter = 'id = ANY($1::int[])';
+        const params = [validIds];
+        if (model_id) {
+            accountFilter += ' AND model_id = $2';
+            params.push(parseInt(model_id));
+        }
+        const accountsResult = await database_1.db.query(`
+      SELECT id, username FROM accounts WHERE ${accountFilter}
+    `, params);
+        const existingAccounts = accountsResult.rows;
+        const results = [];
+        for (const account of existingAccounts) {
+            try {
+                const result = await database_1.db.query('SELECT assign_content_to_all_phases($1) as assigned_count', [account.id]);
+                const assignedCount = result.rows[0].assigned_count;
+                results.push({
+                    account_id: account.id,
+                    username: account.username,
+                    success: true,
+                    assigned_phases: assignedCount
+                });
+            }
+            catch (error) {
+                results.push({
+                    account_id: account.id,
+                    username: account.username,
+                    success: false,
+                    error: error.message || 'Unknown error'
+                });
+            }
+        }
+        const successCount = results.filter(r => r.success).length;
+        const totalAssigned = results.reduce((sum, r) => sum + (r.assigned_phases || 0), 0);
+        res.json({
+            success: true,
+            data: {
+                processed_accounts: results.length,
+                successful_assignments: successCount,
+                failed_assignments: results.length - successCount,
+                total_phases_assigned: totalAssigned,
+                results: results
+            },
+            message: `Bulk content assignment completed: ${successCount}/${results.length} accounts processed successfully`
+        });
+    }
+    catch (error) {
+        console.error('Error in bulk content assignment:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to perform bulk content assignment'
+        });
+    }
+});
+router.get('/:id/warmup-status', async (req, res) => {
+    try {
+        const accountId = parseInt(req.params.id);
+        if (isNaN(accountId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid account ID'
+            });
+        }
+        const accountResult = await database_1.db.query(`
+        SELECT 
+          id, username, password, email, 
+          account_code as email_password,
+          container_number,
+          proxy_host, proxy_port, proxy_username, 
+          decrypt_proxy_password(proxy_password_encrypted) as proxy_password,
+          lifecycle_state, status
+        FROM accounts 
+        WHERE id = $1
+      `, [accountId]);
+        if (accountResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Account not found'
+            });
+        }
+        const account = accountResult.rows[0];
+        const { WarmupProcessService } = await Promise.resolve().then(() => __importStar(require('../services/WarmupProcessService')));
+        const warmupService = new WarmupProcessService();
+        const warmupStatus = await warmupService.getWarmupStatus(accountId);
+        const response = {
+            ...warmupStatus,
+            account_details: {
+                username: account.username,
+                password: account.password,
+                email: account.email,
+                email_password: account.email_password,
+                container_number: account.container_number,
+                proxy: account.proxy_host && account.proxy_port ?
+                    `${account.proxy_host}:${account.proxy_port}` : null,
+                proxy_username: account.proxy_username,
+                proxy_password: account.proxy_password,
+                lifecycle_state: account.lifecycle_state,
+                status: account.status
+            }
+        };
+        res.json({
+            success: true,
+            data: response
+        });
+    }
+    catch (error) {
+        console.error('Error fetching warmup status:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: error instanceof Error ? error.message : 'Failed to fetch warmup status'
+        });
+    }
+});
+router.post('/:id/complete-manual-setup', async (req, res) => {
+    try {
+        const accountId = parseInt(req.params.id);
+        const { user_id = 'frontend-user' } = req.body;
+        if (isNaN(accountId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid account ID'
+            });
+        }
+        const { WarmupProcessService } = await Promise.resolve().then(() => __importStar(require('../services/WarmupProcessService')));
+        const warmupService = new WarmupProcessService();
+        const result = await warmupService.completeManualSetup(accountId, user_id);
+        res.json({
+            success: result.success,
+            data: result,
+            message: result.message
+        });
+    }
+    catch (error) {
+        console.error('Error completing manual setup:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: error instanceof Error ? error.message : 'Failed to complete manual setup'
+        });
+    }
+});
+router.post('/:id/mark-invalid', async (req, res) => {
+    try {
+        const accountId = parseInt(req.params.id);
+        const { reason = 'Marked as invalid by user' } = req.body;
+        if (isNaN(accountId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid account ID'
+            });
+        }
+        const accountResult = await database_1.db.query(`
+      SELECT id, username, proxy_host, proxy_port, container_number, lifecycle_state
+      FROM accounts WHERE id = $1
+    `, [accountId]);
+        if (accountResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Account not found'
+            });
+        }
+        const account = accountResult.rows[0];
+        const client = await database_1.db.connect();
+        try {
+            await client.query('BEGIN');
+            await client.query(`
+        UPDATE accounts 
+        SET 
+          lifecycle_state = 'invalid',
+          status = 'inactive',
+          proxy_host = NULL,
+          proxy_port = NULL,
+          proxy_username = NULL,
+          proxy_password_encrypted = NULL,
+          proxy_provider = NULL,
+          proxy_location = NULL,
+          proxy_status = NULL,
+          container_number = NULL,
+          state_changed_at = CURRENT_TIMESTAMP,
+          state_changed_by = $2,
+          last_error_message = $3,
+          last_error_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [accountId, 'frontend-user', reason]);
+            await client.query(`
+        UPDATE account_warmup_phases 
+        SET 
+          status = 'cancelled',
+          error_message = 'Account marked as invalid',
+          updated_at = CURRENT_TIMESTAMP
+        WHERE account_id = $1 
+          AND status IN ('pending', 'available', 'in_progress')
+      `, [accountId]);
+            console.log(`Account ${accountId} (${account.username}) marked as invalid: ${reason}`);
+            await client.query('COMMIT');
+            res.json({
+                success: true,
+                data: {
+                    account_id: accountId,
+                    username: account.username,
+                    previous_state: account.lifecycle_state,
+                    new_state: 'invalid',
+                    freed_proxy: account.proxy_host ? `${account.proxy_host}:${account.proxy_port}` : null,
+                    freed_container: account.container_number,
+                    reason: reason
+                },
+                message: `Account ${account.username} marked as invalid. Proxy and container resources freed.`
+            });
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
+    catch (error) {
+        console.error('Error marking account as invalid:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: error instanceof Error ? error.message : 'Failed to mark account as invalid'
+        });
+    }
+});
+router.get('/warmup/ready', async (req, res) => {
+    try {
+        const { model_id, limit = 50 } = req.query;
+        const { WarmupProcessService } = await Promise.resolve().then(() => __importStar(require('../services/WarmupProcessService')));
+        const warmupService = new WarmupProcessService();
+        const accounts = await warmupService.getReadyAccounts(model_id ? parseInt(model_id) : undefined, parseInt(limit));
+        res.json({
+            success: true,
+            data: accounts
+        });
+    }
+    catch (error) {
+        console.error('Error fetching ready accounts:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: error instanceof Error ? error.message : 'Failed to fetch ready accounts'
+        });
+    }
+});
+router.delete('/batch', async (req, res) => {
+    try {
+        const { account_ids } = req.body;
+        if (!account_ids || !Array.isArray(account_ids) || account_ids.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Account IDs array is required'
+            });
+        }
+        const results = [];
+        let successCount = 0;
+        let failedCount = 0;
+        for (const accountId of account_ids) {
+            try {
+                const accountResult = await database_1.db.query('SELECT id, username FROM accounts WHERE id = $1', [accountId]);
+                if (accountResult.rows.length === 0) {
+                    results.push({
+                        account_id: accountId,
+                        success: false,
+                        error: 'Account not found'
+                    });
+                    failedCount++;
+                    continue;
+                }
+                const account = accountResult.rows[0];
+                await database_1.db.query('BEGIN');
+                await database_1.db.query('DELETE FROM account_warmup_phases WHERE account_id = $1', [accountId]);
+                await database_1.db.query('DELETE FROM analytics_daily WHERE account_id = $1', [accountId]);
+                await database_1.db.query('DELETE FROM follows WHERE follower_account_id = $1 OR followed_account_id = $1', [accountId]);
+                await database_1.db.query('DELETE FROM posts WHERE account_id = $1', [accountId]);
+                await database_1.db.query('DELETE FROM accounts WHERE id = $1', [accountId]);
+                await database_1.db.query('COMMIT');
+                results.push({
+                    account_id: accountId,
+                    username: account.username,
+                    success: true
+                });
+                successCount++;
+            }
+            catch (error) {
+                await database_1.db.query('ROLLBACK');
+                console.error(`Error deleting account ${accountId}:`, error);
+                results.push({
+                    account_id: accountId,
+                    success: false,
+                    error: error.message || 'Unknown error occurred'
+                });
+                failedCount++;
+            }
+        }
+        res.json({
+            success: true,
+            message: `Batch delete completed: ${successCount} successful, ${failedCount} failed`,
+            results: {
+                total_processed: account_ids.length,
+                successful: successCount,
+                failed: failedCount,
+                details: results
+            }
+        });
+    }
+    catch (error) {
+        console.error('Batch delete accounts error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to delete accounts',
+            message: error.message
         });
     }
 });

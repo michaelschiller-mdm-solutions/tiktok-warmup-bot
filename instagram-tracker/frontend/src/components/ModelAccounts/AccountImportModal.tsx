@@ -23,7 +23,7 @@ interface ParsedAccount {
   username: string;
   password?: string;
   email?: string;
-  account_code?: string;
+  token?: string; // Email password
   lineNumber: number;
   originalLine: string;
 }
@@ -74,7 +74,7 @@ const AccountImportModal: React.FC<AccountImportModalProps> = ({
         username: parts[0]?.trim() || '',
         password: parts[1]?.trim() || undefined,
         email: parts[2]?.trim() || undefined,
-        account_code: parts[3]?.trim() || undefined,
+        token: parts[3]?.trim() || undefined, // Email password
         lineNumber,
         originalLine: line
       };
@@ -291,7 +291,7 @@ const AccountImportModal: React.FC<AccountImportModalProps> = ({
                     Drag and drop your .txt file here, or click to browse
                   </p>
                   <div className="text-xs text-gray-400 space-y-1">
-                    <p>• Format: username:password:email:account_code (or just username)</p>
+                    <p>• Format: username:password:email:token (or just username)</p>
                     <p>• One account per line</p>
                     <p>• Maximum 10,000 accounts per import</p>
                     <p>• File size limit: 10MB</p>

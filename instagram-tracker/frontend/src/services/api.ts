@@ -113,7 +113,18 @@ class ApiClient {
     }
 
     const response = await this.client.get(`/accounts?${params}`);
-    return response.data;
+    
+    // Transform backend response to match frontend expectations
+    const backendData = response.data.data;
+    return {
+      accounts: backendData.accounts || [],
+      total_count: backendData.pagination?.total_count || 0,
+      page: backendData.pagination?.page || 1,
+      page_size: backendData.pagination?.limit || 50,
+      total_pages: backendData.pagination?.total_pages || 0,
+      filters,
+      sort: undefined
+    };
   }
 
   async getAccount(id: number): Promise<Account> {
@@ -155,6 +166,29 @@ class ApiClient {
   async getAccountsByModel(modelId: number): Promise<Account[]> {
     const response = await this.getAccounts({ model_id: modelId });
     return response.accounts || [];
+  }
+
+  async getAllAccountsWithAllFields(filters?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    model_id?: number;
+    lifecycle_state?: string;
+    status?: string;
+    sort_by?: string;
+    sort_order?: 'ASC' | 'DESC';
+  }): Promise<any> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, value.toString());
+        }
+      });
+    }
+    
+    const response = await this.client.get(`/accounts/all-fields?${params}`);
+    return response.data;
   }
 
   // Analytics API methods
@@ -358,6 +392,78 @@ class ApiClient {
   }): Promise<any> {
     const response = await this.client.put(`/accounts/${accountId}/dynamic-data`, dynamicData);
     return response.data.data;
+  }
+
+  // Warmup API methods (using regular endpoints, not bot-specific)
+  async getWarmupStatus(accountId: number): Promise<any> {
+    const response = await this.client.get(`/accounts/${accountId}/warmup-status`);
+    return response.data.data;
+  }
+
+  async getReadyAccountsForWarmup(modelId?: number, limit: number = 50): Promise<any[]> {
+    const params = new URLSearchParams({ limit: limit.toString() });
+    if (modelId) params.append('model_id', modelId.toString());
+    
+    const response = await this.client.get(`/accounts/warmup/ready?${params}`);
+    return response.data.data;
+  }
+
+  async startWarmupProcess(accountId: number, botId: string, sessionId: string): Promise<any> {
+    const response = await this.client.post(`/accounts/${accountId}/start-warmup`, {
+      bot_id: botId,
+      session_id: sessionId
+    });
+    return response.data;
+  }
+
+  async completeManualSetup(accountId: number, userId: string): Promise<any> {
+    const response = await this.client.post(`/accounts/${accountId}/complete-manual-setup`, {
+      user_id: userId
+    });
+    return response.data;
+  }
+
+  async markAccountInvalid(accountId: number, reason?: string): Promise<any> {
+    const response = await this.client.post(`/accounts/${accountId}/mark-invalid`, {
+      reason: reason || 'Marked as invalid by user'
+    });
+    return response.data;
+  }
+
+  async getAvailableWarmupPhases(accountId: number): Promise<any[]> {
+    const response = await this.client.get(`/bot/accounts/${accountId}/available-phases`);
+    return response.data.data;
+  }
+
+  async getNextAvailablePhase(accountId: number, botId: string): Promise<any> {
+    const response = await this.client.get(`/bot/accounts/${accountId}/next-phase?bot_id=${botId}`);
+    return response.data.data;
+  }
+
+  async startWarmupPhase(accountId: number, phase: string, botId: string, sessionId: string): Promise<any> {
+    const response = await this.client.post(`/bot/accounts/${accountId}/phases/${phase}/start`, {
+      bot_id: botId,
+      session_id: sessionId
+    });
+    return response.data;
+  }
+
+  async completeWarmupPhase(accountId: number, phase: string, botId: string, executionTimeMs?: number, instagramResponse?: any): Promise<any> {
+    const response = await this.client.post(`/bot/accounts/${accountId}/phases/${phase}/complete`, {
+      bot_id: botId,
+      execution_time_ms: executionTimeMs,
+      instagram_response: instagramResponse
+    });
+    return response.data;
+  }
+
+  async failWarmupPhase(accountId: number, phase: string, botId: string, errorMessage: string, errorDetails?: any): Promise<any> {
+    const response = await this.client.post(`/bot/accounts/${accountId}/phases/${phase}/fail`, {
+      bot_id: botId,
+      error_message: errorMessage,
+      error_details: errorDetails
+    });
+    return response.data;
   }
 }
 

@@ -268,7 +268,7 @@ const CentralContentUploadModal: React.FC<CentralContentUploadModalProps> = ({
 
             // Add to selected bundles
             for (const bundleId of uploadFile.assignedBundles) {
-              await fetch(`/api/central/bundles/${bundleId}/add-content`, {
+              const bundleResponse = await fetch(`/api/central/bundles/${bundleId}/add-content`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -276,6 +276,10 @@ const CentralContentUploadModal: React.FC<CentralContentUploadModalProps> = ({
                   assignment_order: 0
                 })
               });
+              
+              if (!bundleResponse.ok) {
+                console.error(`Failed to add content to bundle ${bundleId}:`, await bundleResponse.text());
+              }
             }
 
             successCount++;

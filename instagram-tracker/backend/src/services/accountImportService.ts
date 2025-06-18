@@ -1,5 +1,9 @@
 import { Pool } from 'pg';
 import { validateUsernamesBatch, sanitizeUsername } from '../utils/usernameValidator';
+import { ProxyAssignmentService } from './ProxyAssignmentService';
+import { ContentAssignmentService } from './ContentAssignmentService';
+import { WarmupProcessService } from './WarmupProcessService';
+import { AccountLifecycleService } from './AccountLifecycleService';
 
 export interface ImportResult {
   successful: number;
@@ -17,11 +21,19 @@ export interface AccountToImport {
   username: string;
   password?: string;
   email?: string;
-  account_code?: string;
+  token?: string; // Email password
 }
 
 export class AccountImportService {
-  constructor(private db: Pool) {}
+  private proxyService: ProxyAssignmentService;
+  private contentService: ContentAssignmentService;
+  private warmupService: WarmupProcessService;
+
+  constructor(private db: Pool) {
+    this.proxyService = new ProxyAssignmentService();
+    this.contentService = new ContentAssignmentService();
+    this.warmupService = new WarmupProcessService();
+  }
 
   /**
    * Check which accounts already exist in the database
@@ -68,7 +80,7 @@ export class AccountImportService {
               username: parts[0]?.trim() || '',
               password: parts[1]?.trim() || undefined,
               email: parts[2]?.trim() || undefined,
-              account_code: parts[3]?.trim() || undefined
+              token: parts[3]?.trim() || undefined // Email password
             };
           } else {
             // Simple username format
@@ -105,14 +117,18 @@ export class AccountImportService {
           return `($${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6})`;
         }).join(', ');
 
-        const insertParams = accountsToImport.flatMap(account => [
-          account.username,
-          modelId,
-          'imported',
-          account.password || null,
-          account.email || null,
-          account.account_code || null
-        ]);
+        // Store email passwords in account_code field (plain text as per current system)
+        const insertParams = [];
+        for (const account of accountsToImport) {
+          insertParams.push(
+            account.username,
+            modelId,
+            'imported',
+            account.password || null,
+            account.email || null,
+            account.token || null  // Store email password in account_code field
+          );
+        }
 
         const insertQuery = `
           INSERT INTO accounts (username, model_id, lifecycle_state, password, email, account_code)
@@ -123,16 +139,54 @@ export class AccountImportService {
         const insertResult = await client.query(insertQuery, insertParams);
         result.successful = insertResult.rows.length;
 
-        // Initialize warmup phases for successfully imported accounts
+        // Enhanced post-import processing pipeline
         if (insertResult.rows.length > 0) {
+          console.log(`Starting post-import processing for ${insertResult.rows.length} accounts`);
+          
           for (const account of insertResult.rows) {
             try {
+              // Step 1: Initialize warmup phases
               await client.query('SELECT initialize_warmup_phases($1)', [account.id]);
-            } catch (warmupError) {
-              console.warn(`Failed to initialize warmup phases for account ${account.username}:`, warmupError);
-              // Don't fail the import if warmup initialization fails
+              console.log(`✓ Warmup phases initialized for ${account.username}`);
+
+              // Step 2: Assign proxy automatically
+              const proxyResult = await this.proxyService.assignProxyToAccount(account.id);
+              if (proxyResult.success) {
+                console.log(`✓ Proxy assigned to ${account.username}: ${proxyResult.message}`);
+                
+                // Step 3: Transition to 'ready' state after proxy assignment
+                await AccountLifecycleService.transitionAccountState({
+                  account_id: account.id,
+                  to_state: 'ready' as any,
+                  changed_by: 'system',
+                  reason: 'Proxy assigned and account ready for warmup'
+                });
+                console.log(`✓ Account ${account.username} transitioned to 'ready' state`);
+
+                // Step 4: Initialize content assignment for warmup phases
+                try {
+                  await this.initializeContentAssignments(account.id, modelId);
+                  console.log(`✓ Content assignments initialized for ${account.username}`);
+                } catch (contentError) {
+                  console.warn(`⚠ Content assignment failed for ${account.username}:`, contentError);
+                  // Continue without content assignment - can be done later
+                }
+              } else {
+                console.warn(`⚠ Proxy assignment failed for ${account.username}: ${proxyResult.message}`);
+                // Account stays in 'imported' state until proxy is available
+              }
+
+            } catch (processingError) {
+              console.error(`❌ Post-import processing failed for ${account.username}:`, processingError);
+              // Don't fail the import, but log the error
+              result.errors.push({
+                username: account.username,
+                error: `Post-import processing failed: ${processingError.message}`
+              });
             }
           }
+          
+          console.log(`Post-import processing completed for batch`);
         }
       }
 
@@ -243,6 +297,50 @@ export class AccountImportService {
     } catch (error) {
       console.error('Error getting import statistics:', error);
       throw new Error('Failed to get import statistics');
+    }
+  }
+
+  /**
+   * Initialize content assignments for an account's warmup phases
+   */
+  private async initializeContentAssignments(accountId: number, modelId: number): Promise<void> {
+    try {
+      // Get all pending warmup phases for this account
+      const phasesQuery = `
+        SELECT id, phase 
+        FROM account_warmup_phases 
+        WHERE account_id = $1 AND status = 'pending'
+        ORDER BY 
+          CASE phase 
+            WHEN 'pfp' THEN 1 
+            WHEN 'bio' THEN 2 
+            WHEN 'post' THEN 3 
+            WHEN 'highlight' THEN 4 
+            WHEN 'story' THEN 5 
+          END
+      `;
+      
+      const phasesResult = await this.db.query(phasesQuery, [accountId]);
+      
+      for (const phase of phasesResult.rows) {
+        try {
+          // Assign content to each warmup phase
+          await this.contentService.assignContentToPhase(
+            accountId,
+            phase.id,
+            phase.phase as any, // Convert to ContentType enum
+            modelId
+          );
+          
+          console.log(`Content assigned to ${phase.phase} phase for account ${accountId}`);
+        } catch (phaseError) {
+          console.warn(`Failed to assign content to ${phase.phase} phase for account ${accountId}:`, phaseError);
+          // Continue with other phases even if one fails
+        }
+      }
+    } catch (error) {
+      console.error('Error initializing content assignments:', error);
+      throw new Error('Failed to initialize content assignments');
     }
   }
 } 

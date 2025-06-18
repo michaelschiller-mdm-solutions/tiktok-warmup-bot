@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS warmup_content_assignments (
   
   -- Content details
   content_id INTEGER REFERENCES model_content(id),
-  text_id INTEGER REFERENCES text_pools(id),
+  text_id INTEGER REFERENCES model_text_content(id),
   content_type VARCHAR(20) NOT NULL CHECK (content_type IN ('pfp', 'bio', 'post', 'highlight', 'story')),
   
   -- Assignment metadata
@@ -65,8 +65,8 @@ CREATE INDEX IF NOT EXISTS idx_model_content_quality_score ON model_content(qual
 CREATE INDEX IF NOT EXISTS idx_model_content_assignment_count ON model_content(assignment_count);
 CREATE INDEX IF NOT EXISTS idx_model_content_success_rate ON model_content((success_count::decimal / NULLIF(assignment_count, 0)));
 
--- Extend text_pools table for usage tracking
-ALTER TABLE text_pools 
+-- Extend model_text_content table for usage tracking
+ALTER TABLE model_text_content 
 ADD COLUMN IF NOT EXISTS assignment_count INTEGER DEFAULT 0,
 ADD COLUMN IF NOT EXISTS success_count INTEGER DEFAULT 0,
 ADD COLUMN IF NOT EXISTS failure_count INTEGER DEFAULT 0,
@@ -77,9 +77,9 @@ ADD COLUMN IF NOT EXISTS last_assigned_at TIMESTAMP,
 ADD COLUMN IF NOT EXISTS is_blacklisted BOOLEAN DEFAULT FALSE;
 
 -- Create indexes for text selection
-CREATE INDEX IF NOT EXISTS idx_text_pools_quality_score ON text_pools(quality_score);
-CREATE INDEX IF NOT EXISTS idx_text_pools_assignment_count ON text_pools(assignment_count);
-CREATE INDEX IF NOT EXISTS idx_text_pools_success_rate ON text_pools((success_count::decimal / NULLIF(assignment_count, 0)));
+CREATE INDEX IF NOT EXISTS idx_model_text_content_quality_score ON model_text_content(quality_score);
+CREATE INDEX IF NOT EXISTS idx_model_text_content_assignment_count ON model_text_content(assignment_count);
+CREATE INDEX IF NOT EXISTS idx_model_text_content_success_rate ON model_text_content((success_count::decimal / NULLIF(assignment_count, 0)));
 
 -- Function to calculate content quality score
 CREATE OR REPLACE FUNCTION calculate_content_quality_score(
@@ -154,9 +154,9 @@ BEGIN
     WHERE id = NEW.content_id;
   END IF;
   
-  -- Update text_pools statistics if text was used
+  -- Update model_text_content statistics if text was used
   IF NEW.text_id IS NOT NULL AND OLD.used_at IS NULL AND NEW.used_at IS NOT NULL THEN
-    UPDATE text_pools 
+    UPDATE model_text_content 
     SET 
       assignment_count = assignment_count + 1,
       success_count = success_count + CASE WHEN NEW.success THEN 1 ELSE 0 END,
@@ -166,7 +166,7 @@ BEGIN
     WHERE id = NEW.text_id;
     
     -- Recalculate quality score
-    UPDATE text_pools 
+    UPDATE model_text_content 
     SET quality_score = calculate_content_quality_score(
       assignment_count, success_count, avg_performance_score, last_assigned_at
     )
@@ -190,7 +190,7 @@ SELECT
   mc.id,
   mc.model_id,
   mc.content_type,
-  mc.image_url,
+  mc.file_path AS image_url,
   mc.quality_score,
   mc.assignment_count,
   mc.success_count,
@@ -209,7 +209,7 @@ CREATE OR REPLACE VIEW available_warmup_text AS
 SELECT 
   tp.id,
   tp.model_id,
-  tp.content_type,
+  'text' AS content_type,
   tp.text_content,
   tp.quality_score,
   tp.assignment_count,
@@ -220,7 +220,7 @@ SELECT
     WHEN tp.assignment_count = 0 THEN 0.0
     ELSE (tp.success_count::decimal / tp.assignment_count) * 100
   END as success_rate
-FROM text_pools tp
+FROM model_text_content tp
 WHERE tp.is_blacklisted = FALSE
 ORDER BY tp.quality_score DESC, tp.assignment_count ASC;
 
@@ -234,7 +234,7 @@ SET quality_score = calculate_content_quality_score(
 )
 WHERE quality_score IS NULL OR quality_score = 0;
 
-UPDATE text_pools 
+UPDATE model_text_content 
 SET quality_score = calculate_content_quality_score(
   COALESCE(assignment_count, 0), 
   COALESCE(success_count, 0), 

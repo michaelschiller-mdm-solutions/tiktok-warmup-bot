@@ -1,9 +1,15 @@
 export enum WarmupPhase {
-  PFP = 'pfp',
+  MANUAL_SETUP = 'manual_setup',
   BIO = 'bio',
-  POST = 'post',
-  HIGHLIGHT = 'highlight',
-  STORY = 'story'
+  GENDER = 'gender',
+  NAME = 'name',
+  USERNAME = 'username',
+  FIRST_HIGHLIGHT = 'first_highlight',
+  NEW_HIGHLIGHT = 'new_highlight',
+  POST_CAPTION = 'post_caption',
+  POST_NO_CAPTION = 'post_no_caption',
+  STORY_CAPTION = 'story_caption',
+  STORY_NO_CAPTION = 'story_no_caption'
 }
 
 export enum WarmupPhaseStatus {
@@ -26,6 +32,7 @@ export interface WarmupProcessResult {
   warmupComplete?: boolean;
   needsHumanReview?: boolean;
   retryCount?: number;
+  containerNumber?: number;
   error?: string;
 }
 

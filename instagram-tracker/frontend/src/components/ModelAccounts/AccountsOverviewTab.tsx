@@ -11,6 +11,12 @@ interface AccountsOverviewTabProps {
 }
 
 const AccountsOverviewTab: React.FC<AccountsOverviewTabProps> = ({ modelId }) => {
+  // Helper function to safely convert values to numbers
+  const toNumber = (value: any): number => {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') return parseFloat(value) || 0;
+    return 0;
+  };
   const { 
     accounts, 
     loading, 
@@ -100,18 +106,21 @@ const AccountsOverviewTab: React.FC<AccountsOverviewTabProps> = ({ modelId }) =>
       frozen: false,
       editable: false,
       required: false,
-      formatter: (value) => `${(value || 0).toFixed(1)}%`,
-      render: (value) => (
-        <div className="text-right">
-          <span className={`font-medium ${
-            value >= 15 ? 'text-green-600' : 
-            value >= 10 ? 'text-yellow-600' : 
-            'text-red-600'
-          }`}>
-            {(value || 0).toFixed(1)}%
-          </span>
-        </div>
-      )
+      formatter: (value) => `${toNumber(value).toFixed(1)}%`,
+      render: (value) => {
+        const numValue = toNumber(value);
+        return (
+          <div className="text-right">
+            <span className={`font-medium ${
+              numValue >= 15 ? 'text-green-600' : 
+              numValue >= 10 ? 'text-yellow-600' : 
+              'text-red-600'
+            }`}>
+              {numValue.toFixed(1)}%
+            </span>
+          </div>
+        );
+      }
     },
     {
       id: 'total_follows',
@@ -129,7 +138,7 @@ const AccountsOverviewTab: React.FC<AccountsOverviewTabProps> = ({ modelId }) =>
       frozen: false,
       editable: false,
       required: false,
-      formatter: (value) => (value || 0).toLocaleString()
+      formatter: (value) => Math.floor(toNumber(value)).toLocaleString()
     },
     {
       id: 'proxy_status',
@@ -183,14 +192,17 @@ const AccountsOverviewTab: React.FC<AccountsOverviewTabProps> = ({ modelId }) =>
       frozen: false,
       editable: false,
       required: false,
-      formatter: (value) => `$${(value || 0).toFixed(2)}`,
-      render: (value) => (
-        <div className="text-right">
-          <span className="font-medium text-gray-900">
-            ${(value || 0).toFixed(2)}
-          </span>
-        </div>
-      )
+      formatter: (value) => `$${toNumber(value).toFixed(2)}`,
+      render: (value) => {
+        const numValue = toNumber(value);
+        return (
+          <div className="text-right">
+            <span className="font-medium text-gray-900">
+              ${numValue.toFixed(2)}
+            </span>
+          </div>
+        );
+      }
     },
     {
       id: 'last_activity',

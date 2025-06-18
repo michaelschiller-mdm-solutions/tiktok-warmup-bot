@@ -3,6 +3,9 @@ import { WarmupProcessService } from '../../services/WarmupProcessService';
 import { ContentAssignmentService } from '../../services/ContentAssignmentService';
 import { botAuthMiddleware } from '../../middleware/botAuth';
 import { WarmupPhase, ContentType } from '../../types/warmupProcess';
+import { db } from '../../database';
+import { spawn } from 'child_process';
+import path from 'path';
 
 const router = express.Router();
 const warmupService = new WarmupProcessService();
@@ -153,6 +156,227 @@ router.get('/:id/available-phases', async (req: any, res: any) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch available phases',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/bot/accounts/:id/next-phase
+ * Get next available phase for bot with content and script info
+ */
+router.get('/:id/next-phase', async (req: any, res: any) => {
+  try {
+    const accountId = parseInt(req.params.id);
+    const botId = req.botId;
+
+    if (isNaN(accountId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid account ID'
+      });
+    }
+
+    const nextPhase = await warmupService.getNextAvailablePhaseForBot(accountId, botId);
+
+    if (!nextPhase) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No phases available or bot constraint violation',
+        bot_id: botId,
+        session_id: req.sessionId
+      });
+    }
+
+    res.json({
+      success: true,
+      data: nextPhase, // Now includes complete script_sequence from service
+      bot_id: botId,
+      session_id: req.sessionId
+    });
+
+  } catch (error) {
+    console.error('Error fetching next available phase:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch next available phase',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/bot/accounts/:id/complete-manual-setup
+ * Complete manual setup phase and trigger first random phase assignment
+ */
+router.post('/:id/complete-manual-setup', async (req: any, res: any) => {
+  try {
+    const accountId = parseInt(req.params.id);
+    const userId = req.botId; // Using bot ID as user ID for now
+
+    if (isNaN(accountId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid account ID'
+      });
+    }
+
+    const result = await warmupService.completeManualSetup(accountId, userId);
+
+    res.json({
+      success: result.success,
+      data: result,
+      bot_id: req.botId,
+      session_id: req.sessionId
+    });
+
+  } catch (error) {
+    console.error('Error completing manual setup:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to complete manual setup',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/bot/accounts/:id/execute-phase/:phase
+ * Execute a complete warmup phase with all required scripts
+ */
+router.post('/:id/execute-phase/:phase', async (req: any, res: any) => {
+  try {
+    const accountId = parseInt(req.params.id);
+    const phase = req.params.phase as WarmupPhase;
+    const botId = req.botId;
+    const sessionId = req.sessionId;
+
+    if (isNaN(accountId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid account ID'
+      });
+    }
+
+    if (!Object.values(WarmupPhase).includes(phase)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid warmup phase'
+      });
+    }
+
+    // Get the complete phase information with script sequence
+    const phaseInfo = await warmupService.getNextAvailablePhaseForBot(accountId, botId);
+    
+    if (!phaseInfo || phaseInfo.phase !== phase) {
+      return res.status(400).json({
+        success: false,
+        error: `Phase ${phase} is not available for execution`,
+        available_phase: phaseInfo?.phase || null
+      });
+    }
+
+    // Start the phase
+    const startResult = await warmupService.startPhase(accountId, phase, botId, sessionId);
+    
+    if (!startResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: startResult.message,
+        details: startResult.error
+      });
+    }
+
+    // Return complete execution information
+    res.json({
+      success: true,
+      data: {
+        phase_id: startResult.phaseId,
+        account_id: accountId,
+        phase: phase,
+        execution_info: {
+          ...phaseInfo,
+          phase_started: true,
+          execution_instructions: {
+            step1: 'Execute API scripts in sequence',
+            step2: 'Execute Lua scripts in sequence', 
+            step3: 'Report completion with results',
+            step4: phaseInfo.script_sequence?.post_execution_action ? 
+              `Special action required: ${phaseInfo.script_sequence.post_execution_action}` : 
+              'No special action required'
+          }
+        }
+      },
+      bot_id: botId,
+      session_id: sessionId
+    });
+
+  } catch (error) {
+    console.error('Error executing warmup phase:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to execute warmup phase',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * GET /api/bot/accounts/:id/phase-script-sequence/:phase
+ * Get complete script sequence for a specific phase (for debugging/testing)
+ */
+router.get('/:id/phase-script-sequence/:phase', async (req: any, res: any) => {
+  try {
+    const accountId = parseInt(req.params.id);
+    const phase = req.params.phase as WarmupPhase;
+
+    if (isNaN(accountId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid account ID'
+      });
+    }
+
+    if (!Object.values(WarmupPhase).includes(phase)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid warmup phase'
+      });
+    }
+
+    // Get account container number
+    const accountResult = await db.query(`
+      SELECT container_number FROM accounts WHERE id = $1
+    `, [accountId]);
+
+    if (accountResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Account not found'
+      });
+    }
+
+    const containerNumber = accountResult.rows[0].container_number;
+    const scriptSequence = warmupService.getPhaseScriptSequence(phase, containerNumber);
+
+    res.json({
+      success: true,
+      data: {
+        account_id: accountId,
+        container_number: containerNumber,
+        phase: phase,
+        script_sequence: scriptSequence
+      },
+      bot_id: req.botId,
+      session_id: req.sessionId
+    });
+
+  } catch (error) {
+    console.error('Error fetching phase script sequence:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch phase script sequence',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
@@ -498,15 +722,133 @@ router.post('/:id/complete-warmup', async (req: any, res: any) => {
 });
 
 /**
+ * POST /api/bot/accounts/create-containers
+ * Create multiple iPhone containers with real-time progress updates
+ */
+router.post('/create-containers', async (req: any, res: any) => {
+  try {
+    const { count, startNumber, iphoneUrl } = req.body;
+
+    // Validate input
+    if (!count || !startNumber || count < 1 || startNumber < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid parameters',
+        message: 'Count and startNumber must be positive integers'
+      });
+    }
+
+    if (count > 50) {
+      return res.status(400).json({
+        success: false,
+        error: 'Count too large',
+        message: 'Cannot create more than 50 containers at once'
+      });
+    }
+
+    // Set up Server-Sent Events for real-time progress
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control'
+    });
+
+    const sendEvent = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // Send initial acknowledgment
+    sendEvent({
+      type: 'start',
+      message: 'Container creation process initiated',
+      count,
+      startNumber,
+      iphoneUrl: iphoneUrl || 'default',
+      botId: req.botId,
+      sessionId: req.sessionId
+    });
+
+    try {
+      // Import the BatchContainerCreator class
+      const BatchContainerCreator = require('../../../../bot/scripts/container_creation/batch_create_containers.js');
+      
+      // Create instance with progress callback
+      const creator = new BatchContainerCreator(
+        iphoneUrl || 'http://192.168.178.65:46952',
+        (update: any) => {
+          sendEvent({
+            ...update,
+            timestamp: new Date().toISOString()
+          });
+        }
+      );
+
+      // Test connection first
+      const connectionTest = await creator.testConnection();
+      if (!connectionTest) {
+        sendEvent({
+          type: 'error',
+          message: 'iPhone connection test failed',
+          status: 'connection_failed',
+          final: true
+        });
+        res.end();
+        return;
+      }
+
+      // Start container creation
+      const results = await creator.createContainers(count, startNumber);
+      
+      // Send final results
+      sendEvent({
+        type: 'final_results',
+        message: 'Container creation process completed',
+        results,
+        status: results.successful === results.total ? 'success' : 'partial_success',
+        final: true
+      });
+
+    } catch (error) {
+      console.error('Container creation error:', error);
+      sendEvent({
+        type: 'error',
+        message: `Container creation failed: ${error.message}`,
+        error: error.message,
+        status: 'failed',
+        final: true
+      });
+    }
+
+    res.end();
+
+  } catch (error) {
+    console.error('Container creation endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
  * Helper function to get phase-specific instructions
  */
 function getPhaseInstructions(phase: WarmupPhase): string {
   const instructions = {
-    [WarmupPhase.PFP]: 'Update profile picture using the assigned image. Ensure image is properly sized and follows Instagram guidelines.',
+    [WarmupPhase.MANUAL_SETUP]: 'Complete manual account setup. Set up proxy, verify login, and prepare for automated warmup.',
     [WarmupPhase.BIO]: 'Update bio using the assigned text. Keep it natural and avoid spam-like content.',
-    [WarmupPhase.POST]: 'Create first post using assigned image and text. Wait for engagement before proceeding.',
-    [WarmupPhase.HIGHLIGHT]: 'Create story highlight using assigned content. Organize highlights logically.',
-    [WarmupPhase.STORY]: 'Post story using assigned content. Stories disappear after 24 hours.'
+    [WarmupPhase.GENDER]: 'Update gender to female in account settings. No content assignment needed.',
+    [WarmupPhase.NAME]: 'Update display name using the assigned text. Choose a natural-sounding name.',
+    [WarmupPhase.USERNAME]: 'Update username. IMPORTANT: Update database after successful change.',
+    [WarmupPhase.FIRST_HIGHLIGHT]: 'Create first story highlight using assigned image and group name. This enables future highlights.',
+    [WarmupPhase.NEW_HIGHLIGHT]: 'Create additional story highlight. Requires first highlight to be completed.',
+    [WarmupPhase.POST_CAPTION]: 'Create post using assigned image and caption text. Wait for engagement.',
+    [WarmupPhase.POST_NO_CAPTION]: 'Create post using assigned image only. No caption text.',
+    [WarmupPhase.STORY_CAPTION]: 'Post story using assigned image and caption text. Stories disappear after 24 hours.',
+    [WarmupPhase.STORY_NO_CAPTION]: 'Post story using assigned image only. No caption text.'
   };
 
   return instructions[phase] || 'Follow standard Instagram content guidelines.';

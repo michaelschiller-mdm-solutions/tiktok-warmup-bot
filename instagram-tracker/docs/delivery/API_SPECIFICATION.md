@@ -311,6 +311,330 @@ Content-Type: application/json
 }
 ```
 
+## **4.1. Central Content Registry APIs**
+
+### **GET /central/content**
+Get all central content with filtering
+```http
+GET /central/content?content_type=image&categories=fashion&limit=50&offset=0
+```
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "content": [
+      {
+        "id": 1,
+        "filename": "fashion_pic_001.jpg",
+        "original_name": "stylish_outfit.jpg",
+        "content_type": "image",
+        "file_size": 2048576,
+        "categories": ["fashion", "lifestyle"],
+        "tags": ["outfit", "style", "trendy"],
+        "status": "active",
+        "created_at": "2025-01-20T10:00:00Z"
+      }
+    ],
+    "total": 150,
+    "limit": 50,
+    "offset": 0
+  }
+}
+```
+
+### **POST /central/content/upload**
+Upload content to central registry
+```http
+POST /central/content/upload
+Content-Type: multipart/form-data
+
+files: [file1.jpg, file2.jpg]
+global_categories: ["fashion", "lifestyle"]
+global_tags: ["trendy", "style"]
+file_settings: {
+  "file1.jpg": {
+    "categories": ["fashion"],
+    "tags": ["outfit"],
+    "bundle_assignments": [1, 2]
+  }
+}
+```
+
+### **PUT /central/content/:id**
+Update central content metadata
+```http
+PUT /central/content/1
+Content-Type: application/json
+
+{
+  "categories": ["fashion", "lifestyle", "summer"],
+  "tags": ["outfit", "style", "trendy", "seasonal"],
+  "status": "active"
+}
+```
+
+### **DELETE /central/content/:id**
+Delete central content
+```http
+DELETE /central/content/1
+```
+
+### **GET /central/text-content**
+Get all central text content
+```http
+GET /central/text-content?categories=bio&template_name=fashion
+```
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "text_content": [
+      {
+        "id": 1,
+        "text_content": "Fashion enthusiast | Style inspiration | DM for collabs",
+        "categories": ["bio", "fashion"],
+        "tags": ["professional", "collaboration"],
+        "template_name": "Fashion Bio Template",
+        "language": "en",
+        "status": "active",
+        "created_at": "2025-01-20T10:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+### **POST /central/text-content**
+Create new text content
+```http
+POST /central/text-content
+Content-Type: application/json
+
+{
+  "text_content": "New day, new outfit! What's your style inspiration today?",
+  "categories": ["post", "fashion"],
+  "tags": ["daily", "inspiration"],
+  "template_name": "Daily Fashion Post",
+  "language": "en"
+}
+```
+
+### **PUT /central/text-content/:id**
+Update text content
+```http
+PUT /central/text-content/1
+Content-Type: application/json
+
+{
+  "text_content": "Updated fashion bio text",
+  "categories": ["bio", "fashion", "lifestyle"],
+  "tags": ["professional", "updated"]
+}
+```
+
+### **DELETE /central/text-content/:id**
+Delete text content
+```http
+DELETE /central/text-content/1
+```
+
+## **4.2. Content Bundle Management APIs**
+
+### **GET /central/bundles**
+Get all content bundles
+```http
+GET /central/bundles?bundle_type=mixed&categories=fashion
+```
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "bundles": [
+      {
+        "id": 1,
+        "name": "Fashion Starter Pack",
+        "description": "Complete content bundle for fashion accounts",
+        "bundle_type": "mixed",
+        "categories": ["fashion", "lifestyle"],
+        "tags": ["starter", "complete"],
+        "status": "active",
+        "content_count": 15,
+        "text_count": 8,
+        "created_at": "2025-01-20T10:00:00Z"
+      }
+    ]
+  }
+}
+```
+
+### **POST /central/bundles**
+Create new content bundle
+```http
+POST /central/bundles
+Content-Type: application/json
+
+{
+  "name": "Summer Fashion Bundle",
+  "description": "Seasonal content for summer fashion campaigns",
+  "bundle_type": "mixed",
+  "categories": ["fashion", "summer"],
+  "tags": ["seasonal", "trendy"]
+}
+```
+
+### **PUT /central/bundles/:id**
+Update bundle metadata
+```http
+PUT /central/bundles/1
+Content-Type: application/json
+
+{
+  "name": "Updated Fashion Bundle",
+  "description": "Updated description",
+  "categories": ["fashion", "lifestyle", "summer"]
+}
+```
+
+### **DELETE /central/bundles/:id**
+Delete content bundle
+```http
+DELETE /central/bundles/1
+```
+
+### **GET /central/bundles/:id/contents**
+Get bundle contents with details
+```http
+GET /central/bundles/1/contents
+```
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "bundle": {
+      "id": 1,
+      "name": "Fashion Starter Pack",
+      "description": "Complete content bundle for fashion accounts"
+    },
+    "contents": [
+      {
+        "assignment_id": 101,
+        "content_type": "image",
+        "content_id": 5,
+        "filename": "fashion_pic_001.jpg",
+        "categories": ["fashion"],
+        "assignment_order": 1
+      },
+      {
+        "assignment_id": 102,
+        "content_type": "text",
+        "text_content_id": 3,
+        "text_content": "Fashion enthusiast bio",
+        "categories": ["bio"],
+        "assignment_order": 2
+      }
+    ]
+  }
+}
+```
+
+### **POST /central/bundles/:id/add-content**
+Add single item to bundle
+```http
+POST /central/bundles/1/add-content
+Content-Type: application/json
+
+{
+  "content_id": 5,
+  "assignment_order": 10
+}
+```
+
+### **POST /central/bundles/:id/add-content/batch**
+Batch add items to bundle
+```http
+POST /central/bundles/1/add-content/batch
+Content-Type: application/json
+
+{
+  "content_ids": [5, 6, 7],
+  "text_content_ids": [3, 4],
+  "assignment_order_start": 10
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "results": [
+      {
+        "type": "content",
+        "id": 5,
+        "success": true,
+        "assignment_id": 105
+      },
+      {
+        "type": "content", 
+        "id": 6,
+        "success": false,
+        "error": "Already assigned to this bundle"
+      }
+    ],
+    "summary": {
+      "total_attempted": 5,
+      "successful": 4,
+      "failed": 1
+    }
+  }
+}
+```
+
+### **DELETE /central/bundles/:id/content/:assignmentId**
+Remove item from bundle
+```http
+DELETE /central/bundles/1/content/105
+```
+
+## **4.3. Model Bundle Integration APIs**
+
+### **GET /central/models/:id/bundles**
+Get available bundles for model content selection
+```http
+GET /central/models/1/bundles?categories=fashion
+```
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "bundles": [
+      {
+        "id": 1,
+        "name": "Fashion Starter Pack",
+        "description": "Complete content bundle for fashion accounts",
+        "content_count": 15,
+        "text_count": 8,
+        "categories": ["fashion", "lifestyle"],
+        "preview_items": [
+          {
+            "type": "image",
+            "filename": "fashion_pic_001.jpg"
+          },
+          {
+            "type": "text",
+            "text_preview": "Fashion enthusiast | Style..."
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
 ## **5. Warm-up Process APIs**
 
 ### **GET /accounts/:id/warmup-steps**

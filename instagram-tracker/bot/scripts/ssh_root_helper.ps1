@@ -7,8 +7,8 @@ param(
 )
 
 $phoneIP = "192.168.178.65"
-$username = "root"
-$password = "alpine"  # Default palera1n root password
+$username = "mobile"
+$password = "qwertzuio"  # Default palera1n root password
 
 # For Windows, we'll use plink (PuTTY) if available
 try {

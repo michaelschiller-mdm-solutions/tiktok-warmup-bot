@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, Clock, AlertCircle, XCircle, Play, Pause } from 'lucide-react';
+import { CheckCircle, Clock, AlertCircle, XCircle, Play, Pause, User, Hash, Image, FileText } from 'lucide-react';
 import { apiClient } from '../../services/api';
 
 interface WarmupPhase {
@@ -32,13 +32,46 @@ interface WarmupPhaseTrackerProps {
   compact?: boolean;
 }
 
-const PHASE_ORDER = ['pfp', 'bio', 'post', 'highlight', 'story'];
+// 10-phase warmup system as defined in WarmupPhases.md
+const PHASE_ORDER = ['bio', 'gender', 'name', 'username', 'first_highlight', 'new_highlight', 'post_caption', 'post_no_caption', 'story_caption', 'story_no_caption'];
+
 const PHASE_LABELS = {
-  pfp: 'Profile Picture',
-  bio: 'Bio Update',
-  post: 'First Post',
-  highlight: 'Story Highlight',
-  story: 'Story Post'
+  bio: 'Bio Change',
+  gender: 'Gender Change', 
+  name: 'Name Change',
+  username: 'Username Change',
+  first_highlight: 'First Highlight',
+  new_highlight: 'New Highlight',
+  post_caption: 'Post with Caption',
+  post_no_caption: 'Post without Caption',
+  story_caption: 'Story with Caption',
+  story_no_caption: 'Story without Caption'
+};
+
+const PHASE_ICONS = {
+  bio: FileText,
+  gender: User,
+  name: User,
+  username: Hash,
+  first_highlight: Image,
+  new_highlight: Image,
+  post_caption: Image,
+  post_no_caption: Image,
+  story_caption: Image,
+  story_no_caption: Image
+};
+
+const PHASE_COLORS = {
+  bio: 'blue',
+  gender: 'pink',
+  name: 'green',
+  username: 'purple',
+  first_highlight: 'yellow',
+  new_highlight: 'orange',
+  post_caption: 'indigo',
+  post_no_caption: 'gray',
+  story_caption: 'red',
+  story_no_caption: 'teal'
 };
 
 const WarmupPhaseTracker: React.FC<WarmupPhaseTrackerProps> = ({ 
@@ -72,7 +105,9 @@ const WarmupPhaseTracker: React.FC<WarmupPhaseTrackerProps> = ({
     fetchWarmupStatus();
   }, [accountId]);
 
-  const getPhaseIcon = (status: string) => {
+  const getPhaseIcon = (status: string, phase: string) => {
+    const IconComponent = PHASE_ICONS[phase as keyof typeof PHASE_ICONS] || Clock;
+    
     switch (status) {
       case 'completed':
         return <CheckCircle className="h-5 w-5 text-green-600" />;
@@ -80,63 +115,49 @@ const WarmupPhaseTracker: React.FC<WarmupPhaseTrackerProps> = ({
         return <Play className="h-5 w-5 text-blue-600 animate-pulse" />;
       case 'available':
       case 'content_assigned':
-        return <Clock className="h-5 w-5 text-yellow-600" />;
+        return <IconComponent className="h-5 w-5 text-yellow-600" />;
       case 'failed':
       case 'requires_review':
         return <XCircle className="h-5 w-5 text-red-600" />;
       default:
-        return <Pause className="h-5 w-5 text-gray-400" />;
+        return <IconComponent className="h-5 w-5 text-gray-400" />;
     }
   };
 
-  const getPhaseClasses = (status: string) => {
-    const baseClasses = "flex items-center gap-3 p-3 rounded-lg border-2 transition-all";
-    
+  const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
-        return `${baseClasses} bg-green-50 border-green-200 text-green-800`;
+        return 'bg-green-100 text-green-800 border-green-200';
       case 'in_progress':
-        return `${baseClasses} bg-blue-50 border-blue-200 text-blue-800 shadow-md`;
+        return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'available':
       case 'content_assigned':
-        return `${baseClasses} bg-yellow-50 border-yellow-200 text-yellow-800`;
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'failed':
       case 'requires_review':
-        return `${baseClasses} bg-red-50 border-red-200 text-red-800`;
+        return 'bg-red-100 text-red-800 border-red-200';
       default:
-        return `${baseClasses} bg-gray-50 border-gray-200 text-gray-600`;
+        return 'bg-gray-100 text-gray-600 border-gray-200';
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'Waiting';
-      case 'available':
-        return 'Ready';
-      case 'content_assigned':
-        return 'Content Ready';
-      case 'in_progress':
-        return 'In Progress';
-      case 'completed':
-        return 'Completed';
-      case 'failed':
-        return 'Failed';
-      case 'requires_review':
-        return 'Needs Review';
-      default:
-        return 'Unknown';
-    }
+  const formatDateTime = (dateString?: string) => {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    return date.toLocaleString();
   };
 
   if (loading) {
     return (
       <div className={`${compact ? 'p-4' : 'p-6'} bg-white rounded-lg shadow`}>
         <div className="animate-pulse">
-          <div className="h-4 bg-gray-200 rounded w-1/3 mb-4"></div>
+          <div className="h-4 bg-gray-200 rounded w-3/4 mb-4"></div>
           <div className="space-y-3">
-            {PHASE_ORDER.map((_, index) => (
-              <div key={index} className="h-12 bg-gray-200 rounded"></div>
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex items-center space-x-3">
+                <div className="h-8 w-8 bg-gray-200 rounded-full"></div>
+                <div className="h-4 bg-gray-200 rounded flex-1"></div>
+              </div>
             ))}
           </div>
         </div>
@@ -163,7 +184,7 @@ const WarmupPhaseTracker: React.FC<WarmupPhaseTrackerProps> = ({
     <div className={`${compact ? 'p-4' : 'p-6'} bg-white rounded-lg shadow`}>
       {showTitle && (
         <div className="mb-6">
-          <h3 className="text-lg font-medium text-gray-900">Warmup Progress</h3>
+          <h3 className="text-lg font-medium text-gray-900">10-Phase Warmup Progress</h3>
           <p className="text-sm text-gray-500">
             {warmupStatus.username} • {warmupStatus.completed_phases} of {warmupStatus.total_phases} phases completed
           </p>
@@ -186,82 +207,87 @@ const WarmupPhaseTracker: React.FC<WarmupPhaseTrackerProps> = ({
 
       {/* Phase Pipeline */}
       <div className="space-y-3">
-        {PHASE_ORDER.map((phaseName, index) => {
-          const phase = phaseMap.get(phaseName);
+        {PHASE_ORDER.map((phaseKey, index) => {
+          const phase = phaseMap.get(phaseKey);
           const status = phase?.status || 'pending';
-          const label = PHASE_LABELS[phaseName as keyof typeof PHASE_LABELS];
+          const phaseColor = PHASE_COLORS[phaseKey as keyof typeof PHASE_COLORS];
           
           return (
-            <div key={phaseName} className="relative">
-              {/* Connection Line */}
-              {index < PHASE_ORDER.length - 1 && (
-                <div className="absolute left-6 top-12 w-0.5 h-6 bg-gray-300"></div>
-              )}
-              
-              <div className={getPhaseClasses(status)}>
-                <div className="flex-shrink-0">
-                  {getPhaseIcon(status)}
+            <div
+              key={phaseKey}
+              className={`flex items-center p-3 rounded-lg border ${getStatusColor(status)} transition-all duration-200`}
+            >
+              <div className="flex items-center flex-1">
+                <div className="mr-3">
+                  {getPhaseIcon(status, phaseKey)}
                 </div>
                 
-                <div className="flex-grow min-w-0">
+                <div className="flex-1">
                   <div className="flex items-center justify-between">
-                    <h4 className="font-medium">{label}</h4>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      status === 'completed' ? 'bg-green-100 text-green-800' :
-                      status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                      status === 'available' || status === 'content_assigned' ? 'bg-yellow-100 text-yellow-800' :
-                      status === 'failed' || status === 'requires_review' ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {getStatusText(status)}
+                    <h4 className="font-medium text-sm">
+                      Phase {index + 1}: {PHASE_LABELS[phaseKey as keyof typeof PHASE_LABELS]}
+                    </h4>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${getStatusColor(status)}`}>
+                      {status.replace('_', ' ')}
                     </span>
                   </div>
                   
                   {/* Phase Details */}
-                  <div className="mt-1 text-sm opacity-75">
-                    {phase?.completed_at && (
-                      <span>Completed {new Date(phase.completed_at).toLocaleDateString()}</span>
-                    )}
-                    {phase?.started_at && !phase?.completed_at && (
-                      <span>Started {new Date(phase.started_at).toLocaleDateString()}</span>
-                    )}
-                    {phase?.available_at && !phase?.started_at && (
-                      <span>Available since {new Date(phase.available_at).toLocaleDateString()}</span>
-                    )}
-                    {!phase?.available_at && status === 'pending' && (
-                      <span>Waiting for previous phase</span>
-                    )}
-                    {phase?.bot_id && (
-                      <span className="ml-2">• Bot: {phase.bot_id}</span>
-                    )}
-                  </div>
-                  
-                  {/* Error Message */}
-                  {phase?.error_message && (
-                    <div className="mt-2 p-2 bg-red-100 border border-red-200 rounded text-sm text-red-700">
-                      <strong>Error:</strong> {phase.error_message}
+                  {phase && (
+                    <div className="mt-1 text-xs text-gray-600 space-y-1">
+                      {phase.available_at && (
+                        <div>Available: {formatDateTime(phase.available_at)}</div>
+                      )}
+                      {phase.started_at && (
+                        <div>Started: {formatDateTime(phase.started_at)}</div>
+                      )}
+                      {phase.completed_at && (
+                        <div>Completed: {formatDateTime(phase.completed_at)}</div>
+                      )}
+                      {phase.bot_id && (
+                        <div>Bot: {phase.bot_id}</div>
+                      )}
+                      {phase.error_message && (
+                        <div className="text-red-600">Error: {phase.error_message}</div>
+                      )}
                       {phase.retry_count && phase.retry_count > 0 && (
-                        <span className="ml-2">• Retry {phase.retry_count}</span>
+                        <div className="text-orange-600">Retries: {phase.retry_count}</div>
                       )}
                     </div>
                   )}
                 </div>
               </div>
+              
+              {/* Connection Line */}
+              {index < PHASE_ORDER.length - 1 && (
+                <div className="absolute left-6 mt-12 w-0.5 h-6 bg-gray-300"></div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Completion Status */}
-      {warmupStatus.is_complete && (
-        <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-green-600" />
-            <span className="font-medium text-green-800">Warmup Complete!</span>
+      {/* Summary */}
+      {!compact && (
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-gray-600">Lifecycle State:</span>
+              <span className="ml-2 font-medium capitalize">{warmupStatus.lifecycle_state}</span>
+            </div>
+            <div>
+              <span className="text-gray-600">Completion:</span>
+              <span className="ml-2 font-medium">{warmupStatus.progress_percent}%</span>
+            </div>
+            <div>
+              <span className="text-gray-600">Available Phases:</span>
+              <span className="ml-2 font-medium">{warmupStatus.available_phases}</span>
+            </div>
+            <div>
+              <span className="text-gray-600">Failed Phases:</span>
+              <span className="ml-2 font-medium text-red-600">{warmupStatus.failed_phases}</span>
+            </div>
           </div>
-          <p className="text-sm text-green-700 mt-1">
-            Account is now ready for active operation.
-          </p>
         </div>
       )}
     </div>

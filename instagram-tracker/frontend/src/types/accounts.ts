@@ -7,6 +7,8 @@ export interface Account {
   username: string;
   password: string;
   email: string;
+  email_password?: string;
+  container_number?: number;
   account_code?: string;
   display_name?: string;
   bio?: string;
@@ -57,6 +59,11 @@ export interface Account {
   // Cost allocation
   monthly_cost: number;
   
+  // Phase-specific fields for warmup pipeline
+  new_username?: string;
+  assigned_content?: string;
+  phase_status?: string;
+  
   // Relations
   model_name?: string;
   mother_account?: Account;
@@ -68,6 +75,8 @@ export interface CreateAccountRequest {
   username: string;
   password: string;
   email: string;
+  email_password?: string;
+  container_number?: number;
   account_code?: string;
   display_name?: string;
   bio?: string;
@@ -98,6 +107,8 @@ export interface UpdateAccountRequest {
   username?: string;
   password?: string;
   email?: string;
+  email_password?: string;
+  container_number?: number;
   account_code?: string;
   display_name?: string;
   bio?: string;

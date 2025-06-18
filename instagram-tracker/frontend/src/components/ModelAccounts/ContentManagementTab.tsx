@@ -60,7 +60,7 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
   // Fetch model bundles
   const fetchBundles = async () => {
     try {
-      const response = await fetch(`http://localhost:3001/api/central/models/${modelId}/bundles`);
+      const response = await fetch(`/api/central/models/${modelId}/bundles`);
       if (response.ok) {
         const bundleData = await response.json();
         setBundles(bundleData);
@@ -76,7 +76,7 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
       setLoading(true);
       setError(null);
       
-      const response = await fetch(`http://localhost:3001/api/central/bundles/${bundleId}/contents`);
+      const response = await fetch(`/api/central/bundles/${bundleId}/contents`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch bundle content: ${response.statusText}`);
@@ -128,7 +128,7 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
         params.append('category', categoryFilter);
       }
       
-      const response = await fetch(`http://localhost:3001/api/models/${modelId}/content-with-texts?${params}`);
+      const response = await fetch(`/api/models/${modelId}/content-with-texts?${params}`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch content: ${response.statusText}`);
@@ -481,7 +481,7 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
                     <div className="aspect-square bg-gray-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
                       {item.content_type === 'image' && item.image_url ? (
                         <img 
-                          src={`http://localhost:3001${item.image_url}`}
+                          src={item.image_url}
                           alt={item.original_name}
                           className="w-full h-full object-cover"
                           onError={(e) => {
@@ -496,7 +496,7 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
                         />
                       ) : item.content_type === 'video' && item.video_url ? (
                         <video 
-                          src={`http://localhost:3001${item.video_url}`}
+                          src={item.video_url}
                           className="w-full h-full object-cover"
                           muted
                           onError={(e) => {

@@ -23,8 +23,8 @@ expect eof
 try {
     $plink = Get-Command plink -ErrorAction SilentlyContinue
     if ($plink) {
-        # Add -batch flag to prevent any interactive prompts
-        $plinkCommand = "plink -ssh -batch -l $username -pw $password $phoneIP `"$Command`""
+        # Add -batch flag to prevent any interactive prompts and -t to force a TTY
+        $plinkCommand = "plink -ssh -batch -t -l $username -pw $password $phoneIP `"$Command`""
         Write-Host "Using plink: $plinkCommand"
         Invoke-Expression $plinkCommand
         return
@@ -37,7 +37,7 @@ try {
 try {
     $wsl = Get-Command wsl -ErrorAction SilentlyContinue
     if ($wsl) {
-        $wslCommand = "wsl -e bash -c `"sshpass -p '$password' ssh -o StrictHostKeyChecking=no $username@$phoneIP '$Command'`""
+        $wslCommand = "wsl sshpass -p '$password' ssh -o StrictHostKeyChecking=no $username@$phoneIP '$Command'"
         Write-Host "Using WSL: $wslCommand"
         Invoke-Expression $wslCommand
         return
