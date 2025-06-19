@@ -34,6 +34,7 @@ export interface UpdatePoolRequest {
   template_category?: string;
   total_duration_hours?: number;
   compatible_accounts?: number;
+  usage_count?: number;
 }
 
 export interface CompatibilityReport {

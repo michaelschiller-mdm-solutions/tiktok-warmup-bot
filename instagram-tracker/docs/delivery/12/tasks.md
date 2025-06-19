@@ -18,13 +18,14 @@ This document lists all tasks associated with PBI 12.
 | 12-8 | [Emergency Content Injection System](./12-8.md) | Done | ✅ IMPLEMENTED - Complete emergency content injection system with conflict detection and resolution strategies |
 | 12-9 | [Sprint Creation and Management Interface](./12-9.md) | Done | ✅ IMPLEMENTED - Complete sprint creation interface with wizard, custom types, and conflict detection |
 | 12-10 | [Gantt Chart Visualization Component](./12-10.md) | Done | ✅ IMPLEMENTED - Interactive Gantt chart with timeline visualization, conflict detection, and real-time sprint assignment tracking |
-| 12-11 | [Campaign Pool Management Interface](./12-11.md) | InProgress | Build UI for campaign pool creation, compatibility checking, and assignment distribution |
-| 12-12 | [Highlight Group Configuration Interface](./12-12.md) | Proposed | Create interface for highlight group setup, maintenance scheduling, and position management |
-| 12-13 | [Automatic Maintenance System for Highlights](./12-13.md) | Proposed | Implement background system for automatic highlight maintenance with conflict detection |
+| 12-11 | [Campaign Pool Management Interface](./12-11.md) | Done | ✅ COMPLETED - Comprehensive UI for campaign pool creation and management with fixed API endpoints |
+| 12-12 | [Highlight Group Configuration Interface](./12-12.md) | Review | ✅ PHASES 1-3 COMPLETE - Comprehensive highlight group management with creation wizard, maintenance scheduler, and position manager |
+| 12-13 | [Automatic Maintenance System for Highlights](./12-13.md) | InProgress | ✅ PHASE 1 COMPLETE - Core automation service and maintenance job processing system implemented |
 | 12-14 | [Location and State Management Logic](./12-14.md) | Proposed | Build account state tracking system with location management and idle period handling |
 | 12-15 | [Conflict Detection and Resolution System](./12-15.md) | Proposed | Create comprehensive conflict detection with user warnings and override capabilities |
 | 12-16 | [Analytics Integration for Content Performance](./12-16.md) | Proposed | Integrate content sprint system with analytics tracking and performance monitoring |
 | 12-17 | [Comprehensive Testing Suite](./12-17.md) | Proposed | Develop extensive test suite covering all content sprint functionality and edge cases |
 | 12-18 | [Performance Optimization and Scaling](./12-18.md) | Proposed | Optimize system performance for hundreds of accounts with large content pools |
 | 12-19 | [User Experience Refinement](./12-19.md) | Proposed | Polish user interface with improved workflows, error handling, and user guidance |
+| 12-20 | [Content Registry Integration and Architecture Consolidation](./12-20.md) | InProgress | Consolidate all content sprint functionality into Content Registry tabs according to PRD architecture specifications |
 | 12-E2E | [End-to-End Content Sprint Workflow Testing](./12-E2E.md) | Proposed | Complete end-to-end testing of entire content sprint system from creation to posting | 

@@ -9,7 +9,8 @@ import {
   CompatibilityReport,
   PoolTemplate,
   AssignmentOptions,
-  AssignmentResponse
+  AssignmentResponse,
+  CompatibilityCheck
 } from '../types/campaignPools';
 import { campaignPoolService } from '../services/campaignPoolService';
 
@@ -55,7 +56,7 @@ interface UseCampaignPoolsReturn {
   assignPool: (poolId: number, options: AssignmentOptions) => Promise<AssignmentResponse>;
   
   // Compatibility checking
-  checkCompatibility: (sprintIds: number[]) => Promise<CompatibilityReport>;
+  checkCompatibility: (sprintIds: number[]) => Promise<CompatibilityCheck>;
   
   // Utility functions
   refreshPool: (id: number) => Promise<void>;
@@ -264,29 +265,23 @@ export const useCampaignPools = (options: UseCampaignPoolsOptions = {}): UseCamp
       
       const response = await campaignPoolService.assignPool(poolId, options);
       
-      // Update pool usage count and last assigned date
+      // Update local state optimistically
       setPools(prev => 
         prev.map(pool => 
           pool.id === poolId 
             ? { 
                 ...pool, 
-                usage_count: pool.usage_count + 1,
-                last_assigned: new Date()
               } 
             : pool
         )
       );
       
-      if (response.success) {
-        toast.success(`Pool assigned to ${response.assignments_created} accounts`);
-        if (response.conflicts_detected > 0) {
-          toast(`${response.conflicts_detected} conflicts detected`, {
-            icon: '⚠️',
-            duration: 4000,
-          });
-        }
-      }
+      // Show success message with assignment details
+      const assignedCount = response.total_accounts_assigned;
+      const conflicts = response.conflicts_resolved;
+      const warningText = conflicts > 0 ? ` (${conflicts} conflicts resolved)` : '';
       
+      toast.success(`Campaign pool assigned to ${assignedCount} accounts${warningText}`);
       return response;
       
     } catch (err) {
@@ -297,16 +292,18 @@ export const useCampaignPools = (options: UseCampaignPoolsOptions = {}): UseCamp
     } finally {
       setAssigning(false);
     }
-  }, []);
+  }, [pools]);
 
   // Check compatibility function
-  const checkCompatibility = useCallback(async (sprintIds: number[]): Promise<CompatibilityReport> => {
+  const checkCompatibility = useCallback(async (sprintIds: number[]): Promise<CompatibilityCheck> => {
     try {
-      return await campaignPoolService.validateCompatibility(sprintIds);
+      const result = await campaignPoolService.checkCompatibility(sprintIds);
+      return result;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to check compatibility';
-      console.error('Compatibility check error:', err);
-      throw new Error(errorMessage);
+      console.error('Error checking compatibility:', err);
+      toast.error(errorMessage);
+      throw err;
     }
   }, []);
 

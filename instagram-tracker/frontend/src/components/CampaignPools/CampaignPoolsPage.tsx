@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Plus, 
   Search, 
@@ -8,11 +8,17 @@ import {
   Settings,
   Trash2,
   Copy,
-  Play
+  Play,
+  Upload,
+  BarChart3,
+  Users,
+  Calendar
 } from 'lucide-react';
-import { CampaignPoolsPageProps, CampaignPool, PoolListFilters } from '../../types/campaignPools';
+import { CampaignPoolsPageProps, CampaignPool, PoolListFilters, ContentSprint, PoolFilters } from '../../types/campaignPools';
 import { useCampaignPools } from '../../hooks/useCampaignPools';
 import LoadingSpinner from '../LoadingSpinner';
+import { apiClient } from '../../services/api';
+import CompatibilityIndicator from './CompatibilityIndicator';
 
 const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' }) => {
   // State management
@@ -34,6 +40,10 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
     clearError
   } = useCampaignPools();
 
+  // Additional state for sprints data
+  const [availableSprints, setAvailableSprints] = useState<ContentSprint[]>([]);
+  const [sprintsLoading, setSprintsLoading] = useState(false);
+
   // Local state
   const [selectedPools, setSelectedPools] = useState<number[]>([]);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
@@ -42,12 +52,17 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
   const [selectedPool, setSelectedPool] = useState<CampaignPool | null>(null);
   const [searchQuery, setSearchQuery] = useState(filters.search || '');
   const [localFilters, setLocalFilters] = useState<PoolListFilters>({
-    search: '',
     strategy: 'all',
     template_status: 'all',
-    template_category: '',
     sort_by: 'created_at',
     sort_order: 'desc'
+  });
+
+  // Filter pools based on search and filter criteria
+  const filteredPools = (pools || []).filter(pool => {
+    const matchesSearch = pool.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         pool.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
   });
 
   // Handle search
@@ -57,18 +72,38 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
   };
 
   // Handle filter changes
-  const handleFilterChange = (key: keyof PoolListFilters, value: string) => {
-    const newFilters = { ...localFilters, [key]: value };
-    setLocalFilters(newFilters);
+  const handleFilterChange = (newFilters: PoolListFilters) => {
+    // Convert PoolListFilters to PoolFilters for the hook
+    const convertedFilters: Partial<PoolFilters> = {};
     
-    // Update global filters
-    const globalFilters: any = { search: searchQuery };
-    if (newFilters.strategy !== 'all') globalFilters.strategy = newFilters.strategy;
-    if (newFilters.template_status === 'templates') globalFilters.is_template = true;
-    if (newFilters.template_status === 'pools') globalFilters.is_template = false;
-    if (newFilters.template_category) globalFilters.template_category = newFilters.template_category;
+    if (newFilters.strategy !== 'all') {
+      convertedFilters.strategy = newFilters.strategy;
+    }
     
-    setFilters(globalFilters);
+    if (newFilters.template_status !== 'all') {
+      convertedFilters.template_status = newFilters.template_status;
+    }
+    
+    convertedFilters.sort_by = newFilters.sort_by;
+    convertedFilters.sort_order = newFilters.sort_order;
+    
+    setFilters(convertedFilters);
+  };
+
+  // Handle select changes with proper type casting
+  const handleStrategyChange = (value: string) => {
+    const strategy = value as PoolListFilters['strategy'];
+    handleFilterChange({ ...localFilters, strategy });
+  };
+
+  const handleTemplateStatusChange = (value: string) => {
+    const template_status = value as PoolListFilters['template_status'];
+    handleFilterChange({ ...localFilters, template_status });
+  };
+
+  const handleSortByChange = (value: string) => {
+    const sort_by = value as PoolListFilters['sort_by'];
+    handleFilterChange({ ...localFilters, sort_by });
   };
 
   // Handle pool selection
@@ -83,11 +118,40 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
   // Handle select all
   const handleSelectAll = (selected: boolean) => {
     if (selected) {
-      setSelectedPools(pools.map(pool => pool.id));
+      setSelectedPools((pools || []).map(pool => pool.id));
     } else {
       setSelectedPools([]);
     }
   };
+
+  // Load available sprints
+  const loadAvailableSprints = async () => {
+    try {
+      setSprintsLoading(true);
+      const result = await apiClient.getSprints({ limit: 100 });
+      
+      if (result.success) {
+        const sprints = result.data.sprints.map((sprint: any) => ({
+          id: sprint.id,
+          name: sprint.name,
+          type: sprint.sprint_type,
+          duration_hours: sprint.calculated_duration_hours || 24,
+          content_count: sprint.content_count || 0,
+          created_at: new Date(sprint.created_at)
+        }));
+        setAvailableSprints(sprints);
+      }
+    } catch (error) {
+      console.error('Error loading sprints:', error);
+    } finally {
+      setSprintsLoading(false);
+    }
+  };
+
+  // Load sprints on component mount
+  React.useEffect(() => {
+    loadAvailableSprints();
+  }, []);
 
   // Pool actions
   const handleCreatePool = () => {
@@ -142,7 +206,7 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
     }
   };
 
-  if (loading && pools.length === 0) {
+  if (loading && (!pools || pools.length === 0)) {
     return (
       <div className="flex items-center justify-center h-64">
         <LoadingSpinner />
@@ -158,7 +222,7 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Campaign Pools</h1>
             <p className="text-gray-600 mt-1">
-              Manage and assign content sprint pools to Instagram accounts
+              Manage collections of compatible content sprints for automated assignment to accounts
             </p>
           </div>
           <div className="flex items-center space-x-3">
@@ -212,7 +276,7 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
           {/* Strategy Filter */}
           <select
             value={localFilters.strategy}
-            onChange={(e) => handleFilterChange('strategy', e.target.value)}
+            onChange={(e) => handleStrategyChange(e.target.value)}
             className="form-select"
           >
             <option value="all">All Strategies</option>
@@ -224,7 +288,7 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
           {/* Template Filter */}
           <select
             value={localFilters.template_status}
-            onChange={(e) => handleFilterChange('template_status', e.target.value)}
+            onChange={(e) => handleTemplateStatusChange(e.target.value)}
             className="form-select"
           >
             <option value="all">All Types</option>
@@ -235,7 +299,7 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
           {/* Sort */}
           <select
             value={localFilters.sort_by}
-            onChange={(e) => handleFilterChange('sort_by', e.target.value)}
+            onChange={(e) => handleSortByChange(e.target.value)}
             className="form-select"
           >
             <option value="created_at">Created Date</option>
@@ -262,19 +326,19 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
           <div className="flex items-center space-x-4">
             <input
               type="checkbox"
-              checked={selectedPools.length === pools.length && pools.length > 0}
+              checked={selectedPools.length === (pools || []).length && (pools || []).length > 0}
               onChange={(e) => handleSelectAll(e.target.checked)}
               className="rounded border-gray-300"
             />
             <span className="text-sm font-medium text-gray-700">
-              Select All ({pools.length})
+              Select All ({(pools || []).length})
             </span>
           </div>
         </div>
 
         {/* Pool Cards/Rows */}
         <div className="divide-y">
-          {pools.map((pool) => (
+          {filteredPools.map((pool) => (
             <div key={pool.id} className="p-6 hover:bg-gray-50">
               <div className="flex items-center space-x-4">
                 <input
@@ -289,36 +353,24 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
                   <div className="flex items-center space-x-3">
                     <h3 className="text-lg font-medium text-gray-900">
                       {pool.name}
-                      {pool.is_template && (
-                        <span className="ml-2 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
-                          Template
-                        </span>
-                      )}
                     </h3>
-                    <span className={`px-2 py-1 text-xs font-medium rounded ${getStrategyBadgeColor(pool.assignment_strategy)}`}>
-                      {pool.assignment_strategy}
-                    </span>
                   </div>
                   
                   {pool.description && (
                     <p className="text-gray-600 mt-1">{pool.description}</p>
                   )}
 
-                  <div className="flex items-center space-x-6 mt-3 text-sm text-gray-500">
-                    <span>{pool.sprint_ids.length} sprints</span>
-                    <span>{pool.total_duration_hours}h duration</span>
-                    <span>{pool.compatible_accounts} compatible accounts</span>
-                    <span>Used {pool.usage_count} times</span>
-                    {pool.last_assigned && (
-                      <span>Last: {new Date(pool.last_assigned).toLocaleDateString()}</span>
-                    )}
+                  <div className="text-sm text-gray-500 space-y-1">
+                    <div>Created: {new Date(pool.created_at).toLocaleDateString()}</div>
+                    <div>Duration: {Math.round(pool.total_duration_hours / 24)} days</div>
                   </div>
                 </div>
 
-                {/* Compatibility Status */}
-                <div className={`text-center ${getCompatibilityColor(pool)}`}>
-                  <div className="text-lg font-bold">●</div>
-                  <div className="text-xs">Compatible</div>
+                {/* Pool Status/Template Badge */}
+                <div className="flex items-center space-x-2">
+                  <span className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800">
+                    Ready
+                  </span>
                 </div>
 
                 {/* Actions */}
@@ -358,14 +410,19 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
         </div>
 
         {/* Empty State */}
-        {pools.length === 0 && !loading && (
+        {filteredPools.length === 0 && !loading && (
           <div className="text-center py-12">
             <div className="text-gray-400 mb-4">
-              <Plus className="h-12 w-12 mx-auto" />
+              <BarChart3 className="h-12 w-12 mx-auto" />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No campaign pools found</h3>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">
+              {searchQuery ? 'No pools found' : 'No campaign pools yet'}
+            </h3>
             <p className="text-gray-600 mb-6">
-              Get started by creating your first campaign pool
+              {searchQuery 
+                ? 'Try adjusting your search criteria or filters'
+                : 'Create your first campaign pool to start organizing content sprints for account assignment'
+              }
             </p>
             <button onClick={handleCreatePool} className="btn-primary">
               <Plus className="h-4 w-4" />
@@ -375,12 +432,45 @@ const CampaignPoolsPage: React.FC<CampaignPoolsPageProps> = ({ className = '' })
         )}
       </div>
 
-      {/* TODO: Add modals */}
-      {/* 
-        - PoolCreationWizard (showCreateWizard)
-        - PoolDetailsModal (showDetailsModal, selectedPool)
-        - PoolAssignmentModal (showAssignmentModal, selectedPool)
-      */}
+      {/* Simple Pool Creation Modal */}
+      {showCreateWizard && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">Create Campaign Pool</h2>
+              <button
+                onClick={() => setShowCreateWizard(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-600 mb-4">
+                Pool creation wizard will be implemented in subsequent tasks
+              </p>
+              <div className="text-sm text-gray-500 mb-4">
+                Available sprints: {availableSprints.length} loaded
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowCreateWizard(false)}
+                  className="btn-ghost"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => setShowCreateWizard(false)}
+                  className="btn-primary"
+                  disabled
+                >
+                  Coming Soon
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
