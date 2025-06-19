@@ -15,6 +15,7 @@
 | 9 | Campaign Manager | As a campaign manager, I want to create and manage content pools so that I can assign diverse content to accounts for the warmup process | Proposed | Content pool creation, content upload (images/videos), pool assignment to accounts, content scheduling, usage tracking [View Details](./9/prd.md) |
 | 10 | Campaign Manager | As a campaign manager, I want basic analytics and monitoring so that I can track account performance and system health | Proposed | Account status overview, basic performance metrics, system health indicators, simple charts and statistics [View Details](./10/prd.md) |
 | 11 | Campaign Manager | As a campaign manager, I want a central content registry with bundle management so that I can efficiently organize, assign, and reuse content across multiple models and campaigns | Done | Central content upload with per-file categorization, content bundles with mixed media support, batch assignment operations, bundle editing and management, integration with model content selection [View Details](./11/prd.md) |
+| 12 | Campaign Manager | As a campaign manager, I want to create and manage sophisticated content sprints and highlight groups so that my Instagram accounts post content with realistic human-like patterns and timing | Proposed | Content sprint creation with themes and locations, highlight group management with position tracking, campaign pool assignment system, emergency content injection, Gantt chart visualization, conflict detection and validation [View Details](./12/prd.md) |
 
 ## Backlog History
 
@@ -28,4 +29,5 @@
 | 2025-01-20-23:30:00 | 11 | propose_for_backlog | PBI 11 moved from Proposed to Agreed | AI_Agent |
 | 2025-01-20-23:30:00 | 11 | start_implementation | PBI 11 moved from Agreed to InProgress | AI_Agent |
 | 2025-01-20-23:30:00 | 11 | submit_for_review | PBI 11 moved from InProgress to InReview | AI_Agent |
-| 2025-01-20-23:30:00 | 11 | approve | PBI 11 moved from InReview to Done - Central Content Registry and Bundle Management system completed | AI_Agent | 
+| 2025-01-20-23:30:00 | 11 | approve | PBI 11 moved from InReview to Done - Central Content Registry and Bundle Management system completed | AI_Agent |
+| 2025-06-18-17:45:00 | 12 | create_pbi | Created PBI 12 for Advanced Content Sprint Management System with comprehensive content workflow capabilities | AI_Agent | 

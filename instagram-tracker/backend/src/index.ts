@@ -18,6 +18,12 @@ import reviewsRouter from './routes/reviews';
 import botAccountsRouter from './routes/bot/accounts';
 import centralContentRouter from './routes/centralContent';
 import iphoneManagementRouter from './routes/iphone-management';
+import sprintsRouter from './routes/sprints';
+import contentQueueRouter from './routes/contentQueue';
+import campaignPoolsRouter from './routes/campaignPools';
+import emergencyContentRouter from './routes/emergencyContent';
+import highlightGroupsRouter from './routes/highlightGroups';
+import ganttRouter from './routes/gantt';
 
 // Load environment variables
 dotenv.config();
@@ -85,9 +91,23 @@ app.use('/api/bot/accounts', botAccountsRouter);
 
 // Central Content API Routes
 app.use('/api/central', centralContentRouter);
+app.use('/api/content-queue', contentQueueRouter);
+
+// Sprint Management API Routes
+app.use('/api/sprints', sprintsRouter);
+app.use('/api/campaign-pools', campaignPoolsRouter);
+
+// Emergency Content API Routes
+app.use('/api/emergency-content', emergencyContentRouter);
+
+// Highlight Groups API Routes
+app.use('/api/highlight-groups', highlightGroupsRouter);
 
 // iPhone Management API Routes
 app.use('/api/iphones', iphoneManagementRouter);
+
+// Gantt Chart API Routes
+app.use('/api/gantt', ganttRouter);
 
 // 404 handler
 app.use('*', (req, res) => {

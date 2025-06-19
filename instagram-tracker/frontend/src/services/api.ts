@@ -465,6 +465,117 @@ class ApiClient {
     });
     return response.data;
   }
+
+  // Sprint API methods
+  async getSprintTypes(): Promise<{
+    predefined: any[];
+    custom: any[];
+    all: any[];
+  }> {
+    const response = await this.client.get('/sprints/types');
+    return response.data.data;
+  }
+
+  async getSprints(filters?: {
+    type?: string;
+    is_highlight_group?: boolean;
+    status?: string;
+    location?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+  }): Promise<any> {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, value.toString());
+        }
+      });
+    }
+    const response = await this.client.get(`/sprints?${params}`);
+    return response.data;
+  }
+
+  async createSprint(sprintData: any): Promise<any> {
+    const response = await this.client.post('/sprints', sprintData);
+    return response.data;
+  }
+
+  async updateSprint(id: number, sprintData: any): Promise<any> {
+    const response = await this.client.put(`/sprints/${id}`, sprintData);
+    return response.data;
+  }
+
+  async deleteSprint(id: number): Promise<any> {
+    const response = await this.client.delete(`/sprints/${id}`);
+    return response.data;
+  }
+
+  // Gantt Chart API methods
+  async getTimelineData(params: {
+    start_date: string;
+    end_date: string;
+    container_width?: number;
+    zoom_level?: 'hour' | 'day' | 'week' | 'month' | 'quarter';
+    pixels_per_day?: number;
+    major_tick_interval?: number;
+    minor_tick_interval?: number;
+    account_ids?: number[];
+    sprint_ids?: number[];
+  }): Promise<any> {
+    const queryParams = new URLSearchParams();
+    
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (Array.isArray(value)) {
+          value.forEach(v => queryParams.append(key, v.toString()));
+        } else {
+          queryParams.append(key, value.toString());
+        }
+      }
+    });
+
+    const response = await this.client.get(`/gantt/timeline-data?${queryParams}`);
+    return response.data;
+  }
+
+  async getZoomLevels(): Promise<any> {
+    const response = await this.client.get('/gantt/zoom-levels');
+    return response.data;
+  }
+
+  async resolveConflict(params: {
+    conflict_id: string;
+    resolution_type: 'pause' | 'reschedule' | 'override' | 'cancel';
+    assignment_ids: string[];
+  }): Promise<any> {
+    const response = await this.client.post('/gantt/resolve-conflict', params);
+    return response.data;
+  }
+
+  // Generic HTTP methods
+  async get(url: string, config?: any): Promise<any> {
+    const response = await this.client.get(url, config);
+    return response;
+  }
+
+  async post(url: string, data?: any, config?: any): Promise<any> {
+    const response = await this.client.post(url, data, config);
+    return response;
+  }
+
+  async put(url: string, data?: any, config?: any): Promise<any> {
+    const response = await this.client.put(url, data, config);
+    return response;
+  }
+
+  async delete(url: string, config?: any): Promise<any> {
+    const response = await this.client.delete(url, config);
+    return response;
+  }
 }
 
 // Export singleton instance

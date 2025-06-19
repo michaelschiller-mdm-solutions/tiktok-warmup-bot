@@ -78,4 +78,8 @@ const runMigrations = async () => {
     }
 };
 exports.runMigrations = runMigrations;
+(0, exports.runMigrations)().catch(err => {
+    console.error("Migration script failed to run:", err);
+    process.exit(1);
+});
 //# sourceMappingURL=migrate.js.map

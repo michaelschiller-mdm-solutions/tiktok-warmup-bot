@@ -1482,5 +1482,52 @@ router.delete('/batch', async (req, res) => {
         });
     }
 });
+router.post('/:id/assign-sprint', async (req, res) => {
+    try {
+        const accountId = parseInt(req.params.id);
+        const { sprint_id, start_date, force_override = false } = req.body;
+        if (isNaN(accountId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid account ID'
+            });
+        }
+        if (!sprint_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'sprint_id is required'
+            });
+        }
+        const accountResult = await database_1.db.query('SELECT id, username FROM accounts WHERE id = $1', [accountId]);
+        if (accountResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Account not found'
+            });
+        }
+        const { SprintAssignmentService } = await Promise.resolve().then(() => __importStar(require('../services/SprintAssignmentService')));
+        const assignmentService = new SprintAssignmentService();
+        const assignment = await assignmentService.createAssignment(accountId, sprint_id, {
+            start_date: start_date ? new Date(start_date) : undefined,
+            force_override
+        });
+        res.json({
+            success: true,
+            data: {
+                assignment,
+                account: accountResult.rows[0]
+            },
+            message: `Sprint assigned to account ${accountResult.rows[0].username} successfully`
+        });
+    }
+    catch (error) {
+        console.error('Error assigning sprint to account:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to assign sprint to account',
+            message: error.message || 'Unknown error occurred'
+        });
+    }
+});
 exports.default = router;
 //# sourceMappingURL=accounts.js.map

@@ -1,6 +1,7 @@
 import express from 'express';
 import { WarmupProcessService } from '../../services/WarmupProcessService';
 import { ContentAssignmentService } from '../../services/ContentAssignmentService';
+import { SprintProcessService } from '../../services/SprintProcessService';
 import { botAuthMiddleware } from '../../middleware/botAuth';
 import { WarmupPhase, ContentType } from '../../types/warmupProcess';
 import { db } from '../../database';
@@ -10,6 +11,7 @@ import path from 'path';
 const router = express.Router();
 const warmupService = new WarmupProcessService();
 const contentService = new ContentAssignmentService();
+const sprintService = new SprintProcessService();
 
 // Apply bot authentication middleware to all routes
 router.use(botAuthMiddleware);
@@ -54,6 +56,45 @@ router.get('/ready', async (req: any, res: any) => {
 });
 
 /**
+ * GET /api/bot/accounts/active
+ * Get accounts ready for sprint content posting (post-warmup)
+ */
+router.get('/active', async (req: any, res: any) => {
+  try {
+    const { model_id, limit = 50 } = req.query;
+    const modelId = model_id ? parseInt(model_id) : undefined;
+    const limitNum = parseInt(limit);
+
+    if (limitNum > 100) {
+      return res.status(400).json({
+        success: false,
+        error: 'Limit cannot exceed 100 accounts'
+      });
+    }
+
+    const accounts = await sprintService.getActiveAccounts(modelId, limitNum);
+
+    res.json({
+      success: true,
+      data: {
+        accounts,
+        count: accounts.length,
+        bot_id: req.botId,
+        session_id: req.sessionId
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching active accounts for bot:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch active accounts',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
  * POST /api/bot/accounts/:id/start-warmup
  * Initiate warmup process for an account
  */
@@ -84,6 +125,256 @@ router.post('/:id/start-warmup', async (req: any, res: any) => {
     res.status(500).json({
       success: false,
       error: 'Failed to start warmup process',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/bot/accounts/:id/get-sprint-content
+ * Get next sprint content for posting (post-warmup accounts)
+ */
+router.post('/:id/get-sprint-content', async (req: any, res: any) => {
+  try {
+    const accountId = parseInt(req.params.id);
+    const botId = req.botId;
+    const sessionId = req.sessionId;
+
+    if (isNaN(accountId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid account ID'
+      });
+    }
+
+    const content = await sprintService.getNextSprintContent(accountId);
+
+    if (!content) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No sprint content available or account not ready',
+        bot_id: botId,
+        session_id: sessionId
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        content,
+        account_id: accountId,
+        content_type: content.content_type,
+        file_path: content.file_path,
+        caption: content.caption,
+        sprint_info: {
+          name: content.sprint_name,
+          location: content.location
+        },
+        posting_instructions: {
+          story_to_highlight: content.story_to_highlight,
+          categories: content.content_categories
+        }
+      },
+      bot_id: botId,
+      session_id: sessionId
+    });
+
+  } catch (error) {
+    console.error('Error fetching sprint content:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch sprint content',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/bot/accounts/:id/get-emergency-content
+ * Get emergency content for immediate posting
+ */
+router.post('/:id/get-emergency-content', async (req: any, res: any) => {
+  try {
+    const accountId = parseInt(req.params.id);
+    const { content_type = 'story', strategy = 'post_alongside' } = req.body;
+    const botId = req.botId;
+    const sessionId = req.sessionId;
+
+    if (isNaN(accountId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid account ID'
+      });
+    }
+
+    if (!['story', 'post', 'highlight'].includes(content_type)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid content type. Must be story, post, or highlight'
+      });
+    }
+
+    if (!['pause_sprints', 'post_alongside', 'override_conflicts'].includes(strategy)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid strategy. Must be pause_sprints, post_alongside, or override_conflicts'
+      });
+    }
+
+    const content = await sprintService.getEmergencyContent(accountId, content_type, strategy);
+
+    if (!content) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No emergency content available',
+        bot_id: botId,
+        session_id: sessionId
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        content,
+        account_id: accountId,
+        emergency_info: {
+          requires_conflict_resolution: content.requires_conflict_resolution,
+          conflicts: content.conflicts,
+          strategy: content.emergency_strategy
+        },
+        posting_instructions: {
+          immediate: true,
+          priority: 'high'
+        }
+      },
+      bot_id: botId,
+      session_id: sessionId
+    });
+
+  } catch (error) {
+    console.error('Error fetching emergency content:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch emergency content',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/bot/accounts/:id/get-highlight-content
+ * Get highlight maintenance content
+ */
+router.post('/:id/get-highlight-content', async (req: any, res: any) => {
+  try {
+    const accountId = parseInt(req.params.id);
+    const botId = req.botId;
+    const sessionId = req.sessionId;
+
+    if (isNaN(accountId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid account ID'
+      });
+    }
+
+    const content = await sprintService.getHighlightMaintenanceContent(accountId);
+
+    if (!content) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No highlight maintenance due',
+        bot_id: botId,
+        session_id: sessionId
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        content,
+        account_id: accountId,
+        highlight_info: {
+          name: content.highlight_name,
+          maintenance_type: content.maintenance_type,
+          position: content.position
+        },
+        posting_instructions: {
+          content_type: 'highlight',
+          add_to_existing: true
+        }
+      },
+      bot_id: botId,
+      session_id: sessionId
+    });
+
+  } catch (error) {
+    console.error('Error fetching highlight content:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch highlight content',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
+ * POST /api/bot/accounts/:id/mark-content-posted
+ * Mark content as successfully posted
+ */
+router.post('/:id/mark-content-posted', async (req: any, res: any) => {
+  try {
+    const accountId = parseInt(req.params.id);
+    const { queue_id, content_type, emergency_content = false } = req.body;
+    const botId = req.botId;
+    const sessionId = req.sessionId;
+
+    if (isNaN(accountId) || !queue_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid account ID or queue ID'
+      });
+    }
+
+    await sprintService.markContentPosted(queue_id, accountId);
+
+    // If it was highlight maintenance, update the schedule
+    if (content_type === 'highlight' && !emergency_content) {
+      // Get highlight ID from the content that was posted
+      const highlightResult = await db.query(`
+        SELECT ahg.id 
+        FROM account_highlight_groups ahg
+        WHERE ahg.account_id = $1 
+          AND ahg.maintenance_next_due <= CURRENT_TIMESTAMP
+        ORDER BY ahg.maintenance_next_due ASC
+        LIMIT 1
+      `, [accountId]);
+
+      if (highlightResult.rows.length > 0) {
+        await sprintService.updateHighlightMaintenance(accountId, highlightResult.rows[0].id);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        account_id: accountId,
+        queue_id: queue_id,
+        posted_at: new Date().toISOString(),
+        message: 'Content marked as posted successfully'
+      },
+      bot_id: botId,
+      session_id: sessionId
+    });
+
+  } catch (error) {
+    console.error('Error marking content as posted:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to mark content as posted',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
   }

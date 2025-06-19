@@ -21,6 +21,11 @@ const reviews_1 = __importDefault(require("./routes/reviews"));
 const accounts_2 = __importDefault(require("./routes/bot/accounts"));
 const centralContent_1 = __importDefault(require("./routes/centralContent"));
 const iphone_management_1 = __importDefault(require("./routes/iphone-management"));
+const sprints_1 = __importDefault(require("./routes/sprints"));
+const contentQueue_1 = __importDefault(require("./routes/contentQueue"));
+const campaignPools_1 = __importDefault(require("./routes/campaignPools"));
+const emergencyContent_1 = __importDefault(require("./routes/emergencyContent"));
+const highlightGroups_1 = __importDefault(require("./routes/highlightGroups"));
 dotenv_1.default.config();
 const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3090';
@@ -67,6 +72,11 @@ app.use('/api/import', import_1.default);
 app.use('/api/reviews', reviews_1.default);
 app.use('/api/bot/accounts', accounts_2.default);
 app.use('/api/central', centralContent_1.default);
+app.use('/api/content-queue', contentQueue_1.default);
+app.use('/api/sprints', sprints_1.default);
+app.use('/api/campaign-pools', campaignPools_1.default);
+app.use('/api/emergency-content', emergencyContent_1.default);
+app.use('/api/highlight-groups', highlightGroups_1.default);
 app.use('/api/iphones', iphone_management_1.default);
 app.use('*', (req, res) => {
     res.status(404).json({
