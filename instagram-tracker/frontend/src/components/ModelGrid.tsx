@@ -8,6 +8,7 @@ interface ModelGridProps {
   onSelectionChange?: (selectedIds: Set<number>) => void;
   onEdit?: (model: Model) => void;
   onDelete?: (model: Model) => void;
+  onCreate?: () => void;
   className?: string;
 }
 
@@ -16,7 +17,8 @@ const ModelGrid: React.FC<ModelGridProps> = ({
   selectedModels = new Set(),
   onSelectionChange,
   onEdit, 
-  onDelete, 
+  onDelete,
+  onCreate,
   className = '' 
 }) => {
   const handleModelSelect = (modelId: number, selected: boolean) => {
@@ -37,7 +39,10 @@ const ModelGrid: React.FC<ModelGridProps> = ({
         <div className="text-gray-400 text-6xl mb-4">📋</div>
         <h3 className="text-lg font-medium text-gray-900 mb-2">No models found</h3>
         <p className="text-gray-500 mb-6">Get started by creating your first model/campaign.</p>
-        <button className="btn-primary">
+        <button 
+          onClick={onCreate}
+          className="btn-primary"
+        >
           Create Model
         </button>
       </div>

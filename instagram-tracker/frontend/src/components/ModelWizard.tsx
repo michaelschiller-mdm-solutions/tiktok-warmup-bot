@@ -51,6 +51,10 @@ const VALIDATION_RULES = {
   },
   posting_schedule: { 
     custom: (value: string) => {
+      // Allow empty value, default to empty object
+      if (!value || value.trim() === '') {
+        return null;
+      }
       try {
         JSON.parse(value);
         return null;
@@ -64,19 +68,26 @@ const VALIDATION_RULES = {
 const ModelWizard: React.FC<ModelWizardProps> = ({ isOpen, onClose, onSuccess }) => {
   const [currentStep, setCurrentStep] = useState(0);
   
+  // Debug modal state
+  console.log('ModelWizard render - isOpen:', isOpen);
+  
   const form = useForm<FormData>({
     initialValues: INITIAL_VALUES,
     validationRules: VALIDATION_RULES,
     onSubmit: async (values) => {
+      console.log('Form onSubmit called with values:', values);
       try {
         const modelData: CreateModelRequest = {
           name: values.name,
           description: values.description || undefined,
           unfollow_ratio: values.unfollow_ratio,
           daily_follow_limit: values.daily_follow_limit,
-          posting_schedule: JSON.parse(values.posting_schedule || '{}'),
+          posting_schedule: values.posting_schedule && values.posting_schedule.trim() 
+            ? JSON.parse(values.posting_schedule) 
+            : {},
         };
 
+        console.log('Creating model with data:', modelData);
         await apiClient.createModel(modelData);
         toast.success(`Model "${values.name}" created successfully!`);
         
@@ -125,7 +136,43 @@ const ModelWizard: React.FC<ModelWizardProps> = ({ isOpen, onClose, onSuccess })
   };
 
   const canGoPrev = () => currentStep > 0;
-  const canSubmit = () => currentStep === steps.length - 1 && form.isValid;
+  const canSubmit = () => {
+    const isLastStep = currentStep === steps.length - 1;
+    
+    // On final step, check that required fields are filled
+    const hasName = form.values.name && form.values.name.trim().length >= 3;
+    const hasValidRatio = form.values.unfollow_ratio >= 0 && form.values.unfollow_ratio <= 100;
+    const hasValidLimit = form.values.daily_follow_limit >= 1 && form.values.daily_follow_limit <= 1000;
+    
+    // Check if posting_schedule is valid JSON (if provided)
+    let hasValidSchedule = true;
+    if (form.values.posting_schedule && form.values.posting_schedule.trim()) {
+      try {
+        JSON.parse(form.values.posting_schedule);
+      } catch {
+        hasValidSchedule = false;
+      }
+    }
+    
+    const isFormValid = hasName && hasValidRatio && hasValidLimit && hasValidSchedule;
+    
+    const result = isLastStep && isFormValid;
+    console.log('canSubmit check:', {
+      currentStep,
+      stepsLength: steps.length,
+      isLastStep,
+      hasName,
+      hasValidRatio,
+      hasValidLimit,
+      hasValidSchedule,
+      isFormValid,
+      formIsValid: form.isValid,
+      formValues: form.values,
+      formErrors: form.errors,
+      result
+    });
+    return result;
+  };
 
   const getStepFields = (step: number): string[] => {
     switch (step) {
@@ -237,9 +284,23 @@ const ModelWizard: React.FC<ModelWizardProps> = ({ isOpen, onClose, onSuccess })
               </button>
             ) : (
               <button
-                type="submit"
+                type="button"
                 disabled={!canSubmit() || form.isSubmitting}
                 className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  console.log('Submit button clicked!', {
+                    canSubmit: canSubmit(),
+                    isSubmitting: form.isSubmitting,
+                    disabled: !canSubmit() || form.isSubmitting
+                  });
+                  if (canSubmit() && !form.isSubmitting) {
+                    console.log('Calling form.handleSubmit...');
+                    await form.handleSubmit();
+                  } else {
+                    console.log('Submit prevented due to validation or submitting state');
+                  }
+                }}
               >
                 {form.isSubmitting ? (
                   <>

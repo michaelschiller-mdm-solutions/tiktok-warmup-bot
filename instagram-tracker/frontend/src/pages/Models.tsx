@@ -18,6 +18,11 @@ const Models: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  
+  // Debug wizard state changes
+  useEffect(() => {
+    console.log('Wizard state changed:', isWizardOpen);
+  }, [isWizardOpen]);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
@@ -45,6 +50,7 @@ const Models: React.FC = () => {
   };
 
   const handleCreateModel = () => {
+    console.log('Create Model button clicked');
     setIsWizardOpen(true);
   };
 
@@ -185,6 +191,7 @@ const Models: React.FC = () => {
         onSelectionChange={setSelectedModels}
         onEdit={handleEditModel}
         onDelete={handleDeleteModel}
+        onCreate={handleCreateModel}
       />
 
       {/* Model Creation Wizard */}

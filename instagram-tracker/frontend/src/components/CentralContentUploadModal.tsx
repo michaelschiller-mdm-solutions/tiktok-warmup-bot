@@ -46,7 +46,7 @@ const CentralContentUploadModal: React.FC<CentralContentUploadModalProps> = ({
   const [showBundleCreation, setShowBundleCreation] = useState(false);
   const [newBundleName, setNewBundleName] = useState('');
 
-  const predefinedCategories = ['pfp', 'bio', 'post', 'highlight', 'story', 'any'];
+  const predefinedCategories = ['pfp', 'bio', 'post', 'highlight', 'story', 'any', 'username'];
 
   useEffect(() => {
     if (isOpen) {

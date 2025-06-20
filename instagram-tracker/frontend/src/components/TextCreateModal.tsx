@@ -51,7 +51,7 @@ const TextCreateModal: React.FC<TextCreateModalProps> = ({
   const [showBundleCreation, setShowBundleCreation] = useState(false);
   const [newBundleName, setNewBundleName] = useState('');
 
-  const predefinedCategories = ['pfp', 'bio', 'post', 'highlight', 'story', 'any'];
+  const predefinedCategories = ['pfp', 'bio', 'post', 'highlight', 'story', 'any', 'username'];
   const commonTemplates = [
     'greeting',
     'introduction',
@@ -162,28 +162,62 @@ const TextCreateModal: React.FC<TextCreateModalProps> = ({
     }
   };
 
-  const generateVariations = () => {
+  const generateVariations = async () => {
     if (!textContent.trim()) {
       toast.error('Enter some text first to generate variations');
       return;
     }
 
-    // Simple text variations (in a real app, you might use AI)
-    const variations = [
-      textContent,
-      textContent.replace(/\b(hi|hello|hey)\b/gi, 'Hello there'),
-      textContent.replace(/\b(you)\b/gi, 'you'),
-      textContent + ' 😊',
-      textContent.replace(/\.$/, '!'),
-      textContent.replace(/\b(great|good|nice)\b/gi, 'amazing')
-    ].filter((v, i, arr) => arr.indexOf(v) === i && v !== textContent);
+    try {
+      setCreating(true);
+      let variations = [];
+      
+      // Check if username or bio category is selected
+      const isUsername = categories.includes('username');
+      const isBio = categories.includes('bio');
+      
+      if (isUsername || isBio) {
+        // Use AI generation for username/bio
+        const endpoint = isUsername ? '/api/central/generate-username-variations' : '/api/central/generate-bio-variations';
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            text: textContent,
+            count: 10 // Generate 10 variations
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          variations = data.variations || [];
+        } else {
+          throw new Error(`Failed to generate ${isUsername ? 'username' : 'bio'} variations`);
+        }
+      } else {
+        // Simple text variations for other categories
+        variations = [
+          textContent,
+          textContent.replace(/\b(hi|hello|hey)\b/gi, 'Hello there'),
+          textContent.replace(/\b(you)\b/gi, 'you'),
+          textContent + ' 😊',
+          textContent.replace(/\.$/, '!'),
+          textContent.replace(/\b(great|good|nice)\b/gi, 'amazing')
+        ].filter((v, i, arr) => arr.indexOf(v) === i && v !== textContent);
+      }
 
-    if (variations.length > 0) {
-      setBulkTexts(variations.slice(0, 5).join('\n'));
-      setMode('bulk');
-      toast.success(`Generated ${variations.length} variations`);
-    } else {
-      toast.success('No variations could be generated for this text');
+      if (variations.length > 0) {
+        setBulkTexts(variations.slice(0, 10).join('\n'));
+        setMode('bulk');
+        toast.success(`Generated ${variations.length} ${isUsername ? 'username' : isBio ? 'bio' : ''} variations`);
+      } else {
+        toast.success('No variations could be generated for this text');
+      }
+    } catch (error) {
+      console.error('Generation error:', error);
+      toast.error('Failed to generate variations');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -417,9 +451,15 @@ const TextCreateModal: React.FC<TextCreateModalProps> = ({
                         <button
                           onClick={generateVariations}
                           className="btn-secondary flex items-center gap-2 text-sm"
+                          disabled={creating}
                         >
                           <Wand2 className="w-4 h-4" />
-                          Generate Variations
+                          {categories.includes('username') 
+                            ? 'Generate Username Variations'
+                            : categories.includes('bio')
+                            ? 'Generate Bio Variations'
+                            : 'Generate Variations'
+                          }
                         </button>
                         <button
                           onClick={copyFromSingle}
