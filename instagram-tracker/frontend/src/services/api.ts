@@ -576,6 +576,56 @@ class ApiClient {
     const response = await this.client.delete(url, config);
     return response;
   }
+
+  // Campaign Pool API methods
+  async getCampaignPools(filters?: {
+    search?: string;
+    pool_type?: 'story' | 'post' | 'highlight' | 'all';
+    content_order?: 'chronological' | 'random' | 'all';
+    sort_by?: 'name' | 'created_at' | 'content_count';
+    sort_order?: 'asc' | 'desc';
+    limit?: number;
+    offset?: number;
+  }): Promise<any> {
+    const params = new URLSearchParams();
+    
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '' && value !== 'all') {
+          params.append(key, value.toString());
+        }
+      });
+    }
+
+    const response = await this.client.get(`/campaign-pools?${params}`);
+    return response.data;
+  }
+
+  async getCampaignPool(id: number): Promise<any> {
+    const response = await this.client.get(`/campaign-pools/${id}`);
+    return response.data;
+  }
+
+  async createCampaignPool(poolData: any): Promise<any> {
+    const response = await this.client.post('/campaign-pools', poolData);
+    return response.data;
+  }
+
+  async updateCampaignPool(id: number, poolData: any): Promise<any> {
+    const response = await this.client.put(`/campaign-pools/${id}`, poolData);
+    return response.data;
+  }
+
+  async deleteCampaignPool(id: number): Promise<any> {
+    const response = await this.client.delete(`/campaign-pools/${id}`);
+    return response.data;
+  }
+
+  async getHighlightGroups(): Promise<any> {
+    const response = await this.client.get('/highlight-groups');
+    return response.data;
+  }
+
 }
 
 // Export singleton instance

@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Plus, Package, Image, Type, Tag, Search, Filter, RefreshCw, RotateCcw, Edit, Trash2, CheckSquare, Square, AlertTriangle } from 'lucide-react';
+import { Upload, Plus, Package, Image, Type, Tag, Search, Filter, RefreshCw, RotateCcw, Edit, Trash2, CheckSquare, Square, AlertTriangle, Users, Calendar, BarChart3 } from 'lucide-react';
 import CentralContentUploadModal from './CentralContentUploadModal';
 import BundleCreateModal from './BundleCreateModal';
 import TextCreateModal from './TextCreateModal';
 import BundleContentsModal from './BundleContentsModal';
 import BatchAssignModal from './BatchAssignModal';
 import Modal from './Modal';
+import CampaignPoolsPage from './CampaignPools/CampaignPoolsPage';
+import HighlightGroupsTab from './HighlightGroups/HighlightGroupsTab';
+import TimelineTab from './Timeline/TimelineTab';
 import { toast } from 'react-hot-toast';
 
 interface CentralContent {
@@ -50,7 +53,7 @@ interface TextContent {
 }
 
 const CentralContentRegistry: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'content' | 'bundles' | 'texts'>('content');
+  const [activeTab, setActiveTab] = useState<'content' | 'bundles' | 'texts' | 'campaignPools' | 'highlightGroups' | 'timeline'>('content');
   const [content, setContent] = useState<CentralContent[]>([]);
   const [bundles, setBundles] = useState<ContentBundle[]>([]);
   const [texts, setTexts] = useState<TextContent[]>([]);
@@ -163,6 +166,7 @@ const CentralContentRegistry: React.FC = () => {
     } else if (activeTab === 'bundles') {
       setSelectedItems(new Set(filteredBundles.map(item => item.id)));
     }
+    // Note: Campaign Pools, Highlight Groups, and Timeline have their own selection logic
   };
 
   const clearSelection = () => {
@@ -263,6 +267,64 @@ const CentralContentRegistry: React.FC = () => {
     return matchesSearch && matchesCategory;
   });
 
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case 'content':
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {filteredContent.map((item) => (
+              <ContentCard 
+                key={item.content_id} 
+                content={item} 
+                onUpdate={fetchContent}
+                isSelected={selectedItems.has(item.content_id)}
+                onToggleSelect={() => toggleSelection(item.content_id)}
+                selectionMode={selectionMode}
+              />
+            ))}
+          </div>
+        );
+      case 'bundles':
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {filteredBundles.map((bundle) => (
+              <BundleCard 
+                key={bundle.id} 
+                bundle={bundle} 
+                onUpdate={fetchBundles}
+                isSelected={selectedItems.has(bundle.id)}
+                onToggleSelect={() => toggleSelection(bundle.id)}
+                selectionMode={selectionMode}
+              />
+            ))}
+          </div>
+        );
+      case 'texts':
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filteredTexts.map((text) => (
+              <TextCard 
+                key={text.id} 
+                text={text} 
+                onUpdate={fetchTexts}
+                isSelected={selectedItems.has(text.id)}
+                onToggleSelect={() => toggleSelection(text.id)}
+                selectionMode={selectionMode}
+              />
+            ))}
+          </div>
+        );
+      case 'campaignPools':
+        return <CampaignPoolsPage />;
+      case 'highlightGroups':
+        return <HighlightGroupsTab />;
+      case 'timeline':
+        return <TimelineTab />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -292,7 +354,7 @@ const CentralContentRegistry: React.FC = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -322,14 +384,44 @@ const CentralContentRegistry: React.FC = () => {
               <Type className="h-8 w-8 text-green-600" />
             </div>
           </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Campaign Pools</p>
+                <p className="text-2xl font-bold text-orange-600">0</p>
+              </div>
+              <Users className="h-8 w-8 text-orange-600" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Highlight Groups</p>
+                <p className="text-2xl font-bold text-pink-600">0</p>
+              </div>
+              <Tag className="h-8 w-8 text-pink-600" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Active Sprints</p>
+                <p className="text-2xl font-bold text-indigo-600">0</p>
+              </div>
+              <Calendar className="h-8 w-8 text-indigo-600" />
+            </div>
+          </div>
         </div>
 
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow mb-6">
-          <div className="flex border-b">
+          <div className="flex border-b overflow-x-auto">
             <button
               onClick={() => setActiveTab('content')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === 'content'
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
@@ -340,7 +432,7 @@ const CentralContentRegistry: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('bundles')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === 'bundles'
                   ? 'bg-white text-purple-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
@@ -351,7 +443,7 @@ const CentralContentRegistry: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('texts')}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === 'texts'
                   ? 'bg-white text-green-600 shadow-sm'
                   : 'text-gray-600 hover:text-gray-900'
@@ -360,63 +452,100 @@ const CentralContentRegistry: React.FC = () => {
               <Type className="w-4 h-4 inline mr-2" />
               Text Library
             </button>
+            <button
+              onClick={() => setActiveTab('campaignPools')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'campaignPools'
+                  ? 'bg-white text-orange-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Users className="w-4 h-4 inline mr-2" />
+              Campaign Pools
+            </button>
+            <button
+              onClick={() => setActiveTab('highlightGroups')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'highlightGroups'
+                  ? 'bg-white text-pink-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Tag className="w-4 h-4 inline mr-2" />
+              Highlight Groups
+            </button>
+            <button
+              onClick={() => setActiveTab('timeline')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+                activeTab === 'timeline'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4 inline mr-2" />
+              Timeline
+            </button>
           </div>
 
-          {/* Search and Filters */}
-          <div className="p-4 border-b bg-gray-50">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search content..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="form-input pl-10"
-                />
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-gray-400" />
-                <select
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="form-select"
-                >
-                  <option value="">All Categories</option>
-                  <option value="bio">Bio</option>
-                  <option value="post">Post</option>
-                  <option value="story">Story</option>
-                  <option value="highlight">Highlight</option>
-                  <option value="name">Name</option>
-                  <option value="username">Username</option>
-                </select>
+          {/* Search and Filters - Only show for original tabs */}
+          {(activeTab === 'content' || activeTab === 'bundles' || activeTab === 'texts') && (
+            <div className="p-4 border-b bg-gray-50">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search content..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="form-input pl-10"
+                  />
+                </div>
                 
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="form-select"
-                >
-                  <option value="">All Types</option>
-                  {activeTab === 'content' && (
-                    <>
-                      <option value="image">Images</option>
-                      <option value="video">Videos</option>
-                    </>
-                  )}
-                  {activeTab === 'bundles' && (
-                    <>
-                      <option value="mixed">Mixed</option>
-                      <option value="image">Image Bundles</option>
-                      <option value="video">Video Bundles</option>
-                      <option value="text">Text Bundles</option>
-                    </>
-                  )}
-                </select>
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-gray-400" />
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className="form-select"
+                  >
+                    <option value="">All Categories</option>
+                    <option value="bio">Bio</option>
+                    <option value="post">Post</option>
+                    <option value="story">Story</option>
+                    <option value="highlight">Highlight</option>
+                    <option value="name">Name</option>
+                    <option value="username">Username</option>
+                  </select>
+                  
+                  <select
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value)}
+                    className="form-select"
+                  >
+                    <option value="">All Types</option>
+                    {activeTab === 'content' && (
+                      <>
+                        <option value="image">Images</option>
+                        <option value="video">Videos</option>
+                      </>
+                    )}
+                    {activeTab === 'bundles' && (
+                      <>
+                        <option value="mixed">Mixed</option>
+                        <option value="image">Image Bundles</option>
+                        <option value="video">Video Bundles</option>
+                        <option value="text">Text Bundles</option>
+                      </>
+                    )}
+                  </select>
+                </div>
               </div>
             </div>
+          )}
 
-            {/* Action Buttons */}
+          {/* Action Buttons - Show for all tabs but with different controls */}
+          <div className="p-4 border-b bg-gray-50">{/* Action Buttons */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {(activeTab === 'content' || activeTab === 'texts' || activeTab === 'bundles') && (
@@ -498,6 +627,15 @@ const CentralContentRegistry: React.FC = () => {
                     Add Text
                   </button>
                 )}
+                {(activeTab === 'campaignPools' || activeTab === 'highlightGroups') && (
+                  <button
+                    onClick={() => setShowUploadModal(true)}
+                    className="btn-secondary flex items-center gap-2"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload Content
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -511,53 +649,7 @@ const CentralContentRegistry: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Content Library Tab */}
-              {activeTab === 'content' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
-                  {filteredContent.map((item) => (
-                    <ContentCard 
-                      key={item.content_id} 
-                      content={item} 
-                      onUpdate={fetchContent}
-                      isSelected={selectedItems.has(item.content_id)}
-                      onToggleSelect={() => toggleSelection(item.content_id)}
-                      selectionMode={selectionMode}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Bundles Tab */}
-              {activeTab === 'bundles' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredBundles.map((bundle) => (
-                    <BundleCard 
-                      key={bundle.id} 
-                      bundle={bundle} 
-                      onUpdate={fetchBundles}
-                      isSelected={selectedItems.has(bundle.id)}
-                      onToggleSelect={() => toggleSelection(bundle.id)}
-                      selectionMode={selectionMode}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {/* Texts Tab */}
-              {activeTab === 'texts' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredTexts.map((text) => (
-                    <TextCard 
-                      key={text.id} 
-                      text={text} 
-                      onUpdate={fetchTexts}
-                      isSelected={selectedItems.has(text.id)}
-                      onToggleSelect={() => toggleSelection(text.id)}
-                      selectionMode={selectionMode}
-                    />
-                  ))}
-                </div>
-              )}
+              {renderActiveTab()}
             </>
           )}
         </div>

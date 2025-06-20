@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 
 interface ValidationRule {
   required?: boolean;
@@ -185,11 +185,23 @@ export function useForm<T extends Record<string, any>>({
     isTouched: Boolean(touched[name]),
   }), [errors, touched]);
 
+  const isValid = useMemo(() => {
+    const newErrors: FormErrors = {};
+    for (const fieldName of Object.keys(validationRules)) {
+      const error = validateField(fieldName, values[fieldName]);
+      if (error) {
+        newErrors[fieldName] = error;
+      }
+    }
+    return Object.keys(newErrors).length === 0;
+  }, [values, validationRules, validateField]);
+
   return {
     values,
     errors,
     touched,
     isSubmitting,
+    isValid,
     setValue,
     setFieldTouched,
     handleChange,
@@ -199,6 +211,5 @@ export function useForm<T extends Record<string, any>>({
     validateAll,
     getFieldProps,
     getFieldState,
-    isValid: Object.keys(errors).length === 0,
   };
 } 

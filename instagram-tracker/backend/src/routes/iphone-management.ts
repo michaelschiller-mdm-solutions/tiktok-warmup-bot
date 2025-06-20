@@ -809,4 +809,79 @@ router.get('/available-for-account/:accountId', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/iphones/:id/sync-containers
+ * Manually synchronize the database with on-device containers.
+ */
+router.post('/:id/sync-containers', async (req, res) => {
+  const { id } = req.params;
+  const { totalContainerCount } = req.body;
+
+  if (!totalContainerCount || totalContainerCount <= 0) {
+    return res.status(400).json({
+      success: false,
+      error: 'Invalid container count',
+      message: 'Total container count must be a positive number.',
+    });
+  }
+
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Get all currently assigned containers for this iPhone to preserve them
+    const assignedResult = await client.query(
+      `SELECT container_number FROM iphone_containers WHERE iphone_id = $1 AND assigned_account_id IS NOT NULL`,
+      [id]
+    );
+    const assignedContainerNumbers = new Set(assignedResult.rows.map(r => r.container_number));
+
+    // 2. Delete all 'available' containers for this iPhone
+    const deleteResult = await client.query(
+      `DELETE FROM iphone_containers WHERE iphone_id = $1 AND assigned_account_id IS NULL`,
+      [id]
+    );
+
+    // 3. Create new container records up to the specified count
+    const newContainers = [];
+    for (let i = 1; i <= totalContainerCount; i++) {
+      if (!assignedContainerNumbers.has(i)) {
+        newContainers.push(i);
+      }
+    }
+
+    if (newContainers.length > 0) {
+      const insertQuery = `
+        INSERT INTO iphone_containers (iphone_id, container_number, status)
+        SELECT $1, container_number, 'available'
+        FROM unnest($2::int[]) as container_number
+      `;
+      await client.query(insertQuery, [id, newContainers]);
+    }
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: `Successfully synced iPhone containers. ${deleteResult.rowCount} old records removed, ${newContainers.length} new 'available' records created.`,
+      data: {
+        removed_count: deleteResult.rowCount,
+        created_count: newContainers.length,
+        total_synced: totalContainerCount,
+      }
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error syncing iPhone containers:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Database error',
+      message: error instanceof Error ? error.message : 'An internal server error occurred while syncing containers.'
+    });
+  } finally {
+    client.release();
+  }
+});
+
 export default router; 

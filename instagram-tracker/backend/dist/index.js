@@ -27,6 +27,8 @@ const campaignPools_1 = __importDefault(require("./routes/campaignPools"));
 const emergencyContent_1 = __importDefault(require("./routes/emergencyContent"));
 const highlightGroups_1 = __importDefault(require("./routes/highlightGroups"));
 const gantt_1 = __importDefault(require("./routes/gantt"));
+const maintenanceStatus_1 = __importDefault(require("./routes/maintenanceStatus"));
+const botIntegration_1 = __importDefault(require("./routes/botIntegration"));
 dotenv_1.default.config();
 const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3090';
@@ -80,6 +82,8 @@ app.use('/api/emergency-content', emergencyContent_1.default);
 app.use('/api/highlight-groups', highlightGroups_1.default);
 app.use('/api/iphones', iphone_management_1.default);
 app.use('/api/gantt', gantt_1.default);
+app.use('/api/maintenance-status', maintenanceStatus_1.default);
+app.use('/api/bot-integration', botIntegration_1.default);
 app.use('*', (req, res) => {
     res.status(404).json({
         error: 'Endpoint not found',

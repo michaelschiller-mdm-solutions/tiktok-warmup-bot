@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { StepProps, SprintContentItem } from '../../../types/sprintCreation';
+import { MonthSelector } from '../../ui/MonthSelector';
 
 const SchedulingStep: React.FC<StepProps> = ({
   data,
@@ -112,6 +113,15 @@ const SchedulingStep: React.FC<StepProps> = ({
         <p className="text-gray-600">
           Set realistic posting delays and review your content timeline
         </p>
+      </div>
+
+      {/* Seasonal Availability */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Seasonal Availability</h3>
+        <MonthSelector
+          selectedMonths={data.available_months || []}
+          onChange={(months) => onChange({ ...data, available_months: months })}
+        />
       </div>
 
       {/* Sprint Overview */}

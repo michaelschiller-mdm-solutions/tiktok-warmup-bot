@@ -17,13 +17,17 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
+const LOCK_FILE_PATH = path.join(__dirname, '.iphone_global.lock');
+
 class iPhoneScriptRunner {
-    constructor() {
-        this.apiBase = "http://192.168.178.65:46952";
+    constructor(iphoneUrl = "http://192.168.178.65:46952") {
+        this.apiBase = iphoneUrl;
+        const SCRIPT_ROOT = path.join(__dirname, '..'); // Resolves to /bot/scripts
         this.localScriptDirs = {
-            iphone_lua: './scripts/iphone_lua/',
-            open_container: './scripts/open_container/',  
-            instagram: './scripts/instagram/'
+            iphone_lua: path.join(SCRIPT_ROOT, 'iphone_lua'),
+            open_container: path.join(SCRIPT_ROOT, 'open_container'),  
+            instagram: path.join(SCRIPT_ROOT, 'instagram'),
+            container_creation: path.join(SCRIPT_ROOT, 'container_creation')
         };
     }
 
@@ -56,6 +60,21 @@ class iPhoneScriptRunner {
         console.log(`💡 Usage: node scripts/api/script_runner.js <script_name>`);
         console.log(`   Example: node scripts/api/script_runner.js open_container6.lua`);
         console.log(`📊 Total scripts available: ${totalScripts}`);
+    }
+
+    /**
+     * Stop the currently running script on iPhone
+     */
+    async stopScript() {
+        try {
+            console.log('🛑 Stopping any currently running script...');
+            await axios.post(`${this.apiBase}/stop_script_file`, '');
+            console.log('✅ Script stopped.');
+            return true;
+        } catch (error) {
+            console.log('⚠️  Could not stop script (might not be running):', error.message);
+            return false;
+        }
     }
 
     /**
@@ -137,39 +156,89 @@ class iPhoneScriptRunner {
     }
 
     /**
-     * Execute script (select + launch)
+     * Execute script (select + launch) with locking mechanism
      */
     async executeScript(scriptName) {
-        console.log(`🎯 Executing script: ${scriptName}`);
-        console.log('================================\n');
+        // --- Self-healing Lock Mechanism ---
+        if (fs.existsSync(LOCK_FILE_PATH)) {
+            const lockData = fs.readFileSync(LOCK_FILE_PATH, 'utf8');
+            const [pid] = (lockData || '').split('|');
 
-        // Step 1: Find script locally
-        const scriptInfo = this.findScript(scriptName);
-        
-        if (!scriptInfo.found) {
-            console.log(`❌ Script "${scriptName}" not found in local directories`);
-            console.log('📁 Available directories:', Object.keys(this.localScriptDirs).join(', '));
-            return false;
+            if (pid) {
+                let isStale = false;
+                try {
+                    // Check if process is still running. process.kill with signal 0 doesn't kill
+                    // the process, but throws an error if it doesn't exist.
+                    process.kill(parseInt(pid), 0);
+                } catch (e) {
+                    // ESRCH means the process doesn't exist, so the lock is stale.
+                    if (e.code === 'ESRCH') {
+                        console.log('⚠️  Found stale lock file from a non-existent process. Removing it.');
+                        isStale = true;
+                        fs.unlinkSync(LOCK_FILE_PATH); // Clean up stale lock
+                    }
+                }
+
+                if (!isStale) {
+                    console.error(`❌ Error: A script (PID: ${pid}) is already running. Please wait.`);
+                    return false;
+                }
+            }
         }
 
-        console.log(`📂 Found in directory: ${scriptInfo.directory}`);
-        console.log(`📂 Remote path: ${scriptInfo.remotePath}`);
+        try {
+            // Create lock file with current process's PID
+            const pid = process.pid;
+            fs.writeFileSync(LOCK_FILE_PATH, `${pid}|${new Date().toISOString()}`);
 
-        // Step 2: Select script on iPhone
-        const selected = await this.selectScript(scriptName);
-        if (!selected) {
+            console.log(`🎯 Executing script: ${scriptName}`);
+            console.log('================================\\n');
+
+            // Stop any orphaned script before starting a new one.
+            await this.stopScript();
+
+            // Step 1: Find script locally
+            const scriptInfo = this.findScript(scriptName);
+            
+            if (!scriptInfo.found) {
+                console.log(`❌ Script "${scriptName}" not found in local directories`);
+                console.log('📁 Available directories:', Object.keys(this.localScriptDirs).join(', '));
+                return false;
+            }
+
+            console.log(`📂 Found in directory: ${scriptInfo.directory}`);
+
+            // Step 2: Select script on iPhone
+            const selected = await this.selectScript(scriptName);
+            if (!selected) {
+                return false;
+            }
+
+            // Step 3: Launch script on iPhone  
+            const launched = await this.launchScript();
+            if (!launched) {
+                return false;
+            }
+
+            console.log(`\n🎉 Script execution completed successfully!`);
+            console.log('📱 Check your iPhone for the results');
+            return true;
+
+        } catch (error) {
+            console.error(`💥 An unexpected error occurred during execution of ${scriptName}:`, error.message);
             return false;
+        } finally {
+            // --- Unlock Mechanism ---
+            // Only remove the lock if it was created by *this* process
+            if (fs.existsSync(LOCK_FILE_PATH)) {
+                const lockData = fs.readFileSync(LOCK_FILE_PATH, 'utf8');
+                const [pidFromFile] = (lockData || '').split('|');
+                
+                if (pidFromFile == process.pid.toString()) {
+                    fs.unlinkSync(LOCK_FILE_PATH);
+                }
+            }
         }
-
-        // Step 3: Launch script on iPhone  
-        const launched = await this.launchScript();
-        if (!launched) {
-            return false;
-        }
-
-        console.log('\n🎉 Script execution completed successfully!');
-        console.log('📱 Check your iPhone for the results');
-        return true;
     }
 
     /**
@@ -265,35 +334,36 @@ class iPhoneScriptRunner {
 
 // CLI Interface
 async function main() {
-    const runner = new iPhoneScriptRunner();
     const args = process.argv.slice(2);
-    
-    if (args.length === 0) {
+    const scriptName = args[0];
+    const iphoneUrl = args[1]; // Optional iPhone URL
+
+    if (!scriptName) {
+        console.log('❌ Missing script name');
+        console.log('💡 Usage: node scripts/api/script_runner.js <script_name> [iphone_url]');
+        const runner = new iPhoneScriptRunner();
         runner.listScripts();
         return;
     }
 
-    const command = args[0];
-    
-    // Handle special commands
-    if (command === 'list') {
+    if (scriptName === 'list') {
+        const runner = new iPhoneScriptRunner();
         runner.listScripts();
-    } else if (command === 'logs' || command === 'log') {
-        await runner.getLogs();
-    } else if (command === 'find-log') {
-        const endpoint = await runner.findLogEndpoint();
-        if (endpoint) {
-            console.log(`\n💡 The correct log endpoint is: /${endpoint}`);
-            console.log(`💡 Update the 'getLogs' function in the script to use it.`);
-        }
-    } else if (command.endsWith('.lua')) {
-        await runner.executeScript(command);
-        await runner.monitorExecution(10000); // Monitor for 10 seconds
-    } else {
-        console.log(`❌ Invalid command or script name: ${command}`);
-        console.log('💡 Try "list" to see available scripts or provide a valid .lua file.');
+        return;
+    }
+
+    const runner = new iPhoneScriptRunner(iphoneUrl);
+    
+    // Execute the script
+    const success = await runner.executeScript(scriptName);
+
+    if (success) {
+        // Monitor for a few seconds to see if it completes
+        await runner.monitorExecution(5000);
     }
 }
+
+main();
 
 // Export for use as module
 module.exports = iPhoneScriptRunner;

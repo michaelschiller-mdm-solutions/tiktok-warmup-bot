@@ -452,11 +452,15 @@ router.post('/bundles', async (req, res) => {
       return res.status(400).json({ error: 'Bundle name is required' });
     }
 
+    // TEMP FIX: If created_by is not a number, default to user 1 (admin/system)
+    // This handles cases where a user object or name is sent instead of an ID.
+    const createdById = (typeof created_by === 'number' && !isNaN(created_by)) ? created_by : 1;
+
     const result = await db.query(`
       INSERT INTO content_bundles (name, description, bundle_type, categories, tags, created_by)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
-    `, [name, description, bundle_type, JSON.stringify(categories), JSON.stringify(tags), created_by]);
+    `, [name, description, bundle_type, JSON.stringify(categories), JSON.stringify(tags), createdById]);
 
     res.json(result.rows[0]);
   } catch (error) {

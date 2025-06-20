@@ -1,226 +1,172 @@
 // Frontend Campaign Pool Types
 // Extends backend types with additional UI-specific properties
 
-// Campaign Pools - Collections of compatible Content Sprints for assignment to accounts
-export interface CampaignPool {
-  id: number;
-  name: string;
-  description?: string;
-  sprint_ids: number[];           // Array of Content Sprint IDs in this pool
-  total_duration_hours: number;  // Calculated duration from all sprints
-  compatible_accounts: number;   // Number of accounts that can use this pool
-  created_at: string;
-  updated_at: string;
+// Campaign Pool Types - Content Collections for Instagram Posting
+// Updated to reflect actual content collections (not sprint bundling)
+
+// Content Item for upload and management
+export interface ContentItem {
+  id: string;
+  file: File;
+  preview: string;
+  caption: string;
+  content_type: 'story' | 'post' | 'highlight';
+  custom_delay_hours?: number;
+  post_group_id?: number;
+  batch_number?: number;
+  add_to_highlights: boolean;
+  content_order: number;
 }
 
-export interface CreateCampaignPoolRequest {
-  name: string;
-  description?: string;
-  sprint_ids: number[];
-}
-
-export interface UpdateCampaignPoolRequest extends Partial<CreateCampaignPoolRequest> {}
-
-// Content Sprints - The actual content workflows that get pooled
+// NEW: Content Sprint interface for pool creation
 export interface ContentSprint {
   id: number;
   name: string;
   description?: string;
-  sprint_type: 'vacation' | 'university' | 'home' | 'work' | 'fitness' | 'highlight_group';
-  location: string;                    // jamaica, germany, home, university, etc.
-  is_highlight_group: boolean;         // true for highlight groups, false for regular sprints
-  max_content_items: number;           // 20 for sprints, 100 for highlights
-  available_months: number[];          // [4,5,6,7,8,9,10] for seasonal content
-  cooldown_hours: number;              // Hours before this can be used again (can be hundreds)
-  blocks_sprints: number[];            // Sprint IDs that this blocks
-  blocks_highlight_groups: number[];   // Highlight group IDs that this blocks
-  content_items_count: number;         // Number of content items in this sprint
+  sprint_type: string;
+  location: string;
+  is_highlight_group: boolean;
+  content_items_count: number;
+  blocks_sprints: number[];
+  available_months: number[];
+  cooldown_hours: number;
+  created_at: string;
+}
+
+// NEW: Compatibility Report for sprint selection
+export interface CompatibilityReport {
+  compatible_accounts: number;
+  total_conflicts: number;
+  blocking_conflicts: string[];
+  location_conflicts: string[];
+  seasonal_restrictions: string[];
+  estimated_success_rate: number;
+}
+
+// Campaign Pool - Updated for sprint bundling system
+export interface CampaignPool {
+  id: number;
+  name: string;
+  description?: string;
+  pool_type: 'story' | 'post' | 'highlight';
   created_at: string;
   updated_at: string;
 }
 
-// Content Items within sprints - can include batching for fixed-order pools
-export interface SprintContentItem {
+// Campaign Pool Content Item (persisted)
+export interface CampaignPoolContent {
   id: number;
-  sprint_id: number;
+  pool_id: number;
   file_path: string;
   file_name: string;
+  content_order: number;
+  custom_delay_hours?: number;
   caption?: string;
-  content_order: number;               // Order within the sprint
-  content_categories: string[];        // ['story', 'post', 'highlight']
-  story_to_highlight: boolean;         // Auto-move stories to highlights
-  post_group_id?: number;              // For batching multiple pictures in fixed-order pools
-  delay_hours_min: number;             // Minimum delay (can be hundreds of hours)
-  delay_hours_max: number;             // Maximum delay (can be hundreds of hours) 
-  is_after_sprint_content: boolean;    // Transition content after main sprint
+  content_type: 'story' | 'post' | 'highlight';
+  post_group_id?: number;
+  batch_number?: number;
+  add_to_highlights: boolean;
   created_at: string;
 }
 
-// Pool assignment to accounts
+// Pool Creation Request - Updated for sprint bundling
+export interface CreateCampaignPoolRequest {
+  name: string;
+  description?: string;
+  pool_type: 'story' | 'post' | 'highlight';
+  content_files?: File[];
+  // Story-specific
+  auto_add_to_highlights?: boolean;
+  target_highlight_groups?: number[];
+  
+  // Post-specific
+  content_format?: 'single' | 'multi';
+
+  // Highlight-specific
+  content_order?: 'chronological' | 'random';
+  default_delay_hours?: number;
+  highlight_caption?: string;
+}
+
+// Pool Update Request
+export interface UpdateCampaignPoolRequest {
+  name?: string;
+  description?: string;
+  assignment_strategy?: 'random' | 'balanced' | 'manual';
+  time_horizon_days?: number;
+  time_spacing_hours?: number;
+  respect_cooldowns?: boolean;
+  is_template?: boolean;
+  template_category?: string;
+}
+
+// Existing Highlight Groups for integration
+export interface HighlightGroup {
+  id: number;
+  name: string;
+}
+
+// Pool Assignment to Accounts
 export interface PoolAssignment {
   id: number;
   account_id: number;
   pool_id: number;
   assignment_date: string;
   status: 'scheduled' | 'active' | 'completed' | 'paused';
-  created_at: string;
-}
-
-// Sprint assignment to individual accounts (what actually gets executed)
-export interface AccountSprintAssignment {
-  id: number;
-  account_id: number;
-  sprint_id: number;
-  assignment_date: string;
-  start_date?: string;
-  end_date?: string;
-  status: 'scheduled' | 'active' | 'completed' | 'paused';
+  progress_percentage: number;
   current_content_index: number;
   next_content_due?: string;
-  sprint_instance_id: string;
   created_at: string;
 }
 
-// Compatibility checking between sprints
-export interface CompatibilityCheck {
-  compatible: boolean;
-  conflicts: string[];               // List of conflict reasons
-  warnings: string[];               // List of potential issues
-  sprint_ids: number[];             // Sprints being checked
-}
-
-// Assignment strategies for distributing pools to accounts
-export interface AssignmentStrategy {
-  type: 'random' | 'balanced' | 'manual';
-  account_selection: 'all' | 'specific_count' | 'specific_accounts';
-  account_count?: number;            // For specific_count strategy
-  account_ids?: number[];            // For specific_accounts strategy
-  distribution_preference?: 'even' | 'weighted';
-}
-
-// Pool analytics and performance
+// Pool Analytics
 export interface PoolAnalytics {
   pool_id: number;
   assigned_accounts: number;
+  content_posted: number;
   completion_rate: number;
   average_engagement: number;
   success_rate: number;
   last_updated: string;
 }
 
-// Template for reusable pool configurations
-export interface PoolTemplate {
-  id: number;
-  name: string;
-  description?: string;
-  sprint_types: string[];           // Types of sprints this template includes
-  category: string;                 // vacation, university, lifestyle, etc.
-  usage_count: number;
-  created_at: string;
+// Pool Statistics
+export interface PoolStats {
+  total_pools: number;
+  total_content_items: number;
+  pools_by_type: {
+    story: number;
+    post: number;
+    highlight: number;
+  };
+  average_items_per_pool: number;
+  most_used_pool_type: 'story' | 'post' | 'highlight';
 }
 
-export interface CreatePoolRequest {
-  name: string;
-  description?: string;
-  sprint_ids: number[];
-  assignment_strategy?: 'random' | 'balanced' | 'manual';
-  time_horizon_days?: number;
-  is_template?: boolean;
-  template_category?: string;
-}
-
-export interface UpdatePoolRequest {
-  name?: string;
-  description?: string;
-  sprint_ids?: number[];
-  assignment_strategy?: 'random' | 'balanced' | 'manual';
-  time_horizon_days?: number;
-  is_template?: boolean;
-  template_category?: string;
-  total_duration_hours?: number;
-  compatible_accounts?: number;
-  usage_count?: number;
-}
-
+// Pool Filters for listing - Updated
 export interface PoolFilters {
   search?: string;
-  strategy?: 'random' | 'balanced' | 'manual';
-  template_status?: 'pools' | 'templates';
-  template_category?: string;
-  sort_by?: 'name' | 'created_at';
+  strategy?: 'random' | 'balanced' | 'manual' | 'all';
+  template_status?: 'template' | 'pool' | 'all';
+  sort_by?: 'name' | 'created_at' | 'estimated_duration';
   sort_order?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
 }
 
-export interface PoolStats {
-  usage_count: number;
-  last_assigned?: Date;
-  accounts_assigned: number;
-  total_assignments: number;
-  completed_assignments: number;
-  completion_rate: number;
+// Pool List Response
+export interface PoolListResponse {
+  pools: CampaignPool[];
+  total_count: number;
+  has_next: boolean;
+  has_previous: boolean;
+  filters_applied: PoolFilters;
 }
 
-// UI-specific types
+// UI-specific Types
 
-export interface CompatibilityReport {
-  is_compatible: boolean;
-  blocking_conflicts: Conflict[];
-  seasonal_issues: SeasonalIssue[];
-  duration_warnings: DurationWarning[];
-  account_eligibility_count: number;
-  compatibility_score: number;
-}
-
-export interface Conflict {
-  id: string;
-  type: 'blocking' | 'warning' | 'info';
-  sprint_ids: number[];
-  message: string;
-  resolution_suggestions: string[];
-  severity: 'high' | 'medium' | 'low';
-}
-
-export interface SeasonalIssue {
-  id: string;
-  sprint_ids: number[];
-  season: string;
-  message: string;
-  recommendation: string;
-}
-
-export interface DurationWarning {
-  id: string;
-  total_duration: number;
-  recommended_duration: number;
-  message: string;
-  affected_sprints: number[];
-}
-
-export interface AssignmentOptions {
-  strategy: 'random' | 'balanced' | 'manual';
-  account_ids?: number[];
-  max_assignments?: number;
-  start_date?: string;
-  respect_cooldowns?: boolean;
-}
-
-export interface AssignmentPreview {
-  account_id: number;
-  account_username: string;
-  sprint_assignments: {
-    sprint_id: number;
-    sprint_name: string;
-    start_time: Date;
-    end_time: Date;
-    conflicts: string[];
-  }[];
-  total_duration_hours: number;
-  success_probability: number;
-}
-
-export interface PoolCreationStep {
+// Creation Step for Wizard - Updated with errors
+export interface CreationStep {
   id: number;
   title: string;
   description: string;
@@ -229,137 +175,260 @@ export interface PoolCreationStep {
   errors: string[];
 }
 
+// NEW: Pool Creation Step (alias for clarity)
+export interface PoolCreationStep extends CreationStep {}
+
+// Form Data for Pool Creation - Updated for sprint bundling
 export interface PoolFormData {
-  // Step 1: Basic Information
   name: string;
   description: string;
-  
-  // Step 2: Sprint Selection
   selected_sprint_ids: number[];
   compatibility_report?: CompatibilityReport;
-  
-  // Step 3: Strategy Configuration
   assignment_strategy: 'random' | 'balanced' | 'manual';
   time_horizon_days: number;
   time_spacing_hours: number;
   respect_cooldowns: boolean;
-  
-  // Step 4: Template Settings
   is_template: boolean;
   template_category: string;
-  
-  // Step 5: Review
   estimated_accounts: number;
   estimated_duration: number;
 }
 
-// Component Props Interfaces
-
-export interface CampaignPoolsPageProps {
-  className?: string;
-}
+// Component Props
 
 export interface PoolCreationWizardProps {
   isOpen: boolean;
   onClose: () => void;
-  onPoolCreate: (poolData: CreatePoolRequest) => Promise<void>;
+  onPoolCreate: (poolData: CreateCampaignPoolRequest) => Promise<void>;
   availableSprints: ContentSprint[];
-  templates: PoolTemplate[];
+  templates?: PoolTemplate[];
 }
+
+// NEW: Pool Template for reusable configurations
+export interface PoolTemplate {
+  id: number;
+  name: string;
+  description?: string;
+  category: string;
+  sprint_ids: number[];
+  assignment_strategy: 'random' | 'balanced' | 'manual';
+  time_horizon_days: number;
+  time_spacing_hours: number;
+  respect_cooldowns: boolean;
+  usage_count: number;
+  created_at: string;
+}
+
+// NEW: Page props interface
+export interface CampaignPoolsPageProps {
+  className?: string;
+}
+
+// NEW: Pool List Filters (alias for backward compatibility)
+export interface PoolListFilters extends PoolFilters {}
 
 export interface PoolDetailsModalProps {
   pool: CampaignPool | null;
   isOpen: boolean;
   onClose: () => void;
-  onUpdate: (id: number, updates: UpdatePoolRequest) => Promise<void>;
+  onUpdate: (id: number, updates: UpdateCampaignPoolRequest) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
-  sprints: ContentSprint[];
 }
 
 export interface PoolAssignmentModalProps {
   pool: CampaignPool | null;
   isOpen: boolean;
   onClose: () => void;
-  onAssign: (poolId: number, assignments: PoolAssignment[]) => Promise<void>;
+  onAssign: (poolId: number, accountIds: number[]) => Promise<void>;
   accounts: Account[];
 }
 
+// NEW: Assignment Options
+export interface AssignmentOptions {
+  strategy: 'immediate' | 'scheduled';
+  start_date?: string;
+  priority: 'low' | 'normal' | 'high';
+  account_filters?: AccountFilters;
+  dry_run?: boolean;
+}
+
+// NEW: Compatibility Check Request
+export interface CompatibilityCheck {
+  sprint_ids: number[];
+  account_filters?: AccountFilters;
+  assignment_strategy: 'random' | 'balanced' | 'manual';
+}
+
+// NEW: Compatibility Indicator Props
 export interface CompatibilityIndicatorProps {
-  report: CompatibilityReport;
-  size?: 'sm' | 'md' | 'lg';
-  showDetails?: boolean;
-  onClick?: () => void;
+  report: CompatibilityReport | null;
+  loading?: boolean;
+  className?: string;
 }
 
-export interface SprintSelectionGridProps {
-  sprints: ContentSprint[];
-  selectedSprintIds: number[];
-  onSelectionChange: (sprintIds: number[]) => void;
-  compatibilityReport?: CompatibilityReport;
-  searchQuery: string;
-  onSearchChange: (query: string) => void;
+// File Upload Component Props
+export interface FileUploadProps {
+  onUpload: (files: FileList) => void;
+  maxItems: number;
+  acceptedTypes: string[];
+  currentCount: number;
 }
 
-export interface AccountSelectionTableProps {
-  accounts: Account[];
-  selectedAccountIds: number[];
-  onSelectionChange: (accountIds: number[]) => void;
-  filters: AccountFilters;
-  onFiltersChange: (filters: AccountFilters) => void;
+export interface ContentGridProps {
+  items: ContentItem[];
+  onRemove: (itemId: string) => void;
+  onUpdate: (itemId: string, updates: Partial<ContentItem>) => void;
+  onReorder?: (draggedId: string, targetId: string) => void;
+  allowReorder: boolean;
+  showOrder: boolean;
 }
 
-export interface PoolAnalyticsProps {
-  analytics: PoolAnalytics;
-  pool: CampaignPool;
-  showComparison?: boolean;
+export interface PoolTypeCardProps {
+  type: 'story' | 'post' | 'highlight';
+  title: string;
+  description: string;
+  icon: React.ComponentType<any>;
+  selected: boolean;
+  onClick: () => void;
 }
 
-// Table and List Types
+export interface HighlightConfigurationProps {
+  caption: string;
+  onCaptionChange: (caption: string) => void;
+  contentOrder: 'chronological' | 'random';
+  onOrderChange: (order: 'chronological' | 'random') => void;
+  defaultDelay: number;
+  onDelayChange: (delay: number) => void;
+  batchSize: number;
+  onBatchSizeChange: (size: number) => void;
+  disabled?: boolean;
+}
+
+export interface HighlightGroupSelectorProps {
+  groups: HighlightGroup[];
+  selectedIds: number[];
+  onSelectionChange: (ids: number[]) => void;
+  autoAdd: boolean;
+  onAutoAddChange: (autoAdd: boolean) => void;
+}
+
+export interface PoolTableProps {
+  pools: CampaignPool[];
+  loading: boolean;
+  onEdit: (pool: CampaignPool) => void;
+  onDelete: (id: number) => void;
+  onAssign: (pool: CampaignPool) => void;
+  onViewDetails: (pool: CampaignPool) => void;
+}
 
 export interface PoolTableColumn {
-  key: keyof CampaignPool | 'actions' | 'compatibility';
+  key: keyof CampaignPool | 'actions' | 'content_count';
   header: string;
   sortable: boolean;
   width?: string;
   render?: (pool: CampaignPool) => React.ReactNode;
 }
 
-export interface PoolListFilters {
-  strategy: 'all' | 'random' | 'balanced' | 'manual';
-  template_status: 'all' | 'pools' | 'templates';
-  sort_by: 'name' | 'created_at';
-  sort_order: 'asc' | 'desc';
-}
-
-// API Response Types
-
-export interface PoolListResponse {
-  pools: CampaignPool[];
-  total_count: number;
-  has_next: boolean;
-  has_previous: boolean;
+export interface AssignmentRequest {
+  pool_id: number;
+  account_ids: number[];
+  assignment_strategy: 'immediate' | 'scheduled';
+  start_date?: string;
+  priority: 'low' | 'normal' | 'high';
 }
 
 export interface AssignmentResponse {
   successful_assignments: PoolAssignment[];
-  failed_assignments: any[];
+  failed_assignments: Array<{
+    account_id: number;
+    reason: string;
+  }>;
   total_accounts_assigned: number;
-  conflicts_resolved: number;
+  conflicts_resolved: number; // Added missing property
   warnings: string[];
 }
 
-// Import types from other modules
+export interface AssignmentPreview {
+  account_id: number;
+  account_username: string;
+  pool_compatibility: boolean;
+  estimated_duration_hours: number;
+  content_conflicts: string[];
+  success_probability: number;
+}
+
 export interface Account {
   id: number;
   username: string;
   model_id: number;
-  status: string;
+  status: 'active' | 'inactive' | 'suspended';
+  current_location?: string;
+  active_sprints: number[];
+  last_content_posted?: string;
   created_at: string;
 }
 
 export interface AccountFilters {
   model_id?: number;
-  status?: 'active' | 'inactive' | 'cooldown';
+  status?: 'active' | 'inactive' | 'suspended' | 'all';
   search?: string;
   available_only?: boolean;
-} 
+  location?: string;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  metadata?: {
+    total_records?: number;
+    page?: number;
+    limit?: number;
+    has_next?: boolean;
+    has_previous?: boolean;
+  };
+}
+
+export interface ApiError {
+  success: false;
+  error: string;
+  message: string;
+  details?: any;
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface PoolValidation extends ValidationResult {
+  pool_type_issues: string[];
+  content_issues: string[];
+  configuration_issues: string[];
+  highlight_integration_issues: string[];
+}
+
+export interface FileUploadProgress {
+  file_name: string;
+  progress: number;
+  status: 'uploading' | 'completed' | 'failed';
+  error?: string;
+}
+
+export interface UploadResponse {
+  successful_uploads: Array<{
+    file_name: string;
+    file_path: string;
+    content_item_id: number;
+  }>;
+  failed_uploads: Array<{
+    file_name: string;
+    error: string;
+  }>;
+  total_size: number;
+  upload_duration: number;
+}
+
+// Type aliases for backward compatibility
+export type CreatePoolRequest = CreateCampaignPoolRequest;
+export type UpdatePoolRequest = UpdateCampaignPoolRequest; 

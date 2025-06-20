@@ -7,6 +7,10 @@
 
 const axios = require('axios');
 const EventEmitter = require('events');
+const fs = require('fs');
+const path = require('path');
+
+const LOCK_FILE_PATH = path.join(__dirname, '..', 'scripts', 'api', '.iphone_global.lock');
 
 class AutomationBridge extends EventEmitter {
     constructor(config = {}) {
@@ -512,67 +516,91 @@ class AutomationBridge extends EventEmitter {
     }
 
     /**
-     * Execute iPhone script via XXTouch API
+     * Executes a single Lua script on the iPhone with a locking mechanism.
+     * @param {string} scriptName The name of the script file to execute.
+     * @returns {Promise<boolean>} True if successful, false otherwise.
      */
     async executeScript(scriptName) {
-        if (!this.isOperational()) {
-            // This check remains important to prevent running during a manual pause.
-            throw new Error('System is not operational (paused or too many failures)');
-        }
+        // --- Self-healing Lock Mechanism ---
+        if (fs.existsSync(LOCK_FILE_PATH)) {
+            const lockData = fs.readFileSync(LOCK_FILE_PATH, 'utf8');
+            const [pid] = (lockData || '').split('|');
 
-        const maxRetries = 25;
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                // A robust check to ensure no other script is running before starting a new one.
-                if (await this.isScriptRunning()) {
-                    console.log(`Another script is already running. Waiting for it to complete before attempting "${scriptName}"...`);
-                    const priorScriptCompleted = await this.waitForScriptCompletion("previous script");
-                    if (!priorScriptCompleted) {
-                        // If waiting for the prior script times out, we should retry the whole process.
-                        throw new Error(`Timed out waiting for a prior script to finish.`);
+            if (pid) {
+                let isStale = false;
+                try {
+                    process.kill(parseInt(pid), 0);
+                } catch (e) {
+                    if (e.code === 'ESRCH') {
+                        console.log('⚠️  Found stale AutomationBridge lock file. Removing it.');
+                        isStale = true;
+                        fs.unlinkSync(LOCK_FILE_PATH);
                     }
                 }
 
-                console.log(`📱 Attempt ${attempt}/${maxRetries}: Executing script: ${scriptName}`);
-                
-                const selectResponse = await axios.post(
-                    `http://${this.config.iphoneIP}:${this.config.iphonePort}/select_script_file`,
-                    { filename: scriptName }, { timeout: 5000 }
-                );
-                if (selectResponse.data.code !== 0) {
-                    throw new Error(`Script selection failed: ${selectResponse.data.message}`);
+                if (!isStale) {
+                    const errorMsg = `❌ Error: An automation process (PID: ${pid}) is already running.`;
+                    console.error(errorMsg);
+                    this.emit('execution_error', { scriptName, error: errorMsg });
+                    return false;
                 }
-                
-                const launchResponse = await axios.post(
-                    `http://${this.config.iphoneIP}:${this.config.iphonePort}/launch_script_file`,
-                    '', { timeout: 10000 }
-                );
-                if (launchResponse.data.code !== 0) {
-                    throw new Error(`Script launch failed: ${launchResponse.data.message}`);
-                }
-                
-                const completed = await this.waitForScriptCompletion(scriptName);
-                if (!completed) {
-                    // If the script times out, we'll loop and retry.
-                    throw new Error(`Script execution timed out: ${scriptName}`);
-                }
-                
-                // If we reach here, the script was successful.
-                console.log(`✅ Script "${scriptName}" executed successfully.`);
+            }
+        }
+
+        try {
+            // Create lock file with current process's PID
+            const pid = process.pid;
+            fs.writeFileSync(LOCK_FILE_PATH, `${pid}|${scriptName}|${new Date().toISOString()}`);
+
+            this.emit('script_execution_start', { scriptName });
+            console.log(`[AutomationBridge] 🎯 Executing script: ${scriptName}`);
+
+            // **New Step**: Stop any orphaned script before starting a new one.
+            await this.stopScript();
+
+            // 1. Select the script
+            await axios.post(
+                `http://${this.config.iphoneIP}:${this.config.iphonePort}/select_script_file`,
+                { filename: `/var/mobile/Media/1ferver/lua/scripts/${scriptName}` },
+                { timeout: 10000 }
+            );
+
+            // 2. Launch the script
+            await axios.post(
+                `http://${this.config.iphoneIP}:${this.config.iphonePort}/launch_script_file`,
+                '',
+                { timeout: 10000 }
+            );
+
+            // 3. Wait for completion
+            const success = await this.waitForScriptCompletion(scriptName);
+
+            if (success) {
+                console.log(`[AutomationBridge] ✅ Successfully executed ${scriptName}`);
+                this.emit('script_execution_success', { scriptName });
                 return true;
+            } else {
+                console.error(`[AutomationBridge] ❌ Timed out waiting for ${scriptName} to complete.`);
+                this.emit('script_execution_timeout', { scriptName });
+                this.recordFailure();
+                return false;
+            }
 
-            } catch (error) {
-                console.error(`❌ Attempt ${attempt}/${maxRetries} for "${scriptName}" failed: ${error.message}`);
+        } catch (error) {
+            const errorMsg = `[AutomationBridge] 💥 Script execution failed for ${scriptName}: ${error.message}`;
+            console.error(errorMsg);
+            this.recordFailure();
+            this.emit('script_execution_error', { scriptName, error: error.message });
+            return false;
+        } finally {
+            // --- Unlock Mechanism ---
+            if (fs.existsSync(LOCK_FILE_PATH)) {
+                const lockData = fs.readFileSync(LOCK_FILE_PATH, 'utf8');
+                const [pidFromFile] = (lockData || '').split('|');
                 
-                if (attempt === maxRetries) {
-                    // If this was the last attempt, throw a final error.
-                    this.recordFailure(); // NOW we record a failure, as the entire operation failed.
-                    throw new Error(`Failed to execute script "${scriptName}" after ${maxRetries} attempts.`);
+                if (pidFromFile == process.pid.toString()) {
+                    fs.unlinkSync(LOCK_FILE_PATH);
                 }
-
-                const retryDelay = 1000; // 1-second delay before retrying.
-                console.log(`🔄 Retrying in ${retryDelay / 1000} seconds...`);
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
         }
     }

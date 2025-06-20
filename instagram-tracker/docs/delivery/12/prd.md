@@ -84,6 +84,36 @@ Models (Instagram Profiles)
 - Months: Available April-October (vacation season)
 - After-Sprint: Airport/dog-at-home transition content
 
+#### Campaign Pools (Content Collections)
+**Definition**: Collections of actual content (images/videos) organized by Instagram posting format.
+
+**Types**:
+
+**Story Pools**:
+- Collection of images/videos for Instagram Stories
+- 24-hour temporary content with immediate posting
+- Option to add individual pictures to existing highlight groups
+- User controls which stories transition to highlights
+
+**Post Pools**:
+- Collections of up to 20 pictures per pool
+- Can be configured as single-image or multi-image posts (1-8 images per post)
+- User specifies image groupings for multi-image posts
+- Option to add selected pictures to existing highlight groups
+- User selects which highlight groups receive the content
+
+**Highlight Pools (Groups)**:
+- Long-term content collections for Instagram highlight sections
+- **Content Organization**: Chronological order (user-defined) OR Random order
+- **Timing Control** (Chronological Order Only): 
+  - Default delay between uploads (applies to all content in chronological sequence)
+  - Per-picture custom delays (individual timing control overriding default)
+  - Random order bypasses timing controls (immediate or system-determined scheduling)
+- **Caption Management**: Single caption for the entire highlight group (pushed to Instagram)
+- **Content Format Control**: Configure individual items as story-only OR post + story
+- **Batch Upload System**: Content uploaded in batches of up to 20 items per batch
+- **Position Management**: Dynamic highlight positioning (newest highlights = position 1)
+
 #### Highlight Groups
 **Definition**: Long-term content collections that build Instagram highlight sections over months/years.
 
@@ -257,6 +287,24 @@ content_queue (
 );
 ```
 
+**Campaign Pool Content Items**:
+```sql
+campaign_pool_content (
+  id SERIAL PRIMARY KEY,
+  pool_id INTEGER REFERENCES campaign_pools(id),
+  file_path TEXT NOT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  content_order INTEGER NOT NULL, -- Position in chronological order
+  custom_delay_hours INTEGER, -- Override default delay for this item
+  caption TEXT, -- Individual caption for this content
+  content_type VARCHAR(20) NOT NULL, -- 'story', 'post', 'highlight'
+  post_group_id INTEGER, -- For grouping multiple images in single post
+  batch_number INTEGER, -- For highlight batch uploads
+  add_to_highlights BOOLEAN DEFAULT false, -- Whether to add to highlight groups
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 **Highlight Management**:
 ```sql
 account_highlight_groups (
@@ -271,15 +319,20 @@ account_highlight_groups (
 );
 ```
 
-**Campaign Pools**:
+**Campaign Pools (Content Collections)**:
 ```sql
 campaign_pools (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   description TEXT,
-  sprint_ids INTEGER[] NOT NULL,
-  total_duration_hours INTEGER, -- calculated from all sprints
-  compatible_accounts INTEGER, -- accounts that can use this campaign
+  pool_type VARCHAR(50) NOT NULL, -- 'story', 'post', 'highlight'
+  content_format VARCHAR(50), -- 'single', 'multi', 'batch' for posts
+  highlight_caption TEXT, -- Caption for highlight groups
+  content_order VARCHAR(20) DEFAULT 'chronological', -- 'chronological', 'random'
+  default_delay_hours INTEGER DEFAULT 24, -- Default delay between uploads
+  max_items_per_batch INTEGER DEFAULT 20, -- For batch uploads
+  auto_add_to_highlights BOOLEAN DEFAULT false, -- For stories/posts
+  target_highlight_groups INTEGER[], -- Highlight group IDs to add content to
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -349,19 +402,32 @@ account_content_state (
 - **Conflict Indicators**: Visual warnings for blocking rule violations
 - **Assignment Status**: Clear indicators for queued vs active content
 
-### Campaign Pool Management
+### Campaign Pool Management (Content Collections)
 
-**Pool Creation Interface**:
-- **Sprint Selector**: Checkboxes with conflict detection
-- **Compatibility Calculator**: Real-time account compatibility count
-- **Assignment Preview**: Sample of how campaigns will distribute
-- **Validation Warnings**: Alerts for insufficient content diversity
+**Story Pool Creation Interface**:
+- **Content Upload**: Drag-and-drop interface for story images/videos
+- **Highlight Integration**: Checkboxes to select which stories add to existing highlight groups
+- **Highlight Group Selector**: Dropdown to choose target highlight groups
+- **Immediate Posting**: Toggle for instant story posting vs scheduled posting
 
-**Assignment Interface**:
-- **Batch Assignment**: Select multiple accounts for assignment
-- **Assignment Strategy**: Radio buttons for random vs balanced distribution
-- **Conflict Resolution**: Options for handling account conflicts
-- **Preview Mode**: "What-if" analysis before actual assignment
+**Post Pool Creation Interface**:
+- **Content Grid**: Visual grid of up to 20 uploaded images
+- **Post Grouping**: Drag-and-drop to create multi-image post groups (1-8 images)
+- **Highlight Integration**: Per-image checkboxes to add to highlight groups
+- **Group Assignment**: Interface to select target highlight groups for each image
+- **Preview Mode**: Visual preview of how posts will appear on Instagram
+
+**Highlight Pool Creation Interface**:
+- **Content Organization**: Toggle between chronological and random order
+- **Chronological Ordering**: Drag-and-drop interface to set content sequence
+- **Timing Configuration** (Chronological Mode Only): 
+  - Default delay slider for all content (disabled in random mode)
+  - Per-image custom delay override inputs (disabled in random mode)
+  - Visual indication when timing controls are disabled
+- **Caption Management**: Single text field for highlight group caption
+- **Content Format Control**: Per-item toggle for story-only vs post + story
+- **Batch Organization**: Visual batching interface (up to 20 items per batch)
+- **Upload Preview**: Live preview of how highlights will appear on Instagram profile
 
 ### Highlight Group Management
 
@@ -418,18 +484,34 @@ account_content_state (
 - [ ] System prevents using content already assigned to active sprints
 - [ ] User can monitor maintenance status and override when needed
 
-### Campaign Pool Management
-✅ **Pool Creation**:
-- [ ] User can combine multiple compatible sprints into campaign pools
-- [ ] System validates sprint compatibility (no blocking conflicts)
-- [ ] System calculates total campaign duration and account compatibility
-- [ ] User can preview campaign assignment distribution
+### Campaign Pool Management (Content Collections)
+✅ **Story Pool Creation**:
+- [ ] User can create story pools with multiple images/videos
+- [ ] User can select which individual stories should be added to existing highlight groups
+- [ ] System supports immediate story posting with highlight transition options
+- [ ] User controls story-to-highlight transitions per individual item
 
-✅ **Account Assignment**:
-- [ ] System randomly assigns campaigns to accounts from compatible pools
-- [ ] User can specify assignment scope (specific count or all accounts)
-- [ ] System provides pre-validation warnings for insufficient content
-- [ ] User can override assignment conflicts with explicit confirmation
+✅ **Post Pool Creation**:
+- [ ] User can create post pools with up to 20 pictures
+- [ ] User can configure content as single-image or multi-image posts (1-8 images per post)
+- [ ] User can specify image groupings for multi-image posts
+- [ ] User can select which pictures should be added to existing highlight groups
+- [ ] User can choose target highlight groups for selected content
+
+✅ **Highlight Pool (Group) Creation**:
+- [ ] User can create highlight pools with chronological or random content order
+- [ ] For chronological order: User can set default delay between uploads for all content
+- [ ] For chronological order: User can set custom delays for individual pictures (overriding default)
+- [ ] Random order bypasses delay configuration (system handles scheduling)
+- [ ] User can configure single caption for entire highlight group (pushed to Instagram)
+- [ ] User can specify content format per item (story-only OR post + story)
+- [ ] User can organize content into batches (up to 20 items per batch)
+
+✅ **Content Organization & Management**:
+- [ ] System maintains chronological order when specified by user
+- [ ] System supports random order selection for highlight uploads
+- [ ] User can reorder content within pools using drag-and-drop interface
+- [ ] System validates batch sizes and content format restrictions
 
 ### Content Scheduling & Queue Management
 ✅ **Realistic Timing**:

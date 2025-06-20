@@ -11,7 +11,8 @@ import {
   Info,
   AlertTriangle,
   Plus,
-  Trash2
+  Trash2,
+  GripVertical
 } from 'lucide-react';
 import {
   HighlightGroupCreationWizardProps,
@@ -20,6 +21,9 @@ import {
   CreateHighlightGroupRequest,
   SeasonalBatch
 } from '../../types/highlightGroups';
+import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
+import { useDropzone } from 'react-dropzone';
+import { MonthSelector } from '../ui/MonthSelector';
 
 const HighlightGroupCreationWizard: React.FC<HighlightGroupCreationWizardProps> = ({
   isOpen,
@@ -151,8 +155,21 @@ const HighlightGroupCreationWizard: React.FC<HighlightGroupCreationWizardProps> 
     }
   }, [validateStep1, validateStep2, validateStep3, validateStep4, validateStep5]);
 
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    handleFileUpload(acceptedFiles);
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/*': ['.jpeg', '.png', '.gif', '.webp'],
+      'video/*': ['.mp4', '.mov', '.avi']
+    },
+    maxSize: 50 * 1024 * 1024, // 50MB
+  });
+
   // Handle file upload
-  const handleFileUpload = (files: FileList | null) => {
+  const handleFileUpload = (files: File[] | null) => {
     if (!files) return;
     
     const newFiles = Array.from(files).filter(file => {
@@ -165,6 +182,21 @@ const HighlightGroupCreationWizard: React.FC<HighlightGroupCreationWizardProps> 
     setFormData(prev => ({
       ...prev,
       content_files: [...prev.content_files, ...newFiles].slice(0, 100) // Ensure max 100 files
+    }));
+  };
+
+  const onDragEnd = (result: DropResult) => {
+    if (!result.destination) {
+      return;
+    }
+
+    const items = Array.from(formData.content_files);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+
+    setFormData(prev => ({
+      ...prev,
+      content_files: items
     }));
   };
 
@@ -414,50 +446,52 @@ const HighlightGroupCreationWizard: React.FC<HighlightGroupCreationWizardProps> 
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Content Upload *
                 </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                  <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                  <div className="mt-4">
-                    <label className="cursor-pointer">
-                      <span className="mt-2 block text-sm font-medium text-gray-900">
-                        Upload content files
-                      </span>
-                      <span className="mt-1 block text-sm text-gray-500">
-                        Images and videos up to 50MB each. Maximum 100 files.
-                      </span>
-                      <input
-                        type="file"
-                        multiple
-                        accept="image/*,video/*"
-                        onChange={(e) => handleFileUpload(e.target.files)}
-                        className="hidden"
-                      />
-                      <span className="mt-4 inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                        Choose Files
-                      </span>
-                    </label>
+                <div className="mt-4">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-2">Content Files ({formData.content_files.length}/100)</h4>
+                  <div {...getRootProps()} className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${isDragActive ? 'border-blue-600 bg-blue-50' : 'border-gray-300 hover:border-blue-500'}`}>
+                    <input {...getInputProps()} />
+                    <Upload className="mx-auto h-12 w-12 text-gray-400" />
+                    <p className="mt-2 text-sm text-gray-600">Drag & drop files here, or click to select files</p>
+                    <p className="text-xs text-gray-500">Images and videos supported, up to 50MB each.</p>
                   </div>
-                </div>
-
-                {formData.content_files.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">
-                      Uploaded Files ({formData.content_files.length}/100)
-                    </h4>
-                    <div className="max-h-40 overflow-y-auto border rounded-lg">
-                      {formData.content_files.map((file, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 border-b last:border-b-0">
-                          <span className="text-sm text-gray-600 truncate">{file.name}</span>
-                          <button
-                            onClick={() => removeFile(index)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                  
+                  <DragDropContext onDragEnd={onDragEnd}>
+                    <Droppable droppableId="contentFiles">
+                      {(provided) => (
+                        <div {...provided.droppableProps} ref={provided.innerRef} className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
+                          {formData.content_files.map((file, index) => (
+                            <Draggable key={file.name + index} draggableId={file.name + index} index={index}>
+                              {(provided) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className="flex items-center justify-between bg-gray-50 p-2 rounded-md border"
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    <GripVertical className="h-5 w-5 text-gray-400" />
+                                    <span className="text-sm font-medium text-gray-700 truncate w-60">{file.name}</span>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-sm text-gray-500">{Math.round(file.size / 1024)} KB</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeFile(index)}
+                                      className="p-1 text-gray-500 hover:text-red-600 rounded-full hover:bg-red-100"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                      )}
+                    </Droppable>
+                  </DragDropContext>
+                </div>
               </div>
 
               <div>
@@ -581,31 +615,21 @@ const HighlightGroupCreationWizard: React.FC<HighlightGroupCreationWizardProps> 
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Active Months *
+              {/* Seasonal months */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Seasonal Availability
+                  <span title="Select the months this group can post content. Leave empty for all year.">
+                    <Info
+                      size={14}
+                      className="inline ml-1 text-gray-400 cursor-pointer"
+                    />
+                  </span>
                 </label>
-                <p className="text-sm text-gray-500 mb-3">
-                  Select months when this highlight group should be active
-                </p>
-                <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(month => (
-                    <label key={month} className="flex items-center text-sm">
-                      <input
-                        type="checkbox"
-                        checked={formData.seasonal_months.includes(month)}
-                        onChange={(e) => {
-                          const months = e.target.checked
-                            ? [...formData.seasonal_months, month]
-                            : formData.seasonal_months.filter(m => m !== month);
-                          setFormData(prev => ({ ...prev, seasonal_months: months }));
-                        }}
-                        className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      {new Date(2024, month - 1).toLocaleDateString('en', { month: 'long' })}
-                    </label>
-                  ))}
-                </div>
+                <MonthSelector
+                  selectedMonths={formData.seasonal_months}
+                  onChange={(months) => setFormData(prev => ({ ...prev, seasonal_months: months }))}
+                />
               </div>
 
               {validateStep3().length > 0 && (

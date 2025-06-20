@@ -3,7 +3,6 @@ import {
   Plus, 
   Smartphone, 
   Wifi, 
-  WifiOff, 
   Settings, 
   Eye,
   TestTube,
@@ -510,22 +509,19 @@ const IPhoneSettingsPage: React.FC = () => {
                 </button>
               </div>
             </div>
-                     </Modal>
-         )}
+          </Modal>
+        )}
 
         {/* Container Creation Modal */}
         <ContainerCreationModal
           isOpen={showContainerModal}
-          onClose={() => {
+          onClose={() => setShowContainerModal(false)}
+          initialIphoneUrl={selectedIPhone ? `http://${selectedIPhone.ip_address}:${selectedIPhone.xxtouch_port}` : ''}
+          iphoneId={selectedIPhone ? String(selectedIPhone.id) : undefined}
+          onComplete={() => {
             setShowContainerModal(false);
-            setSelectedIPhone(null);
+            fetchIPhones();
           }}
-          onComplete={(results) => {
-            console.log('Container creation completed:', results);
-            toast.success(`Container creation finished! ${results.successful}/${results.total} containers created.`);
-            fetchIPhones(); // Refresh the iPhone list to update container counts
-          }}
-          initialIphoneUrl={selectedIPhone ? `http://${selectedIPhone.ip_address}:${selectedIPhone.port}` : undefined}
         />
       </div>
     </div>

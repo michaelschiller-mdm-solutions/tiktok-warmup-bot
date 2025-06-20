@@ -6,13 +6,19 @@ import { db } from '../database';
 const MIGRATIONS_DIR = path.resolve(__dirname, '../../../database/migrations');
 const SETUP_SCRIPT = 'run-migrations.sql';
 
-const getMigrationFiles = (): string[] => {
+const getMigrationFiles = (): {
+    numbered: string[];
+    specials: string[];
+} => {
     try {
         const allFiles = fs.readdirSync(MIGRATIONS_DIR);
-        const sqlFiles = allFiles
+        const numbered = allFiles
             .filter(file => /^\d{3}-.+.sql$/.test(file))
             .sort();
-        return sqlFiles;
+        const specials = allFiles.filter(
+            file => file.endsWith(".sql") && !/^\d{3}-.+.sql$/.test(file) && file !== SETUP_SCRIPT
+        );
+        return { numbered, specials };
     } catch (error) {
         console.error(`Error reading migrations directory at ${MIGRATIONS_DIR}:`, error);
         throw new Error('Could not read migration files.');
@@ -42,10 +48,13 @@ export const runMigrations = async () => {
         console.log(`Found ${executedMigrations.size} successfully executed migrations in history.`);
 
         // 3. Get all available migration files.
-        const allMigrationFiles = getMigrationFiles();
+        const { numbered: allNumberedMigrations, specials: allSpecialMigrations } = getMigrationFiles();
         
         // 4. Determine and run pending migrations.
-        const pendingMigrations = allMigrationFiles.filter(file => !executedMigrations.has(file.replace('.sql', '')));
+        const pendingNumberedMigrations = allNumberedMigrations.filter(file => !executedMigrations.has(file.replace('.sql', '')));
+        const pendingSpecialMigrations = allSpecialMigrations.filter(file => !executedMigrations.has(file.replace('.sql', '')));
+        
+        const pendingMigrations = [...pendingNumberedMigrations, ...pendingSpecialMigrations];
 
         if (pendingMigrations.length === 0) {
             console.log('Database schema is up-to-date.');

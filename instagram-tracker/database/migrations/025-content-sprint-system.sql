@@ -27,17 +27,15 @@ CREATE TABLE IF NOT EXISTS content_sprints (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
-    sprint_type VARCHAR(100) NOT NULL, -- vacation, university, home, work, fitness
+    sprint_type VARCHAR(100), -- vacation, university, home, work, etc.
     location VARCHAR(255), -- jamaica, germany, home, university, etc.
     is_highlight_group BOOLEAN DEFAULT false,
     max_content_items INTEGER DEFAULT 20, -- 20 for sprints, 100 for highlights
-    available_months INTEGER[] DEFAULT ARRAY[1,2,3,4,5,6,7,8,9,10,11,12],
+    available_months INTEGER[], -- [4,5,6,7,8,9,10] for summer content
     cooldown_hours INTEGER DEFAULT 336, -- 2 weeks default
-    blocks_sprints INTEGER[] DEFAULT ARRAY[]::INTEGER[],
-    blocks_highlight_groups INTEGER[] DEFAULT ARRAY[]::INTEGER[],
-    idle_hours_min INTEGER DEFAULT 24, -- user configurable idle period
-    idle_hours_max INTEGER DEFAULT 48, -- user configurable idle period
-    calculated_duration_hours INTEGER, -- auto-calculated from content delays
+    blocks_sprints INTEGER[], -- IDs of blocked sprints
+    blocks_highlight_groups INTEGER[], -- IDs of blocked highlight groups
+    calculated_duration_hours INTEGER DEFAULT 168, -- calculated from content delays
     maintenance_images_min INTEGER DEFAULT 1, -- for highlights: min images per maintenance
     maintenance_images_max INTEGER DEFAULT 2, -- for highlights: max images per maintenance
     maintenance_frequency_weeks_min INTEGER DEFAULT 2, -- for highlights: min weeks between maintenance
@@ -72,9 +70,9 @@ CREATE TABLE IF NOT EXISTS sprint_content_items (
     file_name VARCHAR(255) NOT NULL,
     caption TEXT,
     content_order INTEGER NOT NULL,
-    content_categories TEXT[] NOT NULL DEFAULT ARRAY['story'], -- story, post, highlight
+    content_categories TEXT[] DEFAULT '{}', -- ['story', 'post', 'highlight']
     story_to_highlight BOOLEAN DEFAULT true,
-    post_group_id INTEGER, -- for grouping 1-8 images into single post
+    post_group_id INTEGER, -- for multi-image posts
     delay_hours_min INTEGER DEFAULT 24,
     delay_hours_max INTEGER DEFAULT 72,
     is_after_sprint_content BOOLEAN DEFAULT false,
@@ -100,7 +98,7 @@ CREATE TABLE IF NOT EXISTS account_sprint_assignments (
     assignment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     start_date TIMESTAMP,
     end_date TIMESTAMP,
-    status VARCHAR(50) DEFAULT 'scheduled',
+    status VARCHAR(50) DEFAULT 'scheduled', -- scheduled, active, completed, paused
     current_content_index INTEGER DEFAULT 0,
     next_content_due TIMESTAMP,
     sprint_instance_id UUID DEFAULT gen_random_uuid(),
@@ -119,9 +117,9 @@ CREATE TABLE IF NOT EXISTS account_content_state (
     id SERIAL PRIMARY KEY,
     account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE UNIQUE,
     current_location VARCHAR(255) DEFAULT 'home',
-    active_sprint_ids INTEGER[] DEFAULT ARRAY[]::INTEGER[],
+    active_sprint_ids INTEGER[] DEFAULT '{}',
     idle_since TIMESTAMP,
-    idle_duration_hours INTEGER,
+    idle_duration_hours INTEGER DEFAULT 0,
     idle_hours_min INTEGER DEFAULT 24, -- account-specific idle configuration
     idle_hours_max INTEGER DEFAULT 48, -- account-specific idle configuration
     silence_during_idle BOOLEAN DEFAULT true, -- enforce complete silence during idle
@@ -135,9 +133,8 @@ CREATE TABLE IF NOT EXISTS account_content_state (
 CREATE TABLE IF NOT EXISTS account_highlight_groups (
     id SERIAL PRIMARY KEY,
     account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
-    highlight_group_id INTEGER REFERENCES content_sprints(id) ON DELETE SET NULL, -- NULL for warmup highlights
-    highlight_name VARCHAR(255) NOT NULL, -- Name displayed on Instagram
-    position INTEGER NOT NULL,
+    highlight_group_id INTEGER REFERENCES content_sprints(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL, -- 1 = newest, increments for older
     is_warmup_highlight BOOLEAN DEFAULT false, -- Flag for warmup-created highlights
     maintenance_last_run TIMESTAMP,
     maintenance_next_due TIMESTAMP,
@@ -164,8 +161,8 @@ CREATE TABLE IF NOT EXISTS content_queue (
     central_content_id INTEGER REFERENCES central_content(id) ON DELETE SET NULL,
     central_text_id INTEGER REFERENCES central_text_content(id) ON DELETE SET NULL,
     scheduled_time TIMESTAMP NOT NULL,
-    content_type VARCHAR(50) NOT NULL,
-    status VARCHAR(50) DEFAULT 'queued',
+    content_type VARCHAR(50) NOT NULL, -- story, post, highlight
+    status VARCHAR(50) DEFAULT 'queued', -- queued, posted, failed, cancelled
     posted_at TIMESTAMP,
     emergency_content BOOLEAN DEFAULT false,
     emergency_strategy VARCHAR(50), -- 'pause_sprints', 'post_alongside', 'override_conflicts'
@@ -197,10 +194,14 @@ CREATE TABLE IF NOT EXISTS campaign_pools (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     sprint_ids INTEGER[] NOT NULL,
-    total_duration_hours INTEGER, -- calculated from all sprint durations
-    compatible_accounts INTEGER DEFAULT 0,
-    assignment_strategy VARCHAR(50) DEFAULT 'random', -- random, balanced, manual
-    time_horizon_days INTEGER DEFAULT 30, -- how far ahead to schedule assignments
+    assignment_strategy VARCHAR(100) DEFAULT 'random', -- random, balanced, manual
+    time_horizon_days INTEGER DEFAULT 30,
+    total_duration_hours INTEGER, -- calculated from all sprints
+    compatible_accounts INTEGER DEFAULT 0, -- accounts that can use this campaign
+    usage_count INTEGER DEFAULT 0,
+    last_assigned TIMESTAMP,
+    is_template BOOLEAN DEFAULT false,
+    template_category VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
@@ -215,16 +216,10 @@ CREATE TABLE IF NOT EXISTS campaign_pools (
 CREATE TABLE IF NOT EXISTS highlight_content_batches (
     id SERIAL PRIMARY KEY,
     highlight_group_id INTEGER REFERENCES content_sprints(id) ON DELETE CASCADE,
-    batch_name VARCHAR(255) NOT NULL,
-    available_months INTEGER[] NOT NULL,
-    content_item_ids INTEGER[] NOT NULL,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT valid_months CHECK (
-        available_months <@ ARRAY[1,2,3,4,5,6,7,8,9,10,11,12] AND
-        array_length(available_months, 1) > 0
-    )
+    batch_name VARCHAR(255),
+    available_months INTEGER[],
+    content_item_ids INTEGER[],
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =====================================================================================
@@ -232,30 +227,30 @@ CREATE TABLE IF NOT EXISTS highlight_content_batches (
 -- =====================================================================================
 
 -- Sprint and content indexes
-CREATE INDEX IF NOT EXISTS idx_content_sprints_type_location ON content_sprints(sprint_type, location);
-CREATE INDEX IF NOT EXISTS idx_content_sprints_months ON content_sprints USING GIN(available_months);
-CREATE INDEX IF NOT EXISTS idx_content_sprints_blocks ON content_sprints USING GIN(blocks_sprints);
-CREATE INDEX IF NOT EXISTS idx_content_sprints_highlight_blocks ON content_sprints USING GIN(blocks_highlight_groups);
+CREATE INDEX IF NOT EXISTS idx_content_sprints_type ON content_sprints(sprint_type);
+CREATE INDEX IF NOT EXISTS idx_content_sprints_is_highlight ON content_sprints(is_highlight_group);
+CREATE INDEX IF NOT EXISTS idx_content_sprints_location ON content_sprints(location);
 
 -- Content item indexes
-CREATE INDEX IF NOT EXISTS idx_sprint_content_items_sprint_order ON sprint_content_items(sprint_id, content_order);
-CREATE INDEX IF NOT EXISTS idx_sprint_content_items_categories ON sprint_content_items USING GIN(content_categories);
-CREATE INDEX IF NOT EXISTS idx_sprint_content_items_post_group ON sprint_content_items(post_group_id) WHERE post_group_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_sprint_content_items_sprint_id ON sprint_content_items(sprint_id);
+CREATE INDEX IF NOT EXISTS idx_sprint_content_items_order ON sprint_content_items(sprint_id, content_order);
 
 -- Assignment and queue indexes
-CREATE INDEX IF NOT EXISTS idx_account_sprint_assignments_account_status ON account_sprint_assignments(account_id, status);
-CREATE INDEX IF NOT EXISTS idx_account_sprint_assignments_dates ON account_sprint_assignments(start_date, end_date);
-CREATE INDEX IF NOT EXISTS idx_content_queue_scheduled ON content_queue(scheduled_time, status);
-CREATE INDEX IF NOT EXISTS idx_content_queue_account_pending ON content_queue(account_id, status) WHERE status IN ('queued', 'retrying');
-CREATE INDEX IF NOT EXISTS idx_content_queue_emergency ON content_queue(emergency_content, scheduled_time) WHERE emergency_content = true;
+CREATE INDEX IF NOT EXISTS idx_account_sprint_assignments_account ON account_sprint_assignments(account_id);
+CREATE INDEX IF NOT EXISTS idx_account_sprint_assignments_sprint ON account_sprint_assignments(sprint_id);
+CREATE INDEX IF NOT EXISTS idx_account_sprint_assignments_status ON account_sprint_assignments(status);
+
+CREATE INDEX IF NOT EXISTS idx_content_queue_account ON content_queue(account_id);
+CREATE INDEX IF NOT EXISTS idx_content_queue_scheduled_time ON content_queue(scheduled_time);
+CREATE INDEX IF NOT EXISTS idx_content_queue_status ON content_queue(status);
 
 -- Highlight management indexes
+CREATE INDEX IF NOT EXISTS idx_account_highlight_groups_account ON account_highlight_groups(account_id);
 CREATE INDEX IF NOT EXISTS idx_account_highlight_groups_position ON account_highlight_groups(account_id, position);
-CREATE INDEX IF NOT EXISTS idx_account_highlight_groups_maintenance ON account_highlight_groups(maintenance_next_due) WHERE is_active = true;
 
 -- State management indexes
+CREATE INDEX IF NOT EXISTS idx_account_content_state_account ON account_content_state(account_id);
 CREATE INDEX IF NOT EXISTS idx_account_content_state_location ON account_content_state(current_location);
-CREATE INDEX IF NOT EXISTS idx_account_content_state_active_sprints ON account_content_state USING GIN(active_sprint_ids);
 CREATE INDEX IF NOT EXISTS idx_account_content_state_cooldown ON account_content_state(cooldown_until) WHERE cooldown_until IS NOT NULL;
 
 -- Central content integration indexes
@@ -427,7 +422,6 @@ BEGIN
     INSERT INTO account_highlight_groups (
         account_id,
         highlight_group_id, -- NULL for warmup highlights
-        highlight_name,
         position,
         is_warmup_highlight,
         is_active,
@@ -435,7 +429,6 @@ BEGIN
     ) VALUES (
         account_id_param,
         NULL,
-        warmup_highlight_name,
         1,
         true,
         true,

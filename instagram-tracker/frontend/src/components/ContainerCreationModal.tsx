@@ -23,6 +23,7 @@ interface ContainerCreationModalProps {
   onClose: () => void;
   onComplete?: (results: any) => void;
   initialIphoneUrl?: string;
+  iphoneId?: string;
 }
 
 interface CreationProgress {
@@ -45,12 +46,15 @@ const ContainerCreationModal: React.FC<ContainerCreationModalProps> = ({
   isOpen,
   onClose,
   onComplete,
-  initialIphoneUrl
+  initialIphoneUrl,
+  iphoneId,
 }) => {
   // Form state
   const [count, setCount] = useState<number>(5);
   const [startNumber, setStartNumber] = useState<number>(1);
   const [iphoneUrl, setIphoneUrl] = useState<string>(initialIphoneUrl || '');
+  const [isManualSync, setIsManualSync] = useState<boolean>(false);
+  const [manualSyncCount, setManualSyncCount] = useState<number>(0);
   
   // Process state
   const [isCreating, setIsCreating] = useState<boolean>(false);
@@ -59,6 +63,7 @@ const ContainerCreationModal: React.FC<ContainerCreationModalProps> = ({
   const [logs, setLogs] = useState<CreationProgress[]>([]);
   const [results, setResults] = useState<any>(null);
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'testing' | 'connected' | 'failed'>('unknown');
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   // Refs
   const logsEndRef = useRef<HTMLDivElement>(null);
@@ -94,6 +99,54 @@ const ContainerCreationModal: React.FC<ContainerCreationModalProps> = ({
     setIphoneUrl(initialIphoneUrl || '');
     
     onClose();
+  };
+
+  const handleManualSync = async () => {
+    if (manualSyncCount <= 0) {
+      toast.error('Please enter a valid total number of containers.');
+      return;
+    }
+
+    if (!iphoneId) {
+      toast.error('Cannot sync without a valid iPhone ID.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to sync the database for this iPhone? This will remove all existing 'available' containers and create records up to container #${manualSyncCount}. Assigned containers will NOT be affected.`
+    );
+
+    if (!confirmed) return;
+
+    setIsSyncing(true);
+    toast.loading('Syncing containers with database...');
+
+    try {
+      const response = await fetch(`/api/iphones/${iphoneId}/sync-containers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ totalContainerCount: manualSyncCount }),
+      });
+
+      const data = await response.json();
+
+      toast.dismiss();
+      if (data.success) {
+        toast.success(data.message);
+        if (onComplete) {
+          onComplete(data);
+        }
+        onClose();
+      } else {
+        toast.error(data.message || 'Failed to sync containers.');
+      }
+    } catch (error) {
+      toast.dismiss();
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      toast.error(`Failed to sync containers: ${errorMessage}`);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const startCreation = async () => {
@@ -273,11 +326,43 @@ const ContainerCreationModal: React.FC<ContainerCreationModalProps> = ({
     }
   };
 
-  return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Create iPhone Containers">
-      <div className="space-y-8">
-        {/* Warning Section */}
-        <div className="bg-amber-50 border-l-4 border-amber-400 p-4">
+  const renderManualSync = () => {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">
+          Use this to align the app's database with containers that already exist on the iPhone. 
+          This will create entries for all containers up to the number you specify, marking them as 'available'.
+        </p>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Total Number of Containers on iPhone *
+          </label>
+          <input
+            type="number"
+            value={manualSyncCount}
+            onChange={(e) => setManualSyncCount(Number(e.target.value))}
+            className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            disabled={isSyncing}
+            placeholder="e.g., 150"
+          />
+        </div>
+        <button
+          onClick={handleManualSync}
+          disabled={isSyncing}
+          className="w-full flex items-center justify-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+        >
+          <Shield className="w-5 h-5" />
+          {isSyncing ? 'Syncing...' : 'Sync with Database'}
+        </button>
+      </div>
+    );
+  };
+
+  const renderCreationForm = () => {
+    return (
+      <div className="space-y-4">
+        {/* Important Instructions */}
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
           <div className="flex">
             <AlertTriangle className="h-5 w-5 text-amber-400 mr-3 mt-0.5" />
             <div>
@@ -294,176 +379,219 @@ const ContainerCreationModal: React.FC<ContainerCreationModalProps> = ({
           </div>
         </div>
 
-        {/* Configuration Form */}
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Number of Containers *
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="500"
-                value={count}
-                onChange={(e) => setCount(parseInt(e.target.value) || 1)}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                disabled={isCreating}
-                placeholder="5"
-              />
-              <p className="text-xs text-gray-500 mt-1">Maximum: 500 containers</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Starting Number *
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={startNumber}
-                onChange={(e) => setStartNumber(parseInt(e.target.value) || 1)}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                disabled={isCreating}
-                placeholder="1"
-              />
-              <p className="text-xs text-gray-500 mt-1">Containers will be numbered sequentially</p>
-            </div>
-          </div>
-
+        {/* Form Inputs */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              iPhone URL (Optional)
+              Number of Containers *
             </label>
             <input
-              type="text"
-              value={iphoneUrl}
-              onChange={(e) => setIphoneUrl(e.target.value)}
+              type="number"
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value))}
               className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               disabled={isCreating}
-              placeholder="http://192.168.178.65:46952 (default)"
+              placeholder="e.g., 10"
+              max="500"
             />
-            <p className="text-xs text-gray-500 mt-1">Leave empty to use default iPhone IP</p>
+            <p className="text-xs text-gray-500 mt-1">Maximum: 500 containers</p>
           </div>
-        </div>
-
-        {/* Connection Status */}
-        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md border">
-          <div className="flex items-center gap-2">
-            {getStatusIcon()}
-            <span className="text-sm font-medium text-gray-900">{getStatusText()}</span>
-          </div>
-          <div className="text-sm text-gray-600">
-            {isCreating ? 'Process Active' : 'Ready to Start'}
-          </div>
-        </div>
-
-        {/* Progress Section */}
-        {isCreating && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">Progress</span>
-              <span className="text-sm text-gray-600">{progress}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <Activity className="w-4 h-4" />
-              <span>{currentStep}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Live Logs */}
-        {logs.length > 0 && (
           <div>
-            <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-              <Settings className="w-4 h-4" />
-              Creation Log
-            </h4>
-            <div className="bg-gray-900 rounded-xl p-4 max-h-64 overflow-y-auto text-sm font-mono">
-              {logs.map((log, index) => (
-                <div key={index} className={`mb-2 ${
-                  log.type === 'error' || log.status === 'failed' ? 'text-red-400' :
-                  log.type === 'container_complete' || log.status === 'completed' ? 'text-green-400' :
-                  log.type === 'warning' ? 'text-yellow-400' :
-                  'text-gray-300'
-                }`}>
-                  <span className="text-gray-500">[{new Date(log.timestamp || '').toLocaleTimeString()}]</span> {log.message}
-                </div>
-              ))}
-              <div ref={logsEndRef} />
-            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Starting Number *
+            </label>
+            <input
+              type="number"
+              value={startNumber}
+              onChange={(e) => setStartNumber(Number(e.target.value))}
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              disabled={isCreating}
+              placeholder="e.g., 1"
+            />
+            <p className="text-xs text-gray-500 mt-1">Containers will be numbered sequentially</p>
           </div>
-        )}
-
-        {/* Results Summary */}
-        {results && (
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-              <h3 className="text-lg font-semibold text-green-900">Creation Complete!</h3>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">{results.successful}</div>
-                <div className="text-green-700">Successful</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-red-600">{results.failed}</div>
-                <div className="text-red-700">Failed</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">{results.total}</div>
-                <div className="text-blue-700">Total</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600">{Math.round(results.duration_ms / 1000)}s</div>
-                <div className="text-purple-700">Duration</div>
-              </div>
-            </div>
-            {results.created_containers?.length > 0 && (
-              <div className="mt-4 p-3 bg-white rounded-lg">
-                <div className="text-sm font-medium text-gray-700 mb-2">Created Containers:</div>
-                <div className="text-sm text-gray-600">
-                  {results.created_containers.join(', ')}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Action Buttons */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-          <button
-            onClick={handleClose}
-            className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            iPhone URL (Optional)
+          </label>
+          <input
+            type="text"
+            value={iphoneUrl}
+            onChange={(e) => setIphoneUrl(e.target.value)}
+            className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
             disabled={isCreating}
-          >
-            {isCreating ? 'Cancel' : 'Close'}
-          </button>
-          <button
-            onClick={startCreation}
-            disabled={isCreating || count < 1 || startNumber < 1}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {isCreating ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Creating...
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4" />
-                Start Creation
-              </>
-            )}
+            placeholder="http://192.168.178.65:46952 (default)"
+          />
+          <p className="text-xs text-gray-500 mt-1">Leave empty to use default iPhone IP</p>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={handleClose} size="xl">
+      <div className="p-6">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-purple-100 p-3 rounded-full">
+              <Smartphone className="w-6 h-6 text-purple-600" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">
+                {isManualSync ? 'Sync Existing Containers' : 'Create New iPhone Containers'}
+              </h2>
+              <p className="text-sm text-gray-600">
+                {isManualSync ? 'Align database with on-device containers' : 'Automated batch creation via XXTouch'}
+              </p>
+            </div>
+          </div>
+          <button onClick={handleClose} className="p-1 rounded-full hover:bg-gray-200">
+            <X className="w-5 h-5 text-gray-500" />
           </button>
         </div>
+
+        <div className="mt-6">
+          <div className="flex items-center space-x-2 mb-4">
+            <input
+              type="checkbox"
+              id="manualSyncCheckbox"
+              checked={isManualSync}
+              onChange={(e) => setIsManualSync(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+            />
+            <label htmlFor="manualSyncCheckbox" className="text-sm font-medium text-gray-700">
+              Manually sync existing containers
+            </label>
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg border">
+            {isManualSync ? renderManualSync() : renderCreationForm()}
+          </div>
+        </div>
+
+        {/* Action Button and Status (for creation only) */}
+        {!isManualSync && (
+          <div className="mt-6 space-y-4">
+            {/* Connection Status */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md border">
+              <div className="flex items-center gap-2">
+                {getStatusIcon()}
+                <span className="text-sm font-medium text-gray-900">{getStatusText()}</span>
+              </div>
+              <div className="text-sm text-gray-600">
+                {isCreating ? 'Process Active' : 'Ready to Start'}
+              </div>
+            </div>
+
+            {/* Progress Section */}
+            {isCreating && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Progress</span>
+                  <span className="text-sm text-gray-600">{progress}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <Activity className="w-4 h-4" />
+                  <span>{currentStep}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Live Logs */}
+            {logs.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Settings className="w-4 h-4" />
+                  Creation Log
+                </h4>
+                <div className="bg-gray-900 rounded-xl p-4 max-h-64 overflow-y-auto text-sm font-mono">
+                  {logs.map((log, index) => (
+                    <div key={index} className={`mb-2 ${
+                      log.type === 'error' || log.status === 'failed' ? 'text-red-400' :
+                      log.type === 'container_complete' || log.status === 'completed' ? 'text-green-400' :
+                      log.type === 'warning' ? 'text-yellow-400' :
+                      'text-gray-300'
+                    }`}>
+                      <span className="text-gray-500">[{new Date(log.timestamp || '').toLocaleTimeString()}]</span> {log.message}
+                    </div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
+              </div>
+            )}
+
+            {/* Results Summary */}
+            {results && (
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <CheckCircle className="w-6 h-6 text-green-600" />
+                  <h3 className="text-lg font-semibold text-green-900">Creation Complete!</h3>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{results.successful}</div>
+                    <div className="text-green-700">Successful</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-red-600">{results.failed}</div>
+                    <div className="text-red-700">Failed</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{results.total}</div>
+                    <div className="text-blue-700">Total</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">{Math.round(results.duration_ms / 1000)}s</div>
+                    <div className="text-purple-700">Duration</div>
+                  </div>
+                </div>
+                {results.created_containers?.length > 0 && (
+                  <div className="mt-4 p-3 bg-white rounded-lg">
+                    <div className="text-sm font-medium text-gray-700 mb-2">Created Containers:</div>
+                    <div className="text-sm text-gray-600">
+                      {results.created_containers.join(', ')}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+              <button
+                onClick={handleClose}
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                disabled={isCreating}
+              >
+                {isCreating ? 'Cancel' : 'Close'}
+              </button>
+              <button
+                onClick={startCreation}
+                disabled={isCreating || count < 1 || startNumber < 1}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isCreating ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4" />
+                    Start Creation
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   );

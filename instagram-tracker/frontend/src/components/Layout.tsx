@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { BarChart3, Home, Package, Users, Settings, Smartphone, Play, Activity, Layers, Star } from 'lucide-react';
+import { BarChart3, Home, Package, Users, Settings, Smartphone } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,10 +14,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Models', href: '/models', icon: Settings },
     { name: 'All Accounts', href: '/accounts', icon: Users },
     { name: 'Content Registry', href: '/content', icon: Package },
-    { name: 'Sprint Management', href: '/sprints', icon: Play },
-    { name: 'Campaign Pools', href: '/pools', icon: Layers },
-    { name: 'Highlight Groups', href: '/highlights', icon: Package },
-    { name: 'Content Timeline', href: '/timeline', icon: Activity },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
     { name: 'iPhone Settings', href: '/iphones', icon: Smartphone },
   ];

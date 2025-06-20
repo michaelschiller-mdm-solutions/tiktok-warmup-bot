@@ -115,7 +115,7 @@ class BatchContainerCreator {
             
             // Use the proper script_runner.js instead of lua_executor.js
             const scriptRunnerScript = path.join(this.scriptRoot, 'api', 'script_runner.js');
-            const command = `node "${scriptRunnerScript}" "create_container_with_clipboard.lua"`;
+            const command = `node "${scriptRunnerScript}" "create_container_with_clipboard.lua" "${this.iphoneUrl}"`;
             
             const { stdout, stderr } = await execAsync(command);
             
@@ -143,7 +143,9 @@ class BatchContainerCreator {
                     message: 'Container creation may have failed - no success indicator found',
                     step: 'container_creation',
                     status: 'failed',
-                    error: 'No success indicator in script output'
+                    error: 'No success indicator in script output',
+                    stdout: stdout,
+                    stderr: stderr
                 });
                 return false;
             }

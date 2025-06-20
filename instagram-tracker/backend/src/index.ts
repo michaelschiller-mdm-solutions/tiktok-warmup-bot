@@ -24,6 +24,8 @@ import campaignPoolsRouter from './routes/campaignPools';
 import emergencyContentRouter from './routes/emergencyContent';
 import highlightGroupsRouter from './routes/highlightGroups';
 import ganttRouter from './routes/gantt';
+import maintenanceStatusRouter from './routes/maintenanceStatus';
+import botIntegrationRouter from './routes/botIntegration';
 
 // Load environment variables
 dotenv.config();
@@ -108,6 +110,12 @@ app.use('/api/iphones', iphoneManagementRouter);
 
 // Gantt Chart API Routes
 app.use('/api/gantt', ganttRouter);
+
+// Maintenance Status API Routes
+app.use('/api/maintenance-status', maintenanceStatusRouter);
+
+// Bot Integration API Routes
+app.use('/api/bot-integration', botIntegrationRouter);
 
 // 404 handler
 app.use('*', (req, res) => {

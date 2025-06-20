@@ -10,10 +10,6 @@ import CentralAccountsPage from './pages/CentralAccountsPage';
 import Analytics from './pages/Analytics';
 import CentralContentRegistry from './components/CentralContentRegistry';
 import IPhoneSettingsPage from './pages/IPhoneSettingsPage';
-import SprintManagement from './pages/SprintManagement';
-import { GanttPage } from './pages/GanttPage';
-import CampaignPools from './pages/CampaignPools';
-import HighlightGroups from './pages/HighlightGroups';
 
 function App() {
   return (
@@ -30,10 +26,6 @@ function App() {
             <Route path="/accounts" element={<CentralAccountsPage />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/content" element={<CentralContentRegistry />} />
-            <Route path="/sprints" element={<SprintManagement />} />
-            <Route path="/pools" element={<CampaignPools />} />
-            <Route path="/highlights" element={<HighlightGroups />} />
-            <Route path="/timeline" element={<GanttPage />} />
             <Route path="/iphones" element={<IPhoneSettingsPage />} />
           </Routes>
         </Layout>
