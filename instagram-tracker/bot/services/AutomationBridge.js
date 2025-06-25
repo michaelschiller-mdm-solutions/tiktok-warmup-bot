@@ -9,6 +9,7 @@ const axios = require('axios');
 const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');
+const AutomationConfig = require('./AutomationConfig');
 
 const LOCK_FILE_PATH = path.join(__dirname, '..', 'scripts', 'api', '.iphone_global.lock');
 
@@ -20,7 +21,7 @@ class AutomationBridge extends EventEmitter {
             iphoneIP: config.iphoneIP || '192.168.178.65',
             iphonePort: config.iphonePort || 46952,
             maxContainers: config.maxContainers || 30,
-            retryAttempts: config.retryAttempts || 3,
+            scriptRetryAttempts: config.scriptRetryAttempts || 8, // Default to 8 retries for scripts
             actionDelay: config.actionDelay || 30000, // 30s between actions
             healthCheckInterval: config.healthCheckInterval || 60000, // 1min
             maxFailuresPerHour: config.maxFailuresPerHour || 5,
@@ -188,6 +189,24 @@ class AutomationBridge extends EventEmitter {
     }
 
     /**
+     * Stops any currently running script on the iPhone.
+     * This is a crucial cleanup and safety step before executing a new script.
+     */
+    async stopScript() {
+        try {
+            const url = `http://${this.config.iphoneIP}:${this.config.iphonePort}/stop_script_file`;
+            console.log(`[AutomationBridge] 🛑 Stopping any currently running script via ${url}...`);
+            await axios.post(url, '', { timeout: 5000 });
+            console.log('[AutomationBridge] ✅ Script stop command sent successfully.');
+            return true;
+        } catch (error) {
+            // It's common for this to fail if no script is running, so we don't treat it as a critical error.
+            console.warn('[AutomationBridge] ⚠️  Could not stop script (this is often okay and means no script was running):', error.message);
+            return false;
+        }
+    }
+
+    /**
      * Maps a container number to a precise sequence of script files.
      * Always starts with open_settings.lua, then scroll_to_top_container.lua.
      * This is a pure function with no side-effects.
@@ -210,223 +229,223 @@ class AutomationBridge extends EventEmitter {
 
         // Page 2 or higher.
         // This is a brute-force, systematic mapping based on the corrected model
-        // (Page 1: 12 items, Page 2: 15 items, Page 3+: 14 items).
+        // (Page 1: 12 items, Page 2: 14 items, Page 3+: 14 items).
         let pageNumber;
         let positionOnPage;
 
-        if (containerNumber >= 13 && containerNumber <= 27) { // Page 2 has 15 items
+        if (containerNumber >= 13 && containerNumber <= 26) {           // Page 2 (14 items)
             pageNumber = 2;
-            positionOnPage = containerNumber - 13 + 1;
-        } else if (containerNumber >= 28 && containerNumber <= 41) { // Page 3
+            positionOnPage = containerNumber - 13 + 1;                  // 13 -> 1, 26 -> 14
+        } else if (containerNumber >= 27 && containerNumber <= 40) {    // Page 3
             pageNumber = 3;
-            positionOnPage = containerNumber - 28 + 1;
-        } else if (containerNumber >= 42 && containerNumber <= 55) {
+            positionOnPage = containerNumber - 27 + 1;
+        } else if (containerNumber >= 41 && containerNumber <= 54) {    // Page 4
             pageNumber = 4;
-            positionOnPage = containerNumber - 42 + 1;
-        } else if (containerNumber >= 56 && containerNumber <= 69) {
+            positionOnPage = containerNumber - 41 + 1;
+        } else if (containerNumber >= 55 && containerNumber <= 68) {    // Page 5
             pageNumber = 5;
-            positionOnPage = containerNumber - 56 + 1;
-        } else if (containerNumber >= 70 && containerNumber <= 83) {
+            positionOnPage = containerNumber - 55 + 1;
+        } else if (containerNumber >= 69 && containerNumber <= 82) {    // Page 6
             pageNumber = 6;
-            positionOnPage = containerNumber - 70 + 1;
-        } else if (containerNumber >= 84 && containerNumber <= 97) {
+            positionOnPage = containerNumber - 69 + 1;
+        } else if (containerNumber >= 83 && containerNumber <= 96) {    // Page 7
             pageNumber = 7;
-            positionOnPage = containerNumber - 84 + 1;
-        } else if (containerNumber >= 98 && containerNumber <= 111) {
+            positionOnPage = containerNumber - 83 + 1;
+        } else if (containerNumber >= 97 && containerNumber <= 110) {   // Page 8
             pageNumber = 8;
-            positionOnPage = containerNumber - 98 + 1;
-        } else if (containerNumber >= 112 && containerNumber <= 125) {
+            positionOnPage = containerNumber - 97 + 1;
+        } else if (containerNumber >= 111 && containerNumber <= 124) {  // Page 9
             pageNumber = 9;
-            positionOnPage = containerNumber - 112 + 1;
-        } else if (containerNumber >= 126 && containerNumber <= 139) {
+            positionOnPage = containerNumber - 111 + 1;
+        } else if (containerNumber >= 125 && containerNumber <= 138) {  // Page 10
             pageNumber = 10;
-            positionOnPage = containerNumber - 126 + 1;
-        } else if (containerNumber >= 140 && containerNumber <= 153) {
+            positionOnPage = containerNumber - 125 + 1;
+        } else if (containerNumber >= 139 && containerNumber <= 152) {  // Page 11
             pageNumber = 11;
-            positionOnPage = containerNumber - 140 + 1;
-        } else if (containerNumber >= 154 && containerNumber <= 167) {
+            positionOnPage = containerNumber - 139 + 1;
+        } else if (containerNumber >= 153 && containerNumber <= 166) {  // Page 12
             pageNumber = 12;
-            positionOnPage = containerNumber - 154 + 1;
-        } else if (containerNumber >= 168 && containerNumber <= 181) {
+            positionOnPage = containerNumber - 153 + 1;
+        } else if (containerNumber >= 167 && containerNumber <= 180) {  // Page 13
             pageNumber = 13;
-            positionOnPage = containerNumber - 168 + 1;
-        } else if (containerNumber >= 182 && containerNumber <= 195) {
+            positionOnPage = containerNumber - 167 + 1;
+        } else if (containerNumber >= 181 && containerNumber <= 194) {  // Page 14
             pageNumber = 14;
-            positionOnPage = containerNumber - 182 + 1;
-        } else if (containerNumber >= 196 && containerNumber <= 209) {
+            positionOnPage = containerNumber - 181 + 1;
+        } else if (containerNumber >= 195 && containerNumber <= 208) {  // Page 15
             pageNumber = 15;
-            positionOnPage = containerNumber - 196 + 1;
-        } else if (containerNumber >= 210 && containerNumber <= 223) {
+            positionOnPage = containerNumber - 195 + 1;
+        } else if (containerNumber >= 209 && containerNumber <= 222) {  // Page 16
             pageNumber = 16;
-            positionOnPage = containerNumber - 210 + 1;
-        } else if (containerNumber >= 224 && containerNumber <= 237) {
+            positionOnPage = containerNumber - 209 + 1;
+        } else if (containerNumber >= 223 && containerNumber <= 236) {  // Page 17
             pageNumber = 17;
-            positionOnPage = containerNumber - 224 + 1;
-        } else if (containerNumber >= 238 && containerNumber <= 251) {
+            positionOnPage = containerNumber - 223 + 1;
+        } else if (containerNumber >= 237 && containerNumber <= 250) {  // Page 18
             pageNumber = 18;
-            positionOnPage = containerNumber - 238 + 1;
-        } else if (containerNumber >= 252 && containerNumber <= 265) {
+            positionOnPage = containerNumber - 237 + 1;
+        } else if (containerNumber >= 251 && containerNumber <= 264) {  // Page 19
             pageNumber = 19;
-            positionOnPage = containerNumber - 252 + 1;
-        } else if (containerNumber >= 266 && containerNumber <= 279) {
+            positionOnPage = containerNumber - 251 + 1;
+        } else if (containerNumber >= 265 && containerNumber <= 278) {  // Page 20
             pageNumber = 20;
-            positionOnPage = containerNumber - 266 + 1;
-        } else if (containerNumber >= 280 && containerNumber <= 293) {
+            positionOnPage = containerNumber - 265 + 1;
+        } else if (containerNumber >= 279 && containerNumber <= 292) {  // Page 21
             pageNumber = 21;
-            positionOnPage = containerNumber - 280 + 1;
-        } else if (containerNumber >= 294 && containerNumber <= 307) {
+            positionOnPage = containerNumber - 279 + 1;
+        } else if (containerNumber >= 293 && containerNumber <= 306) {  // Page 22
             pageNumber = 22;
-            positionOnPage = containerNumber - 294 + 1;
-        } else if (containerNumber >= 308 && containerNumber <= 321) {
+            positionOnPage = containerNumber - 293 + 1;
+        } else if (containerNumber >= 307 && containerNumber <= 320) {  // Page 23
             pageNumber = 23;
-            positionOnPage = containerNumber - 308 + 1;
-        } else if (containerNumber >= 322 && containerNumber <= 335) {
+            positionOnPage = containerNumber - 307 + 1;
+        } else if (containerNumber >= 321 && containerNumber <= 334) {  // Page 24
             pageNumber = 24;
-            positionOnPage = containerNumber - 322 + 1;
-        } else if (containerNumber >= 336 && containerNumber <= 349) {
+            positionOnPage = containerNumber - 321 + 1;
+        } else if (containerNumber >= 335 && containerNumber <= 348) {  // Page 25
             pageNumber = 25;
-            positionOnPage = containerNumber - 336 + 1;
-        } else if (containerNumber >= 350 && containerNumber <= 363) {
+            positionOnPage = containerNumber - 335 + 1;
+        } else if (containerNumber >= 349 && containerNumber <= 362) {  // Page 26
             pageNumber = 26;
-            positionOnPage = containerNumber - 350 + 1;
-        } else if (containerNumber >= 364 && containerNumber <= 377) {
+            positionOnPage = containerNumber - 349 + 1;
+        } else if (containerNumber >= 363 && containerNumber <= 376) {  // Page 27
             pageNumber = 27;
-            positionOnPage = containerNumber - 364 + 1;
-        } else if (containerNumber >= 378 && containerNumber <= 391) {
+            positionOnPage = containerNumber - 363 + 1;
+        } else if (containerNumber >= 377 && containerNumber <= 390) {
             pageNumber = 28;
-            positionOnPage = containerNumber - 378 + 1;
-        } else if (containerNumber >= 392 && containerNumber <= 405) {
+            positionOnPage = containerNumber - 377 + 1;
+        } else if (containerNumber >= 391 && containerNumber <= 404) {
             pageNumber = 29;
-            positionOnPage = containerNumber - 392 + 1;
-        } else if (containerNumber >= 406 && containerNumber <= 419) {
-            pageNumber = 30;
-            positionOnPage = containerNumber - 406 + 1;
-        } else if (containerNumber >= 420 && containerNumber <= 433) {
+            positionOnPage = containerNumber - 391 + 1;
+        } else if (containerNumber >= 405 && containerNumber <= 418) {
+            pageNumber = 30;    
+            positionOnPage = containerNumber - 405 + 1;
+        } else if (containerNumber >= 419 && containerNumber <= 432) {
             pageNumber = 31;
-            positionOnPage = containerNumber - 420 + 1;
-        } else if (containerNumber >= 434 && containerNumber <= 447) {
+            positionOnPage = containerNumber - 419 + 1;
+        } else if (containerNumber >= 433 && containerNumber <= 446) {
             pageNumber = 32;
-            positionOnPage = containerNumber - 434 + 1;
-        } else if (containerNumber >= 448 && containerNumber <= 461) {
+            positionOnPage = containerNumber - 433 + 1;
+        } else if (containerNumber >= 447 && containerNumber <= 460) {
             pageNumber = 33;
-            positionOnPage = containerNumber - 448 + 1;
-        } else if (containerNumber >= 462 && containerNumber <= 475) {
+            positionOnPage = containerNumber - 447 + 1;
+        } else if (containerNumber >= 461 && containerNumber <= 474) {  // Page 34
             pageNumber = 34;
-            positionOnPage = containerNumber - 462 + 1;
-        } else if (containerNumber >= 476 && containerNumber <= 489) {
+            positionOnPage = containerNumber - 461 + 1;
+        } else if (containerNumber >= 475 && containerNumber <= 488) {  // Page 35
             pageNumber = 35;
-            positionOnPage = containerNumber - 476 + 1;
-        } else if (containerNumber >= 490 && containerNumber <= 503) {
+            positionOnPage = containerNumber - 475 + 1;
+        } else if (containerNumber >= 489 && containerNumber <= 502) {  // Page 36
             pageNumber = 36;
-            positionOnPage = containerNumber - 490 + 1;
-        } else if (containerNumber >= 504 && containerNumber <= 517) {
+            positionOnPage = containerNumber - 489 + 1;
+        } else if (containerNumber >= 503 && containerNumber <= 516) {  // Page 37
             pageNumber = 37;
-            positionOnPage = containerNumber - 504 + 1;
-        } else if (containerNumber >= 518 && containerNumber <= 531) {
+            positionOnPage = containerNumber - 503 + 1;
+        } else if (containerNumber >= 517 && containerNumber <= 530) {  // Page 38
             pageNumber = 38;
-            positionOnPage = containerNumber - 518 + 1;
-        } else if (containerNumber >= 532 && containerNumber <= 545) {
+            positionOnPage = containerNumber - 517 + 1;
+        } else if (containerNumber >= 531 && containerNumber <= 544) {  // Page 39
             pageNumber = 39;
-            positionOnPage = containerNumber - 532 + 1;
-        } else if (containerNumber >= 546 && containerNumber <= 559) {
+            positionOnPage = containerNumber - 531 + 1;
+        } else if (containerNumber >= 545 && containerNumber <= 558) {  // Page 40
             pageNumber = 40;
-            positionOnPage = containerNumber - 546 + 1;
-        } else if (containerNumber >= 560 && containerNumber <= 573) {
+            positionOnPage = containerNumber - 545 + 1;
+        } else if (containerNumber >= 559 && containerNumber <= 572) {  // Page 41
             pageNumber = 41;
-            positionOnPage = containerNumber - 560 + 1;
-        } else if (containerNumber >= 574 && containerNumber <= 587) {
+            positionOnPage = containerNumber - 559 + 1;
+        } else if (containerNumber >= 573 && containerNumber <= 586) {  // Page 42
             pageNumber = 42;
-            positionOnPage = containerNumber - 574 + 1;
-        } else if (containerNumber >= 588 && containerNumber <= 601) {
+            positionOnPage = containerNumber - 573 + 1;
+        } else if (containerNumber >= 587 && containerNumber <= 600) {  // Page 43
             pageNumber = 43;
-            positionOnPage = containerNumber - 588 + 1;
-        } else if (containerNumber >= 602 && containerNumber <= 615) {
+            positionOnPage = containerNumber - 587 + 1;
+        } else if (containerNumber >= 601 && containerNumber <= 614) {  // Page 44
             pageNumber = 44;
-            positionOnPage = containerNumber - 602 + 1;
-        } else if (containerNumber >= 616 && containerNumber <= 629) {
+            positionOnPage = containerNumber - 601 + 1;
+        } else if (containerNumber >= 615 && containerNumber <= 628) {  // Page 45
             pageNumber = 45;
-            positionOnPage = containerNumber - 616 + 1;
-        } else if (containerNumber >= 630 && containerNumber <= 643) {
+            positionOnPage = containerNumber - 615 + 1;
+        } else if (containerNumber >= 629 && containerNumber <= 642) {  // Page 46
             pageNumber = 46;
-            positionOnPage = containerNumber - 630 + 1;
-        } else if (containerNumber >= 644 && containerNumber <= 657) {
+            positionOnPage = containerNumber - 629 + 1;
+        } else if (containerNumber >= 643 && containerNumber <= 656) {  // Page 47
             pageNumber = 47;
-            positionOnPage = containerNumber - 644 + 1;
-        } else if (containerNumber >= 658 && containerNumber <= 671) {
+            positionOnPage = containerNumber - 643 + 1;
+        } else if (containerNumber >= 657 && containerNumber <= 670) {  // Page 48
             pageNumber = 48;
-            positionOnPage = containerNumber - 658 + 1;
-        } else if (containerNumber >= 672 && containerNumber <= 685) {
+            positionOnPage = containerNumber - 657 + 1;
+        } else if (containerNumber >= 671 && containerNumber <= 684) {  // Page 49
             pageNumber = 49;
-            positionOnPage = containerNumber - 672 + 1;
-        } else if (containerNumber >= 686 && containerNumber <= 699) {
+            positionOnPage = containerNumber - 671 + 1;
+        } else if (containerNumber >= 685 && containerNumber <= 698) {  // Page 50
             pageNumber = 50;
-            positionOnPage = containerNumber - 686 + 1;
-        } else if (containerNumber >= 700 && containerNumber <= 713) {
+            positionOnPage = containerNumber - 685 + 1;
+        } else if (containerNumber >= 699 && containerNumber <= 712) {  // Page 51
             pageNumber = 51;
-            positionOnPage = containerNumber - 700 + 1;
-        } else if (containerNumber >= 714 && containerNumber <= 727) {
+            positionOnPage = containerNumber - 699 + 1;
+        } else if (containerNumber >= 713 && containerNumber <= 726) {  // Page 52
             pageNumber = 52;
-            positionOnPage = containerNumber - 714 + 1;
-        } else if (containerNumber >= 728 && containerNumber <= 741) {
+            positionOnPage = containerNumber - 713 + 1;
+        } else if (containerNumber >= 727 && containerNumber <= 740) {  // Page 53
             pageNumber = 53;
-            positionOnPage = containerNumber - 728 + 1;
-        } else if (containerNumber >= 742 && containerNumber <= 755) {
+            positionOnPage = containerNumber - 727 + 1;
+        } else if (containerNumber >= 741 && containerNumber <= 754) {  // Page 54
             pageNumber = 54;
-            positionOnPage = containerNumber - 742 + 1;
-        } else if (containerNumber >= 756 && containerNumber <= 769) {
+            positionOnPage = containerNumber - 741 + 1;
+        } else if (containerNumber >= 755 && containerNumber <= 768) {  // Page 55
             pageNumber = 55;
-            positionOnPage = containerNumber - 756 + 1;
-        } else if (containerNumber >= 770 && containerNumber <= 783) {
+            positionOnPage = containerNumber - 755 + 1;
+        } else if (containerNumber >= 769 && containerNumber <= 782) {  // Page 56
             pageNumber = 56;
-            positionOnPage = containerNumber - 770 + 1;
-        } else if (containerNumber >= 784 && containerNumber <= 797) {
+            positionOnPage = containerNumber - 769 + 1;
+        } else if (containerNumber >= 783 && containerNumber <= 796) {  // Page 57
             pageNumber = 57;
-            positionOnPage = containerNumber - 784 + 1;
-        } else if (containerNumber >= 798 && containerNumber <= 811) {
+            positionOnPage = containerNumber - 783 + 1;
+        } else if (containerNumber >= 797 && containerNumber <= 810) {  // Page 58
             pageNumber = 58;
-            positionOnPage = containerNumber - 798 + 1;
-        } else if (containerNumber >= 812 && containerNumber <= 825) {
+            positionOnPage = containerNumber - 797 + 1;
+        } else if (containerNumber >= 811 && containerNumber <= 824) {  // Page 59
             pageNumber = 59;
-            positionOnPage = containerNumber - 812 + 1;
-        } else if (containerNumber >= 826 && containerNumber <= 839) {
+            positionOnPage = containerNumber - 811 + 1;
+        } else if (containerNumber >= 825 && containerNumber <= 838) {  // Page 60
             pageNumber = 60;
-            positionOnPage = containerNumber - 826 + 1;
-        } else if (containerNumber >= 840 && containerNumber <= 853) {
+            positionOnPage = containerNumber - 825 + 1;
+        } else if (containerNumber >= 839 && containerNumber <= 852) {  // Page 61
             pageNumber = 61;
-            positionOnPage = containerNumber - 840 + 1;
-        } else if (containerNumber >= 854 && containerNumber <= 867) {
+            positionOnPage = containerNumber - 839 + 1;
+        } else if (containerNumber >= 853 && containerNumber <= 866) {  // Page 62
             pageNumber = 62;
-            positionOnPage = containerNumber - 854 + 1;
-        } else if (containerNumber >= 868 && containerNumber <= 881) {
+            positionOnPage = containerNumber - 853 + 1;
+        } else if (containerNumber >= 867 && containerNumber <= 880) {  // Page 63
             pageNumber = 63;
-            positionOnPage = containerNumber - 868 + 1;
-        } else if (containerNumber >= 882 && containerNumber <= 895) {
+            positionOnPage = containerNumber - 867 + 1;
+        } else if (containerNumber >= 881 && containerNumber <= 894) {  // Page 64
             pageNumber = 64;
-            positionOnPage = containerNumber - 882 + 1;
-        } else if (containerNumber >= 896 && containerNumber <= 909) {
+            positionOnPage = containerNumber - 881 + 1;
+        } else if (containerNumber >= 895 && containerNumber <= 908) {  // Page 65
             pageNumber = 65;
-            positionOnPage = containerNumber - 896 + 1;
-        } else if (containerNumber >= 910 && containerNumber <= 923) {
+            positionOnPage = containerNumber - 895 + 1;
+        } else if (containerNumber >= 909 && containerNumber <= 922) {  // Page 66
             pageNumber = 66;
-            positionOnPage = containerNumber - 910 + 1;
-        } else if (containerNumber >= 924 && containerNumber <= 937) {
+            positionOnPage = containerNumber - 909 + 1;
+        } else if (containerNumber >= 923 && containerNumber <= 936) {  // Page 67
             pageNumber = 67;
-            positionOnPage = containerNumber - 924 + 1;
-        } else if (containerNumber >= 938 && containerNumber <= 951) {
+            positionOnPage = containerNumber - 923 + 1;
+        } else if (containerNumber >= 937 && containerNumber <= 950) {  // Page 68
             pageNumber = 68;
-            positionOnPage = containerNumber - 938 + 1;
-        } else if (containerNumber >= 952 && containerNumber <= 965) {
+            positionOnPage = containerNumber - 937 + 1;
+        } else if (containerNumber >= 951 && containerNumber <= 964) {  // Page 69
             pageNumber = 69;
-            positionOnPage = containerNumber - 952 + 1;
-        } else if (containerNumber >= 966 && containerNumber <= 979) {
+            positionOnPage = containerNumber - 951 + 1;
+        } else if (containerNumber >= 965 && containerNumber <= 978) {  // Page 70
             pageNumber = 70;
-            positionOnPage = containerNumber - 966 + 1;
-        } else if (containerNumber >= 980 && containerNumber <= 993) {
+            positionOnPage = containerNumber - 965 + 1;
+        } else if (containerNumber >= 979 && containerNumber <= 992) {  // Page 71
             pageNumber = 71;
-            positionOnPage = containerNumber - 980 + 1;
-        } else if (containerNumber >= 994 && containerNumber <= 1007) {
+            positionOnPage = containerNumber - 979 + 1;
+        } else if (containerNumber >= 993 && containerNumber <= 1006) {  // Page 72
             pageNumber = 72;
-            positionOnPage = containerNumber - 994 + 1;
+            positionOnPage = containerNumber - 993 + 1;
         } else {
              // For numbers beyond this explicit map, use the now-corrected formula.
             let containersLeft = containerNumber - 27; // Containers after page 2
@@ -454,20 +473,51 @@ class AutomationBridge extends EventEmitter {
     /**
      * Select a specific container on the iPhone by executing a mapped sequence of scripts.
      * @param {number} containerNumber - The 1-based index of the container to select
+     * @returns {Promise<boolean>} True if the sequence completed, false otherwise.
      */
     async selectContainer(containerNumber) {
         console.log(`🚀 Starting selection for container: ${containerNumber}`);
-        
-        const scriptSequence = this.getScriptSequence(containerNumber);
-        
-        console.log(`▶️ Executing mapped sequence of ${scriptSequence.length} scripts...`);
-        for (const scriptName of scriptSequence) {
-            // The executeScript method already handles waiting and retries.
-            await this.executeScript(scriptName);
-        }
+        this.emit('container_selection_start', { containerNumber });
 
-        console.log(`✅ Successfully executed sequence for container ${containerNumber}.`);
-        return true;
+        try {
+            // First, ensure a clean state by stopping any potentially orphaned script.
+            await this.stopScript();
+            
+            const sequence = this.getScriptSequence(containerNumber);
+            
+            console.log(`▶️ Executing mapped sequence of ${sequence.length} scripts...`);
+            
+            // Use a for...of loop to ensure sequential execution.
+            for (const scriptName of sequence) {
+                const success = await this.executeScript(scriptName);
+                if (!success) {
+                    // If any script in the sequence fails, abort the entire selection.
+                    throw new Error(`Critical script "${scriptName}" in sequence failed. Aborting container selection.`);
+                }
+                // Hardcoded delay to allow the XXTouch server to reset its state.
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            console.log(`✅ Successfully executed sequence for container ${containerNumber}.`);
+
+            // Now, open Instagram as the final step.
+            console.log(`[selectContainer] 📱 Opening Instagram app after container switch...`);
+            const openInstaSuccess = await this.executeScript('open_instagram.lua');
+            if (!openInstaSuccess) {
+                // This is not a critical failure of the container switch itself, so we just log a warning.
+                console.warn(`[selectContainer] ⚠️  Could not open Instagram after switching to container ${containerNumber}.`);
+            } else {
+                console.log(`[selectContainer] ✅ Instagram opened successfully.`);
+            }
+
+            this.emit('container_selection_success', { containerNumber });
+            return true;
+        } catch (error) {
+            console.error(`❌ Container selection failed for ${containerNumber}:`, error.message);
+            this.emit('container_selection_failed', { containerNumber, error: error.message });
+            this.recordFailure(); // Record failure for the bridge
+            return false;
+        }
     }
 
     /**
@@ -516,112 +566,346 @@ class AutomationBridge extends EventEmitter {
     }
 
     /**
-     * Executes a single Lua script on the iPhone with a locking mechanism.
-     * @param {string} scriptName The name of the script file to execute.
-     * @returns {Promise<boolean>} True if successful, false otherwise.
+     * Enhanced script execution with better synchronization and state management
+     * @param {string} scriptName - The name of the script to execute.
+     * @param {Object} options - Execution options
+     * @returns {Promise<boolean>} True on success, false on failure.
      */
-    async executeScript(scriptName) {
-        // --- Self-healing Lock Mechanism ---
-        if (fs.existsSync(LOCK_FILE_PATH)) {
-            const lockData = fs.readFileSync(LOCK_FILE_PATH, 'utf8');
-            const [pid] = (lockData || '').split('|');
+    async executeScript(scriptName, options = {}) {
+        const {
+            maxRetries = this.config.scriptRetryAttempts,
+            preExecutionDelay = 0,
+            postExecutionDelay = 500,
+            verifyCompletion = true,
+            timeout = 45000
+        } = options;
 
-            if (pid) {
-                let isStale = false;
-                try {
-                    process.kill(parseInt(pid), 0);
-                } catch (e) {
-                    if (e.code === 'ESRCH') {
-                        console.log('⚠️  Found stale AutomationBridge lock file. Removing it.');
-                        isStale = true;
-                        fs.unlinkSync(LOCK_FILE_PATH);
+        if (!this.isOperational()) {
+            this.emit('automation_error', { scriptName, message: 'Automation is paused or has reached max failures.' });
+            return false;
+        }
+
+        let lastError = null;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                // Acquire lock with better error handling
+                const lockAcquired = await this.acquireLockWithTimeout(5000);
+                if (!lockAcquired) {
+                    const delay = Math.min(2000 * attempt, 10000); // Exponential backoff, max 10s
+                    console.warn(`[AutomationBridge] Could not acquire lock for ${scriptName}, attempt ${attempt}. Waiting ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+
+                // Pre-execution delay if specified
+                if (preExecutionDelay > 0) {
+                    await new Promise(resolve => setTimeout(resolve, preExecutionDelay));
+                }
+
+                console.log(`[AutomationBridge] 🎯 Executing script: ${scriptName} (Attempt ${attempt})`);
+                
+                // Ensure no script is running before starting
+                await this.ensureNoScriptRunning();
+                
+                // Select and launch script with better error handling
+                const success = await this.selectAndLaunchScript(scriptName, timeout);
+                if (!success) {
+                    throw new Error('Failed to select and launch script');
+                }
+
+                // Wait for completion with enhanced monitoring
+                if (verifyCompletion) {
+                    const completed = await this.waitForScriptCompletionEnhanced(scriptName, timeout);
+                    if (!completed) {
+                        throw new Error('Script execution did not complete within timeout');
                     }
                 }
 
-                if (!isStale) {
-                    const errorMsg = `❌ Error: An automation process (PID: ${pid}) is already running.`;
-                    console.error(errorMsg);
-                    this.emit('execution_error', { scriptName, error: errorMsg });
-                    return false;
+                // Post-execution delay for UI stability
+                if (postExecutionDelay > 0) {
+                    await new Promise(resolve => setTimeout(resolve, postExecutionDelay));
                 }
+                
+                console.log(`[AutomationBridge] 🎉 Script execution completed: ${scriptName}`);
+                this.releaseLock();
+                return true;
+
+            } catch (error) {
+                this.releaseLock();
+                lastError = error;
+                console.error(`[AutomationBridge] 💥 Attempt ${attempt} for ${scriptName} failed:`, error.message);
+                
+                if (attempt === maxRetries) {
+                    this.recordFailure();
+                    this.emit('automation_error', { scriptName, message: error.message });
+                    break;
+                }
+                
+                // Intelligent retry delay based on error type
+                const retryDelay = this.calculateRetryDelay(error, attempt);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
         }
+        
+        return false;
+    }
 
-        try {
-            // Create lock file with current process's PID
-            const pid = process.pid;
-            fs.writeFileSync(LOCK_FILE_PATH, `${pid}|${scriptName}|${new Date().toISOString()}`);
-
-            this.emit('script_execution_start', { scriptName });
-            console.log(`[AutomationBridge] 🎯 Executing script: ${scriptName}`);
-
-            // **New Step**: Stop any orphaned script before starting a new one.
-            await this.stopScript();
-
-            // 1. Select the script
-            await axios.post(
-                `http://${this.config.iphoneIP}:${this.config.iphonePort}/select_script_file`,
-                { filename: `/var/mobile/Media/1ferver/lua/scripts/${scriptName}` },
-                { timeout: 10000 }
-            );
-
-            // 2. Launch the script
-            await axios.post(
-                `http://${this.config.iphoneIP}:${this.config.iphonePort}/launch_script_file`,
-                '',
-                { timeout: 10000 }
-            );
-
-            // 3. Wait for completion
-            const success = await this.waitForScriptCompletion(scriptName);
-
-            if (success) {
-                console.log(`[AutomationBridge] ✅ Successfully executed ${scriptName}`);
-                this.emit('script_execution_success', { scriptName });
+    /**
+     * Enhanced lock acquisition with timeout
+     */
+    async acquireLockWithTimeout(timeoutMs = 5000) {
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < timeoutMs) {
+            if (this.acquireLock()) {
                 return true;
+            }
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        return false;
+    }
+
+    /**
+     * Ensure no script is running before starting a new one
+     */
+    async ensureNoScriptRunning(maxWaitMs = 10000) {
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < maxWaitMs) {
+            if (!await this.isScriptRunning()) {
+                return true;
+            }
+            
+            console.log('[AutomationBridge] ⏳ Waiting for current script to finish...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        // Force stop if still running
+        console.warn('[AutomationBridge] ⚠️ Force stopping script due to timeout');
+        await this.stopScript();
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        return !await this.isScriptRunning();
+    }
+
+    /**
+     * Select and launch script with better error handling
+     */
+    async selectAndLaunchScript(scriptName, timeout = 10000) {
+        try {
+            // Select the script on the device
+            const selectUrl = `http://${this.config.iphoneIP}:${this.config.iphonePort}/select_script_file`;
+            const selectResponse = await axios.post(selectUrl, { filename: scriptName }, { timeout });
+            
+            if (selectResponse.data.code !== 0) {
+                throw new Error(`Failed to select script: ${selectResponse.data.message}`);
+            }
+            
+            // Small delay between select and launch
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Launch the script
+            const launchUrl = `http://${this.config.iphoneIP}:${this.config.iphonePort}/launch_script_file`;
+            const launchResponse = await axios.post(launchUrl, '', { timeout });
+            
+            if (launchResponse.data.code !== 0) {
+                throw new Error(`Failed to launch script: ${launchResponse.data.message}`);
+            }
+            
+            return true;
+            
+        } catch (error) {
+            console.error(`[AutomationBridge] Failed to select and launch ${scriptName}:`, error.message);
+            return false;
+        }
+    }
+
+    /**
+     * Enhanced script completion waiting with better monitoring
+     */
+    async waitForScriptCompletionEnhanced(scriptName, timeout = 45000) {
+        console.log(`⏳ Waiting for script "${scriptName}" to complete...`);
+        const startTime = Date.now();
+        
+        // Give the script time to start
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        let consecutiveNotRunning = 0;
+        const requiredConsecutive = 2; // Require 2 consecutive "not running" checks
+        
+        while (Date.now() - startTime < timeout) {
+            const isRunning = await this.isScriptRunning();
+            
+            if (!isRunning) {
+                consecutiveNotRunning++;
+                if (consecutiveNotRunning >= requiredConsecutive) {
+                    console.log(`✅ Script "${scriptName}" finished (confirmed ${requiredConsecutive} times).`);
+                    await new Promise(resolve => setTimeout(resolve, 500)); // UI settle time
+                    return true;
+                }
             } else {
-                console.error(`[AutomationBridge] ❌ Timed out waiting for ${scriptName} to complete.`);
-                this.emit('script_execution_timeout', { scriptName });
-                this.recordFailure();
+                consecutiveNotRunning = 0;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 800)); // Slightly faster polling
+        }
+
+        console.error(`❌ Timed out after ${timeout / 1000}s waiting for script "${scriptName}" to complete.`);
+        return false;
+    }
+
+    /**
+     * Calculate intelligent retry delay based on error type and attempt number
+     */
+    calculateRetryDelay(error, attempt) {
+        return AutomationConfig.calculateRetryDelay(error, attempt);
+    }
+
+    /**
+     * Acquires a lock for script execution.
+     * @private
+     */
+    acquireLock() {
+        if (fs.existsSync(LOCK_FILE_PATH)) {
+            try {
+                const lockData = fs.readFileSync(LOCK_FILE_PATH,'utf8');
+                const [pid] = (lockData||'').split('|');
+                if (pid) {
+                    try {
+                        process.kill(parseInt(pid,10),0); // will throw if not running
+                        return false; // lock held by live process
+                    } catch(e){
+                        if (e.code === 'ESRCH') {
+                            console.warn('[AutomationBridge] ⚠️  Found stale lock file – cleaning up');
+                            fs.unlinkSync(LOCK_FILE_PATH);
+                        } else {
+                            return false;
+                        }
+                    }
+                }
+            } catch(err){
+                console.error('[AutomationBridge] Error reading lock file:',err.message);
                 return false;
             }
+        }
+        fs.writeFileSync(LOCK_FILE_PATH, `${process.pid}|${new Date().toISOString()}`);
+        return true;
+    }
 
-        } catch (error) {
-            const errorMsg = `[AutomationBridge] 💥 Script execution failed for ${scriptName}: ${error.message}`;
-            console.error(errorMsg);
-            this.recordFailure();
-            this.emit('script_execution_error', { scriptName, error: error.message });
-            return false;
-        } finally {
-            // --- Unlock Mechanism ---
-            if (fs.existsSync(LOCK_FILE_PATH)) {
-                const lockData = fs.readFileSync(LOCK_FILE_PATH, 'utf8');
-                const [pidFromFile] = (lockData || '').split('|');
-                
-                if (pidFromFile == process.pid.toString()) {
-                    fs.unlinkSync(LOCK_FILE_PATH);
-                }
+    /**
+     * Releases the script execution lock.
+     * @private
+     */
+    releaseLock() {
+        if (fs.existsSync(LOCK_FILE_PATH)) {
+            const lockData = fs.readFileSync(LOCK_FILE_PATH, 'utf8');
+            const [pidFromFile] = (lockData || '').split('|');
+            if (pidFromFile == process.pid.toString()) {
+                fs.unlinkSync(LOCK_FILE_PATH);
             }
         }
     }
 
     /**
-     * Set clipboard content for iPhone
+     * Set clipboard using the dedicated clipboard.js script
+     * This is the only reliable method for clipboard operations
      */
     async setClipboard(text) {
         try {
-            const response = await axios.post(
-                `http://${this.config.iphoneIP}:${this.config.iphonePort}/set_clipboard`,
-                { text: text },
-                { timeout: 5000 }
-            );
+            console.log(`[AutomationBridge] 📋 Setting clipboard via clipboard.js: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
             
-            return response.data.code === 0;
+            // Use spawn to run the clipboard script
+            const { spawn } = require('child_process');
+            const path = require('path');
+            
+            const clipboardScriptPath = path.join(__dirname, '..', 'scripts', 'api', 'clipboard.js');
+            const baseUrl = `http://${this.config.iphoneIP}:${this.config.iphonePort}`;
+            
+            return new Promise((resolve, reject) => {
+                const process = spawn('node', [clipboardScriptPath, text, baseUrl], {
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+                
+                let stdout = '';
+                let stderr = '';
+                
+                process.stdout.on('data', (data) => {
+                    stdout += data.toString();
+                });
+                
+                process.stderr.on('data', (data) => {
+                    stderr += data.toString();
+                });
+                
+                process.on('close', (code) => {
+                    if (code === 0) {
+                        console.log(`[AutomationBridge] ✅ Clipboard set successfully`);
+                        resolve(true);
+                    } else {
+                        console.error(`[AutomationBridge] ❌ Clipboard script failed with code ${code}`);
+                        console.error(`stderr: ${stderr}`);
+                        resolve(false);
+                    }
+                });
+                
+                // Timeout after 15 seconds
+                setTimeout(() => {
+                    process.kill('SIGTERM');
+                    console.error(`[AutomationBridge] ⏱️ Clipboard operation timed out`);
+                    resolve(false);
+                }, 15000);
+            });
             
         } catch (error) {
-            console.error('❌ Failed to set clipboard:', error.message);
+            console.error(`[AutomationBridge] ❌ Failed to set clipboard:`, error.message);
             return false;
         }
+    }
+
+    /**
+     * Enhanced clipboard operation with timing safeguards
+     * Ensures proper timing between clipboard operations to prevent conflicts
+     */
+    async setClipboardSafe(text, operationType = 'general') {
+        // Use the enhanced timing configuration
+        const timingConfig = AutomationConfig.clipboard.operationTiming;
+        const minimumTimeBetween = AutomationConfig.clipboard.minimumTimeBetweenOperations;
+        
+        const requiredDelay = timingConfig[operationType] || timingConfig.general;
+        const safetyDelay = Math.max(requiredDelay, minimumTimeBetween);
+        
+        console.log(`[AutomationBridge] 📋 Setting clipboard for ${operationType} operation with ${safetyDelay}ms safety delay`);
+        
+        // Check if enough time has passed since last clipboard operation
+        const now = Date.now();
+        if (this.lastClipboardOperation) {
+            const timeSinceLastOp = now - this.lastClipboardOperation;
+            if (timeSinceLastOp < safetyDelay) {
+                const additionalWait = safetyDelay - timeSinceLastOp;
+                console.log(`[AutomationBridge] ⏰ SAFETY WAIT: ${additionalWait}ms additional delay for clipboard safety (${operationType})`);
+                console.log(`[AutomationBridge] 🛡️ This prevents clipboard conflicts while previous script may still be running`);
+                await new Promise(resolve => setTimeout(resolve, additionalWait));
+            } else {
+                console.log(`[AutomationBridge] ✅ Sufficient time has passed since last clipboard operation (${timeSinceLastOp}ms)`);
+            }
+        } else {
+            console.log(`[AutomationBridge] 🆕 First clipboard operation of this session`);
+        }
+        
+        // Set the clipboard
+        const success = await this.setClipboard(text);
+        
+        if (success) {
+            this.lastClipboardOperation = Date.now();
+            console.log(`[AutomationBridge] 📋 Clipboard operation completed safely for: ${operationType}`);
+            console.log(`[AutomationBridge] ⏱️ Next clipboard operation will wait minimum ${safetyDelay}ms`);
+        } else {
+            console.error(`[AutomationBridge] ❌ Clipboard operation failed for: ${operationType}`);
+        }
+        
+        return success;
     }
 
     /**

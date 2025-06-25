@@ -8,6 +8,7 @@ const multer_1 = __importDefault(require("multer"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const database_1 = require("../database");
+const GeminiService_1 = __importDefault(require("../services/GeminiService"));
 const router = express_1.default.Router();
 router.post('/migrate', async (req, res) => {
     try {
@@ -70,30 +71,57 @@ const upload = (0, multer_1.default)({
 });
 router.get('/content', async (req, res) => {
     try {
-        const { bundle_id, content_type, status = 'active', categories, tags, limit = 50, offset = 0 } = req.query;
+        const { search, categories, tags, content_type, status = 'active', limit = 50, offset = 0 } = req.query;
+        const limitParam = Number(limit) || 50;
+        const offsetParam = Number(offset) || 0;
         let query = `
-      SELECT * FROM get_central_content_with_texts($1, $2, $3)
+      SELECT 
+        id as content_id,
+        filename,
+        original_name,
+        file_path,
+        content_type,
+        file_size,
+        mime_type,
+        categories,
+        tags,
+        status as content_status,
+        uploaded_by,
+        created_at as upload_date,
+        updated_at
+      FROM central_content
+      WHERE status = $1
     `;
-        const params = [
-            bundle_id ? parseInt(bundle_id) : null,
-            content_type || null,
-            status
-        ];
-        if (categories || tags) {
-            query += ` WHERE 1=1`;
-            if (categories) {
-                query += ` AND categories @> $${params.length + 1}::jsonb`;
-                params.push(JSON.stringify([categories]));
-            }
-            if (tags) {
-                query += ` AND tags @> $${params.length + 1}::jsonb`;
-                params.push(JSON.stringify([tags]));
-            }
+        const params = [status];
+        if (search) {
+            query += ` AND (filename ILIKE $${params.length + 1} OR original_name ILIKE $${params.length + 1})`;
+            params.push(`%${search}%`);
         }
-        query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-        params.push(parseInt(limit), parseInt(offset));
+        if (content_type) {
+            query += ` AND content_type ILIKE $${params.length + 1}`;
+            params.push(`%${content_type}%`);
+        }
+        if (categories) {
+            query += ` AND categories @> $${params.length + 1}::jsonb`;
+            params.push(JSON.stringify([categories]));
+        }
+        if (tags) {
+            query += ` AND tags @> $${params.length + 1}::jsonb`;
+            params.push(JSON.stringify([tags]));
+        }
+        query += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        params.push(limitParam, offsetParam);
         const result = await database_1.db.query(query, params);
-        res.json(result.rows);
+        const contentWithUrls = result.rows.map(item => ({
+            ...item,
+            categories: Array.isArray(item.categories) ? item.categories :
+                (typeof item.categories === 'string' ? JSON.parse(item.categories || '[]') : []),
+            tags: Array.isArray(item.tags) ? item.tags :
+                (typeof item.tags === 'string' ? JSON.parse(item.tags || '[]') : []),
+            image_url: `/uploads/content/${item.filename}`,
+            assigned_texts: []
+        }));
+        res.json(contentWithUrls);
     }
     catch (error) {
         console.error('Error fetching central content:', error);
@@ -167,7 +195,12 @@ router.post('/text-content', async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `, [text_content, JSON.stringify(safeCategories), JSON.stringify(safeTags), template_name, language, created_by]);
-        res.json(result.rows[0]);
+        const createdText = {
+            ...result.rows[0],
+            categories: safeCategories,
+            tags: safeTags
+        };
+        res.json(createdText);
     }
     catch (error) {
         console.error('Error adding text content:', error);
@@ -203,7 +236,14 @@ router.get('/text-content', async (req, res) => {
         }
         query += ` ORDER BY created_at DESC`;
         const result = await database_1.db.query(query, params);
-        res.json(result.rows);
+        const textContentWithParsedData = result.rows.map(text => ({
+            ...text,
+            categories: Array.isArray(text.categories) ? text.categories :
+                (typeof text.categories === 'string' ? JSON.parse(text.categories || '[]') : []),
+            tags: Array.isArray(text.tags) ? text.tags :
+                (typeof text.tags === 'string' ? JSON.parse(text.tags || '[]') : [])
+        }));
+        res.json(textContentWithParsedData);
     }
     catch (error) {
         console.error('Error fetching text content:', error);
@@ -339,7 +379,14 @@ router.get('/bundles', async (req, res) => {
         }
         query += ` GROUP BY cb.id ORDER BY cb.created_at DESC`;
         const result = await database_1.db.query(query, params);
-        res.json(result.rows);
+        const bundlesWithParsedData = result.rows.map(bundle => ({
+            ...bundle,
+            categories: Array.isArray(bundle.categories) ? bundle.categories :
+                (typeof bundle.categories === 'string' ? JSON.parse(bundle.categories || '[]') : []),
+            tags: Array.isArray(bundle.tags) ? bundle.tags :
+                (typeof bundle.tags === 'string' ? JSON.parse(bundle.tags || '[]') : [])
+        }));
+        res.json(bundlesWithParsedData);
     }
     catch (error) {
         console.error('Error fetching bundles:', error);
@@ -352,11 +399,12 @@ router.post('/bundles', async (req, res) => {
         if (!name) {
             return res.status(400).json({ error: 'Bundle name is required' });
         }
+        const createdById = (typeof created_by === 'number' && !isNaN(created_by)) ? created_by : null;
         const result = await database_1.db.query(`
       INSERT INTO content_bundles (name, description, bundle_type, categories, tags, created_by)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
-    `, [name, description, bundle_type, JSON.stringify(categories), JSON.stringify(tags), created_by]);
+    `, [name, description, bundle_type, JSON.stringify(categories), JSON.stringify(tags), createdById]);
         res.json(result.rows[0]);
     }
     catch (error) {
@@ -378,7 +426,7 @@ router.get('/bundles/:bundleId/contents', async (req, res) => {
       SELECT 
         bca.id as assignment_id,
         bca.assignment_order,
-        bca.created_at as assigned_at,
+        bca.assigned_at,
         cc.id as content_id,
         cc.filename,
         cc.original_name,
@@ -389,13 +437,13 @@ router.get('/bundles/:bundleId/contents', async (req, res) => {
       FROM bundle_content_assignments bca
       JOIN central_content cc ON bca.content_id = cc.id
       WHERE bca.bundle_id = $1 AND bca.content_id IS NOT NULL
-      ORDER BY bca.assignment_order, bca.created_at
+      ORDER BY bca.assignment_order, bca.assigned_at
     `, [bundleId]);
         const textResult = await database_1.db.query(`
       SELECT 
         bca.id as assignment_id,
         bca.assignment_order,
-        bca.created_at as assigned_at,
+        bca.assigned_at,
         ctc.id as text_content_id,
         ctc.text_content,
         ctc.template_name,
@@ -404,7 +452,7 @@ router.get('/bundles/:bundleId/contents', async (req, res) => {
       FROM bundle_content_assignments bca
       JOIN central_text_content ctc ON bca.text_content_id = ctc.id
       WHERE bca.bundle_id = $1 AND bca.text_content_id IS NOT NULL
-      ORDER BY bca.assignment_order, bca.created_at
+      ORDER BY bca.assignment_order, bca.assigned_at
     `, [bundleId]);
         res.json({
             bundle,
@@ -581,7 +629,7 @@ router.post('/sync-model-content', async (req, res) => {
                     let bundleResult = await database_1.db.query(`
             SELECT id FROM content_bundles 
             WHERE name = $1 AND created_by = $2
-          `, [bundleName, `model_${content.model_id}`]);
+          `, [bundleName, content.model_id]);
                     if (bundleResult.rows.length === 0) {
                         bundleResult = await database_1.db.query(`
               INSERT INTO content_bundles (name, description, bundle_type, categories, tags, created_by, status)
@@ -592,7 +640,7 @@ router.post('/sync-model-content', async (req, res) => {
                             `Auto-generated bundle for ${content.model_name} model content`,
                             JSON.stringify(content.categories || []),
                             JSON.stringify([]),
-                            `model_${content.model_id}`
+                            content.model_id
                         ]);
                         await database_1.db.query(`
               INSERT INTO model_bundle_assignments (model_id, bundle_id, assignment_type, assigned_by)
@@ -755,6 +803,86 @@ router.post('/bundles/:bundleId/add-content/batch', async (req, res) => {
     catch (error) {
         console.error('Error in batch content assignment:', error);
         res.status(500).json({ error: 'Failed to batch assign content to bundle' });
+    }
+});
+router.post('/generate-username-variations', async (req, res) => {
+    try {
+        const { text, count = 10 } = req.body;
+        if (!text || typeof text !== 'string') {
+            return res.status(400).json({ error: 'Text is required' });
+        }
+        const geminiService = await GeminiService_1.default.getInstance();
+        const variations = await geminiService.generateUsernameVariations(text, count);
+        res.json({
+            variations,
+            count: variations.length,
+            original: text
+        });
+    }
+    catch (error) {
+        console.error('Username generation error:', error);
+        res.status(500).json({
+            error: 'Failed to generate username variations',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+router.post('/generate-bio-variations', async (req, res) => {
+    try {
+        const { text, count = 10 } = req.body;
+        if (!text || typeof text !== 'string') {
+            return res.status(400).json({ error: 'Text is required' });
+        }
+        const geminiService = await GeminiService_1.default.getInstance();
+        const variations = await geminiService.generateBioVariations(text, count);
+        res.json({
+            variations,
+            count: variations.length,
+            original: text
+        });
+    }
+    catch (error) {
+        console.error('Bio generation error:', error);
+        res.status(500).json({
+            error: 'Failed to generate bio variations',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+router.post('/generate-enhanced-bio-variations', async (req, res) => {
+    try {
+        const { city, country = 'USA', university, age, birthYear, highlights = [], interests = [], count = 15 } = req.body;
+        const geminiService = await GeminiService_1.default.getInstance();
+        const variations = await geminiService.generateEnhancedBioVariations({
+            city,
+            country,
+            university,
+            age,
+            birthYear,
+            highlights,
+            interests,
+            count
+        });
+        res.json({
+            variations,
+            count: variations.length,
+            context: {
+                city,
+                country,
+                university,
+                age,
+                birthYear,
+                highlights,
+                interests
+            }
+        });
+    }
+    catch (error) {
+        console.error('Enhanced bio generation error:', error);
+        res.status(500).json({
+            error: 'Failed to generate enhanced bio variations',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        });
     }
 });
 exports.default = router;

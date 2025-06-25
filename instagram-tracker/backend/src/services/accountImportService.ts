@@ -22,6 +22,9 @@ export interface AccountToImport {
   password?: string;
   email?: string;
   token?: string; // Email password
+  order_number?: string;
+  import_source?: string;
+  import_batch_id?: string;
 }
 
 export class AccountImportService {
@@ -80,7 +83,10 @@ export class AccountImportService {
               username: parts[0]?.trim() || '',
               password: parts[1]?.trim() || undefined,
               email: parts[2]?.trim() || undefined,
-              token: parts[3]?.trim() || undefined // Email password
+              token: parts[3]?.trim() || undefined, // Email password
+              order_number: parts[4]?.trim(),
+              import_source: parts[5]?.trim(),
+              import_batch_id: parts[6]?.trim()
             };
           } else {
             // Simple username format
@@ -113,8 +119,8 @@ export class AccountImportService {
 
       if (accountsToImport.length > 0) {
         const insertValues = accountsToImport.map((_, index) => {
-          const paramIndex = index * 6;
-          return `($${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6})`;
+          const paramIndex = index * 10;
+          return `($${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10})`;
         }).join(', ');
 
         // Store email passwords in account_code field (plain text as per current system)
@@ -126,12 +132,16 @@ export class AccountImportService {
             'imported',
             account.password || null,
             account.email || null,
-            account.token || null  // Store email password in account_code field
+            (account.token || (account as any).account_code || (account as any).email_password) || null,  // Store email password in account_code field
+            account.order_number || null,
+            account.import_source || 'csv_file',
+            account.import_batch_id || null,
+            new Date() // imported_at timestamp
           );
         }
 
         const insertQuery = `
-          INSERT INTO accounts (username, model_id, lifecycle_state, password, email, account_code)
+          INSERT INTO accounts (username, model_id, lifecycle_state, password, email, account_code, order_number, import_source, import_batch_id, imported_at)
           VALUES ${insertValues}
           RETURNING id, username
         `;

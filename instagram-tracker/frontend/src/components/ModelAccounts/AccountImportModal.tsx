@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { X, Upload, FileText, AlertCircle, CheckCircle, Loader, Download } from 'lucide-react';
+import { X, Upload, FileText, AlertCircle, CheckCircle, Loader, Download, Package } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ImportPreviewTable from './ImportPreviewTable';
 import { useAccountImport } from '../../hooks/useAccountImport';
@@ -23,7 +23,7 @@ interface ParsedAccount {
   username: string;
   password?: string;
   email?: string;
-  token?: string; // Email password
+  email_password?: string; // Email password
   lineNumber: number;
   originalLine: string;
 }
@@ -44,6 +44,7 @@ const AccountImportModal: React.FC<AccountImportModalProps> = ({
   const [importFile, setImportFile] = useState<ImportFile | null>(null);
   const [validationResults, setValidationResults] = useState<ValidationResults | null>(null);
   const [currentStep, setCurrentStep] = useState<'upload' | 'preview' | 'importing' | 'complete'>('upload');
+  const [orderNumber, setOrderNumber] = useState<string>('');
   
   const {
     validateAccounts,
@@ -74,7 +75,7 @@ const AccountImportModal: React.FC<AccountImportModalProps> = ({
         username: parts[0]?.trim() || '',
         password: parts[1]?.trim() || undefined,
         email: parts[2]?.trim() || undefined,
-        token: parts[3]?.trim() || undefined, // Email password
+        email_password: parts[3]?.trim() || undefined,
         lineNumber,
         originalLine: line
       };
@@ -102,6 +103,17 @@ const AccountImportModal: React.FC<AccountImportModalProps> = ({
     if (file.size > 10 * 1024 * 1024) {
       toast.error('File size must be less than 10MB');
       return;
+    }
+
+    // Extract order number from filename if it follows the pattern "order12345.txt"
+    const orderMatch = file.name.match(/^order(\d+)\.txt$/i);
+    if (orderMatch) {
+      const extractedOrderNumber = `order${orderMatch[1]}`;
+      setOrderNumber(extractedOrderNumber);
+      toast.success(`Order number detected: ${extractedOrderNumber}`);
+    } else {
+      // Reset order number if filename doesn't match pattern
+      setOrderNumber('');
     }
 
     try {
@@ -161,7 +173,9 @@ const AccountImportModal: React.FC<AccountImportModalProps> = ({
 
     try {
       setCurrentStep('importing');
-      await importAccounts(validationResults.valid);
+      // Generate import source from filename or use default
+      const importSource = importFile.file.name.endsWith('.txt') ? 'txt_file' : 'manual_upload';
+      await importAccounts(validationResults.valid, orderNumber, importSource);
       setCurrentStep('complete');
       toast.success('Account import completed successfully');
     } catch (error) {
@@ -296,7 +310,32 @@ const AccountImportModal: React.FC<AccountImportModalProps> = ({
                     <p>• Maximum 10,000 accounts per import</p>
                     <p>• File size limit: 10MB</p>
                     <p>• Supported format: .txt</p>
+                    <p>• Order number auto-detected from filename (e.g., order6923850.txt)</p>
                   </div>
+                </div>
+                
+                {/* Order Number Input */}
+                <div className="mt-6">
+                  <label htmlFor="orderNumber" className="block text-sm font-medium text-gray-700 mb-2">
+                    Order Number {orderNumber ? '(Auto-detected)' : '(Optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    id="orderNumber"
+                    value={orderNumber}
+                    onChange={(e) => setOrderNumber(e.target.value)}
+                    placeholder="e.g., order6882480"
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500 ${
+                      orderNumber ? 'border-green-300 bg-green-50' : 'border-gray-300'
+                    }`}
+                    disabled={isLoading}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {orderNumber 
+                      ? 'Order number detected from filename. You can edit it if needed.'
+                      : 'Track these accounts by order/purchase reference for easier management'
+                    }
+                  </p>
                 </div>
                 {isLoading && (
                   <div className="mt-4 flex items-center justify-center space-x-2 text-blue-600">
@@ -320,6 +359,19 @@ const AccountImportModal: React.FC<AccountImportModalProps> = ({
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
                   Import Preview: {importFile.file.name}
                 </h3>
+                {orderNumber && (
+                  <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Package className="h-4 w-4 text-green-600" />
+                      <span className="text-sm font-medium text-green-800">
+                        Order Number: {orderNumber}
+                      </span>
+                    </div>
+                    <p className="text-xs text-green-600 mt-1">
+                      All imported accounts will be tagged with this order number for tracking
+                    </p>
+                  </div>
+                )}
                 <div className="grid grid-cols-4 gap-4 text-sm">
                   <div className="bg-green-50 p-3 rounded-lg">
                     <div className="text-green-800 font-medium">{validationResults.valid.length}</div>

@@ -44,6 +44,7 @@ const TextCreateModal: React.FC<TextCreateModalProps> = ({
   const [bulkTexts, setBulkTexts] = useState('');
   const [mode, setMode] = useState<'single' | 'bulk'>('single');
   const [creating, setCreating] = useState(false);
+  const [variationCount, setVariationCount] = useState(10);
   
   // Bundle assignment
   const [availableBundles, setAvailableBundles] = useState<ContentBundle[]>([]);
@@ -167,6 +168,11 @@ const TextCreateModal: React.FC<TextCreateModalProps> = ({
       toast.error('Enter some text first to generate variations');
       return;
     }
+    
+    if (variationCount < 1 || variationCount > 500) {
+      toast.error('Please enter a number of variations between 1 and 500.');
+      return;
+    }
 
     try {
       setCreating(true);
@@ -184,7 +190,7 @@ const TextCreateModal: React.FC<TextCreateModalProps> = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
             text: textContent,
-            count: 10 // Generate 10 variations
+            count: variationCount
           })
         });
         
@@ -207,7 +213,7 @@ const TextCreateModal: React.FC<TextCreateModalProps> = ({
       }
 
       if (variations.length > 0) {
-        setBulkTexts(variations.slice(0, 10).join('\n'));
+        setBulkTexts(variations.join('\n'));
         setMode('bulk');
         toast.success(`Generated ${variations.length} ${isUsername ? 'username' : isBio ? 'bio' : ''} variations`);
       } else {
@@ -360,6 +366,7 @@ const TextCreateModal: React.FC<TextCreateModalProps> = ({
     setSelectedBundles([]);
     setShowBundleCreation(false);
     setNewBundleName('');
+    setVariationCount(10);
     onClose();
   };
 
@@ -448,16 +455,24 @@ const TextCreateModal: React.FC<TextCreateModalProps> = ({
                         rows={6}
                       />
                       <div className="flex items-center gap-2 mt-2">
+                        <input
+                          type="number"
+                          value={variationCount}
+                          onChange={(e) => setVariationCount(parseInt(e.target.value))}
+                          className="form-input w-24"
+                          min="1"
+                          max="500"
+                        />
                         <button
                           onClick={generateVariations}
-                          className="btn-secondary flex items-center gap-2 text-sm"
+                          className="btn-secondary flex-1 flex items-center justify-center gap-2 text-sm"
                           disabled={creating}
                         >
                           <Wand2 className="w-4 h-4" />
                           {categories.includes('username') 
-                            ? 'Generate Username Variations'
+                            ? 'Generate Usernames'
                             : categories.includes('bio')
-                            ? 'Generate Bio Variations'
+                            ? 'Generate Bios'
                             : 'Generate Variations'
                           }
                         </button>

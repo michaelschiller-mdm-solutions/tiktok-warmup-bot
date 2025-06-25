@@ -28,6 +28,12 @@ export interface Account {
   state_changed_by?: string;
   state_notes?: string;
   
+  // Order tracking fields
+  order_number?: string;
+  import_source?: string;
+  import_batch_id?: string;
+  imported_at?: string;
+  
   // Extended fields
   content_type?: string;
   campus?: string;

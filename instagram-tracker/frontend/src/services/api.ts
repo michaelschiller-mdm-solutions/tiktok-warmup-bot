@@ -424,7 +424,7 @@ class ApiClient {
   }
 
   async markAccountInvalid(accountId: number, reason?: string): Promise<any> {
-    const response = await this.client.post(`/accounts/${accountId}/mark-invalid`, {
+    const response = await this.client.post(`/accounts/lifecycle/${accountId}/invalidate`, {
       reason: reason || 'Marked as invalid by user'
     });
     return response.data;
@@ -623,6 +623,68 @@ class ApiClient {
 
   async getHighlightGroups(): Promise<any> {
     const response = await this.client.get('/highlight-groups');
+    return response.data;
+  }
+
+  // Warmup configuration API methods
+  async getWarmupConfig(modelId: number): Promise<any> {
+    const response = await this.client.get(`/models/${modelId}/warmup-config`);
+    return response.data.data;
+  }
+
+  async updateWarmupConfig(modelId: number, config: any): Promise<any> {
+    const response = await this.client.put(`/models/${modelId}/warmup-config`, config);
+    return response.data.data;
+  }
+
+  // iPhone management API methods
+  async getIphones(): Promise<any[]> {
+    const response = await this.client.get('/iphones');
+    return response.data.iphones;
+  }
+
+  async getActiveIphones(): Promise<any[]> {
+    const iphones = await this.getIphones();
+    return iphones; // Return all iPhones regardless of status
+  }
+
+  // Enhanced clipboard copy with iPhone selection
+  async copyToIphoneClipboard(text: string, iphoneId?: number): Promise<any> {
+    const response = await this.client.post('/automation/copy-to-iphone-clipboard', {
+      text,
+      iphone_id: iphoneId
+    });
+    return response.data;
+  }
+
+  // Container switching API method
+  async switchContainer(containerNumber: number, iphoneId?: number): Promise<any> {
+    const response = await this.client.post('/automation/switch-container', {
+      container_number: containerNumber,
+      iphone_id: iphoneId
+    });
+    return response.data;
+  }
+
+  // Automation control methods
+  async pauseAutomation(sessionId: string): Promise<any> {
+    const response = await this.client.post(`/automation/pause/${sessionId}`);
+    return response.data;
+  }
+
+  async stopAutomation(sessionId: string): Promise<any> {
+    const response = await this.client.post(`/automation/stop/${sessionId}`);
+    return response.data;
+  }
+
+  async resumeAutomation(sessionId: string): Promise<any> {
+    const response = await this.client.post(`/automation/resume/${sessionId}`);
+    return response.data;
+  }
+
+  // Invalid accounts API method
+  async getInvalidAccounts(): Promise<any> {
+    const response = await this.client.get('/accounts/invalid');
     return response.data;
   }
 

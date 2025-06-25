@@ -225,12 +225,12 @@ CREATE TRIGGER trigger_assign_container_on_import
     FOR EACH ROW
     EXECUTE FUNCTION trigger_assign_container_on_import();
 
--- Trigger to release container when account becomes invalid
-CREATE OR REPLACE FUNCTION trigger_release_container_on_invalid()
+-- Trigger to release container when account is archived (invalidated)
+CREATE OR REPLACE FUNCTION trigger_release_container_on_archive()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Release container if account becomes invalid
-    IF OLD.lifecycle_state != 'invalid' AND NEW.lifecycle_state = 'invalid' THEN
+    -- Release container if account becomes archived
+    IF OLD.lifecycle_state != 'archived' AND NEW.lifecycle_state = 'archived' THEN
         PERFORM release_container(NEW.id);
     END IF;
     
@@ -240,10 +240,11 @@ $$ LANGUAGE plpgsql;
 
 -- Create trigger for automatic container release
 DROP TRIGGER IF EXISTS trigger_release_container_on_invalid ON accounts;
-CREATE TRIGGER trigger_release_container_on_invalid
+DROP TRIGGER IF EXISTS trigger_release_container_on_archive ON accounts;
+CREATE TRIGGER trigger_release_container_on_archive
     AFTER UPDATE ON accounts
     FOR EACH ROW
-    EXECUTE FUNCTION trigger_release_container_on_invalid();
+    EXECUTE FUNCTION trigger_release_container_on_archive();
 
 -- Add comments for documentation
 COMMENT ON TABLE container_assignments IS 'Manages assignment of 30 iPhone containers (1-30) to accounts';

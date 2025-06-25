@@ -6,525 +6,439 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const CampaignPoolService_1 = require("../services/CampaignPoolService");
 const PoolAssignmentService_1 = require("../services/PoolAssignmentService");
+const multer_1 = __importDefault(require("multer"));
+const path_1 = __importDefault(require("path"));
+const promises_1 = __importDefault(require("fs/promises"));
 const router = express_1.default.Router();
 const campaignPoolService = new CampaignPoolService_1.CampaignPoolService();
 const poolAssignmentService = new PoolAssignmentService_1.PoolAssignmentService();
-router.get('/', async (req, res) => {
+const storage = multer_1.default.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadPath = path_1.default.join(__dirname, '../../uploads/pools');
+        cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path_1.default.extname(file.originalname));
+    }
+});
+const upload = (0, multer_1.default)({
+    storage,
+    limits: { fileSize: 50 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowedTypes = /jpeg|jpg|png|gif|mp4|mov|avi/;
+        const extname = allowedTypes.test(path_1.default.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
+        if (mimetype && extname) {
+            return cb(null, true);
+        }
+        else {
+            cb(new Error('Only image and video files are allowed'));
+        }
+    }
+});
+async function ensureUploadDir() {
+    const uploadPath = path_1.default.join(__dirname, '../../uploads/pools');
     try {
-        const { strategy, is_template, template_category, limit = 50, offset = 0 } = req.query;
+        await promises_1.default.access(uploadPath);
+    }
+    catch {
+        await promises_1.default.mkdir(uploadPath, { recursive: true });
+    }
+}
+ensureUploadDir();
+router.get('/', async (req, res) => {
+    const client = req.app.locals.db;
+    try {
         const filters = {
-            strategy,
-            is_template: is_template !== undefined ? is_template === 'true' : undefined,
-            template_category,
-            limit: parseInt(limit),
-            offset: parseInt(offset)
+            search: req.query.search,
+            pool_type: req.query.pool_type,
+            content_format: req.query.content_format,
+            blocked_by_sprint: req.query.blocked_by_sprint,
+            sort_by: req.query.sort_by || 'created_at',
+            sort_order: req.query.sort_order || 'desc',
+            limit: parseInt(req.query.limit) || 20,
+            offset: parseInt(req.query.offset) || 0
         };
-        const result = await campaignPoolService.listPools(filters);
-        res.json({
-            success: true,
-            data: result.pools,
-            metadata: {
-                total_records: result.total_count,
-                limit: filters.limit,
-                offset: filters.offset,
-                has_next: (filters.offset + filters.limit) < result.total_count,
-                has_previous: filters.offset > 0
-            }
-        });
+        let query = `
+      SELECT 
+        cp.*,
+        COUNT(cpc.id) as content_count
+      FROM campaign_pools cp
+      LEFT JOIN campaign_pool_content cpc ON cp.id = cpc.pool_id
+      WHERE 1=1
+    `;
+        const queryParams = [];
+        let paramIndex = 1;
+        if (filters.search) {
+            query += ` AND (cp.name ILIKE $${paramIndex} OR cp.description ILIKE $${paramIndex})`;
+            queryParams.push(`%${filters.search}%`);
+            paramIndex++;
+        }
+        if (filters.pool_type && filters.pool_type !== 'all') {
+            query += ` AND cp.pool_type = $${paramIndex}`;
+            queryParams.push(filters.pool_type);
+            paramIndex++;
+        }
+        if (filters.content_format && filters.content_format !== 'all') {
+            query += ` AND cp.content_format = $${paramIndex}`;
+            queryParams.push(filters.content_format);
+            paramIndex++;
+        }
+        query += ` GROUP BY cp.id`;
+        const sortMap = {
+            'name': 'cp.name',
+            'created_at': 'cp.created_at',
+            'pool_type': 'cp.pool_type',
+            'content_count': 'COUNT(cpc.id)'
+        };
+        if (sortMap[filters.sort_by]) {
+            query += ` ORDER BY ${sortMap[filters.sort_by]} ${filters.sort_order?.toUpperCase()}`;
+        }
+        query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        queryParams.push(filters.limit, filters.offset);
+        const result = await client.query(query, queryParams);
+        const countQuery = `
+      SELECT COUNT(DISTINCT cp.id) as total
+      FROM campaign_pools cp
+      WHERE 1=1
+      ${filters.search ? `AND (cp.name ILIKE '%${filters.search}%' OR cp.description ILIKE '%${filters.search}%')` : ''}
+      ${filters.pool_type && filters.pool_type !== 'all' ? `AND cp.pool_type = '${filters.pool_type}'` : ''}
+      ${filters.content_format && filters.content_format !== 'all' ? `AND cp.content_format = '${filters.content_format}'` : ''}
+    `;
+        const countResult = await client.query(countQuery);
+        const totalCount = parseInt(countResult.rows[0].total);
+        const pools = result.rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            pool_type: row.pool_type,
+            content_format: row.content_format,
+            highlight_caption: row.highlight_caption,
+            content_order: row.content_order,
+            default_delay_hours: row.default_delay_hours,
+            max_items_per_batch: row.max_items_per_batch,
+            auto_add_to_highlights: row.auto_add_to_highlights,
+            target_highlight_groups: row.target_highlight_groups || [],
+            blocked_by_sprint_types: row.blocked_by_sprint_types || [],
+            created_at: row.created_at,
+            updated_at: row.updated_at
+        }));
+        const response = {
+            pools,
+            total_count: totalCount,
+            has_next: (filters.offset + filters.limit) < totalCount,
+            has_previous: filters.offset > 0
+        };
+        res.json(response);
     }
     catch (error) {
-        console.error('Error listing campaign pools:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to list campaign pools'
-        });
+        console.error('Error fetching campaign pools:', error);
+        res.status(500).json({ error: 'Failed to fetch campaign pools' });
     }
 });
 router.post('/', async (req, res) => {
+    const client = req.app.locals.db;
     try {
-        const { name, description, sprint_ids, assignment_strategy, time_horizon_days } = req.body;
-        if (!name || !sprint_ids || !Array.isArray(sprint_ids) || sprint_ids.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Name and sprint_ids are required, sprint_ids must be a non-empty array'
-            });
+        const poolData = req.body;
+        if (!poolData.name || !poolData.pool_type) {
+            return res.status(400).json({ error: 'Name and pool_type are required' });
         }
-        const poolData = {
-            name,
-            description,
-            sprint_ids,
-            assignment_strategy: assignment_strategy || 'random',
-            time_horizon_days: time_horizon_days || 30
+        if (!['story', 'post', 'highlight'].includes(poolData.pool_type)) {
+            return res.status(400).json({ error: 'Invalid pool_type. Must be story, post, or highlight' });
+        }
+        const defaults = {
+            content_order: poolData.pool_type === 'highlight' ? (poolData.content_order || 'chronological') : 'chronological',
+            default_delay_hours: poolData.default_delay_hours || 24,
+            max_items_per_batch: poolData.max_items_per_batch || 20,
+            auto_add_to_highlights: poolData.auto_add_to_highlights || false,
+            target_highlight_groups: poolData.target_highlight_groups || [],
+            blocked_by_sprint_types: poolData.blocked_by_sprint_types || []
         };
-        const pool = await campaignPoolService.createPool(poolData);
-        res.status(201).json({
-            success: true,
-            data: pool,
-            message: 'Campaign pool created successfully'
-        });
+        const query = `
+      INSERT INTO campaign_pools (
+        name, description, pool_type, content_format, highlight_caption,
+        content_order, default_delay_hours, max_items_per_batch,
+        auto_add_to_highlights, target_highlight_groups, blocked_by_sprint_types
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING *
+    `;
+        const result = await client.query(query, [
+            poolData.name,
+            poolData.description,
+            poolData.pool_type,
+            poolData.content_format,
+            poolData.highlight_caption,
+            defaults.content_order,
+            defaults.default_delay_hours,
+            defaults.max_items_per_batch,
+            defaults.auto_add_to_highlights,
+            defaults.target_highlight_groups,
+            defaults.blocked_by_sprint_types
+        ]);
+        const newPool = result.rows[0];
+        res.status(201).json(newPool);
     }
     catch (error) {
         console.error('Error creating campaign pool:', error);
-        if (error instanceof Error && error.message.includes('incompatible sprints')) {
-            return res.status(400).json({
-                success: false,
-                error: 'Compatibility Error',
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to create campaign pool'
-        });
+        res.status(500).json({ error: 'Failed to create campaign pool' });
     }
 });
 router.get('/:id', async (req, res) => {
+    const client = req.app.locals.db;
+    const poolId = parseInt(req.params.id);
     try {
-        const poolId = parseInt(req.params.id);
-        if (isNaN(poolId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Invalid pool ID'
-            });
+        const query = `
+      SELECT 
+        cp.*,
+        COUNT(cpc.id) as content_count
+      FROM campaign_pools cp
+      LEFT JOIN campaign_pool_content cpc ON cp.id = cpc.pool_id
+      WHERE cp.id = $1
+      GROUP BY cp.id
+    `;
+        const result = await client.query(query, [poolId]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Campaign pool not found' });
         }
-        const pool = await campaignPoolService.getPool(poolId);
-        if (!pool) {
-            return res.status(404).json({
-                success: false,
-                error: 'Not Found',
-                message: `Campaign pool ${poolId} not found`
-            });
-        }
-        res.json({
-            success: true,
-            data: pool
-        });
+        const pool = result.rows[0];
+        res.json(pool);
     }
     catch (error) {
-        console.error('Error getting campaign pool:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to get campaign pool'
-        });
+        console.error('Error fetching campaign pool:', error);
+        res.status(500).json({ error: 'Failed to fetch campaign pool' });
     }
 });
 router.put('/:id', async (req, res) => {
+    const client = req.app.locals.db;
+    const poolId = parseInt(req.params.id);
     try {
-        const poolId = parseInt(req.params.id);
-        if (isNaN(poolId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Invalid pool ID'
-            });
-        }
-        const updates = req.body;
-        const pool = await campaignPoolService.updatePool(poolId, updates);
-        res.json({
-            success: true,
-            data: pool,
-            message: 'Campaign pool updated successfully'
+        const updateData = req.body;
+        const updateFields = [];
+        const queryParams = [];
+        let paramIndex = 1;
+        Object.entries(updateData).forEach(([key, value]) => {
+            if (value !== undefined) {
+                updateFields.push(`${key} = $${paramIndex}`);
+                queryParams.push(value);
+                paramIndex++;
+            }
         });
+        if (updateFields.length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+        updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+        const query = `
+      UPDATE campaign_pools 
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramIndex}
+      RETURNING *
+    `;
+        queryParams.push(poolId);
+        const result = await client.query(query, queryParams);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Campaign pool not found' });
+        }
+        const updatedPool = result.rows[0];
+        res.json(updatedPool);
     }
     catch (error) {
         console.error('Error updating campaign pool:', error);
-        if (error instanceof Error && error.message.includes('not found')) {
-            return res.status(404).json({
-                success: false,
-                error: 'Not Found',
-                message: error.message
-            });
-        }
-        if (error instanceof Error && error.message.includes('incompatible sprints')) {
-            return res.status(400).json({
-                success: false,
-                error: 'Compatibility Error',
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to update campaign pool'
-        });
+        res.status(500).json({ error: 'Failed to update campaign pool' });
     }
 });
 router.delete('/:id', async (req, res) => {
+    const client = req.app.locals.db;
+    const poolId = parseInt(req.params.id);
     try {
-        const poolId = parseInt(req.params.id);
-        if (isNaN(poolId)) {
+        const contentCheck = await client.query('SELECT COUNT(*) as count FROM campaign_pool_content WHERE pool_id = $1', [poolId]);
+        const contentCount = parseInt(contentCheck.rows[0].count);
+        if (contentCount > 0) {
             return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Invalid pool ID'
+                error: `Cannot delete pool with ${contentCount} content items. Delete content first.`
             });
         }
-        await campaignPoolService.deletePool(poolId);
-        res.json({
-            success: true,
-            message: 'Campaign pool deleted successfully'
-        });
+        const result = await client.query('DELETE FROM campaign_pools WHERE id = $1 RETURNING id', [poolId]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Campaign pool not found' });
+        }
+        res.json({ message: 'Campaign pool deleted successfully' });
     }
     catch (error) {
         console.error('Error deleting campaign pool:', error);
-        if (error instanceof Error && error.message.includes('not found')) {
-            return res.status(404).json({
-                success: false,
-                error: 'Not Found',
-                message: error.message
-            });
-        }
-        if (error instanceof Error && error.message.includes('active assignments')) {
-            return res.status(400).json({
-                success: false,
-                error: 'Conflict Error',
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to delete campaign pool'
-        });
+        res.status(500).json({ error: 'Failed to delete campaign pool' });
     }
 });
-router.post('/:id/validate', async (req, res) => {
+router.get('/:id/content', async (req, res) => {
+    const client = req.app.locals.db;
+    const poolId = parseInt(req.params.id);
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
     try {
-        const poolId = parseInt(req.params.id);
-        if (isNaN(poolId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Invalid pool ID'
-            });
+        const poolQuery = 'SELECT name, pool_type, content_format FROM campaign_pools WHERE id = $1';
+        const poolResult = await client.query(poolQuery, [poolId]);
+        if (poolResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Campaign pool not found' });
         }
-        const pool = await campaignPoolService.getPool(poolId);
-        if (!pool) {
-            return res.status(404).json({
-                success: false,
-                error: 'Not Found',
-                message: `Campaign pool ${poolId} not found`
-            });
-        }
-        const compatibility = await campaignPoolService.validateSprintCompatibility(pool.sprint_ids);
-        res.json({
-            success: true,
-            data: compatibility
-        });
-    }
-    catch (error) {
-        console.error('Error validating campaign pool:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to validate campaign pool'
-        });
-    }
-});
-router.post('/:id/assign', async (req, res) => {
-    try {
-        const poolId = parseInt(req.params.id);
-        if (isNaN(poolId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Invalid pool ID'
-            });
-        }
-        const { strategy = 'random', account_ids, max_assignments, start_date, respect_cooldowns = true } = req.body;
-        const options = {
-            strategy,
-            account_ids,
-            max_assignments,
-            start_date: start_date ? new Date(start_date) : undefined,
-            respect_cooldowns
-        };
-        const result = await poolAssignmentService.assignPoolToAccounts(poolId, options);
-        res.json({
-            success: true,
-            data: result,
-            message: `Successfully assigned pool to ${result.total_accounts_assigned} accounts`
-        });
-    }
-    catch (error) {
-        console.error('Error assigning campaign pool:', error);
-        if (error instanceof Error && error.message.includes('not found')) {
-            return res.status(404).json({
-                success: false,
-                error: 'Not Found',
-                message: error.message
-            });
-        }
-        if (error instanceof Error && error.message.includes('compatibility')) {
-            return res.status(400).json({
-                success: false,
-                error: 'Compatibility Error',
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to assign campaign pool'
-        });
-    }
-});
-router.post('/:id/assign/preview', async (req, res) => {
-    try {
-        const poolId = parseInt(req.params.id);
-        if (isNaN(poolId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Invalid pool ID'
-            });
-        }
-        const { strategy = 'random', account_ids, max_assignments, start_date, respect_cooldowns = true } = req.body;
-        const options = {
-            strategy,
-            account_ids,
-            max_assignments,
-            start_date: start_date ? new Date(start_date) : undefined,
-            respect_cooldowns
-        };
-        const preview = await poolAssignmentService.previewAssignment(poolId, options);
-        res.json({
-            success: true,
-            data: preview
-        });
-    }
-    catch (error) {
-        console.error('Error previewing assignment:', error);
-        if (error instanceof Error && error.message.includes('not found')) {
-            return res.status(404).json({
-                success: false,
-                error: 'Not Found',
-                message: error.message
-            });
-        }
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to preview assignment'
-        });
-    }
-});
-router.get('/:id/stats', async (req, res) => {
-    try {
-        const poolId = parseInt(req.params.id);
-        if (isNaN(poolId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Invalid pool ID'
-            });
-        }
-        const stats = await campaignPoolService.getPoolStats(poolId);
-        res.json({
-            success: true,
-            data: stats
-        });
-    }
-    catch (error) {
-        console.error('Error getting pool stats:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to get pool statistics'
-        });
-    }
-});
-router.post('/bulk-assign', async (req, res) => {
-    try {
-        const { pool_assignments } = req.body;
-        if (!pool_assignments || !Array.isArray(pool_assignments)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'pool_assignments must be an array'
-            });
-        }
-        const result = await poolAssignmentService.bulkAssignPools({ pool_assignments });
-        res.json({
-            success: true,
-            data: result,
-            message: `Bulk assignment completed: ${result.successful_pools} successful, ${result.failed_pools} failed`
-        });
-    }
-    catch (error) {
-        console.error('Error in bulk assignment:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to perform bulk assignment'
-        });
-    }
-});
-router.post('/check-compatibility', async (req, res) => {
-    try {
-        const { sprint_ids } = req.body;
-        if (!sprint_ids || !Array.isArray(sprint_ids) || sprint_ids.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'sprint_ids must be a non-empty array'
-            });
-        }
-        const compatibility = await campaignPoolService.validateSprintCompatibility(sprint_ids);
-        res.json({
-            success: true,
-            data: compatibility
-        });
-    }
-    catch (error) {
-        console.error('Error checking sprint compatibility:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to check sprint compatibility'
-        });
-    }
-});
-router.get('/templates', async (req, res) => {
-    try {
-        const { category } = req.query;
-        const filters = {
-            is_template: true,
-            template_category: category,
-            limit: 100,
-            offset: 0
-        };
-        const result = await campaignPoolService.listPools(filters);
-        const templates = result.pools.map(pool => ({
-            id: pool.id,
-            name: pool.name,
-            description: pool.description,
-            template_category: pool.template_category || 'general',
-            sprint_types: [],
-            usage_count: pool.usage_count || 0,
-            created_at: pool.created_at
+        const poolInfo = poolResult.rows[0];
+        const contentQuery = `
+      SELECT * FROM campaign_pool_content 
+      WHERE pool_id = $1 
+      ORDER BY content_order ASC, created_at ASC
+      LIMIT $2 OFFSET $3
+    `;
+        const contentResult = await client.query(contentQuery, [poolId, limit, offset]);
+        const countResult = await client.query('SELECT COUNT(*) as total FROM campaign_pool_content WHERE pool_id = $1', [poolId]);
+        const totalCount = parseInt(countResult.rows[0].total);
+        const contentItems = contentResult.rows.map(row => ({
+            id: row.id,
+            pool_id: row.pool_id,
+            file_path: row.file_path,
+            file_name: row.file_name,
+            caption: row.caption,
+            content_order: row.content_order,
+            custom_delay_hours: row.custom_delay_hours,
+            content_type: row.content_type,
+            post_group_id: row.post_group_id,
+            batch_number: row.batch_number,
+            add_to_highlights: row.add_to_highlights,
+            story_only: row.story_only,
+            created_at: row.created_at
         }));
-        res.json({
-            success: true,
-            data: templates
-        });
+        const response = {
+            content_items: contentItems,
+            total_count: totalCount,
+            pool_info: {
+                name: poolInfo.name,
+                pool_type: poolInfo.pool_type,
+                content_format: poolInfo.content_format
+            }
+        };
+        res.json(response);
     }
     catch (error) {
-        console.error('Error listing pool templates:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to list pool templates'
-        });
+        console.error('Error fetching pool content:', error);
+        res.status(500).json({ error: 'Failed to fetch pool content' });
     }
 });
-router.post('/templates/:id/create', async (req, res) => {
+router.post('/:id/content', upload.single('file'), async (req, res) => {
+    const client = req.app.locals.db;
+    const poolId = parseInt(req.params.id);
     try {
-        const templateId = parseInt(req.params.id);
-        if (isNaN(templateId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Invalid template ID'
-            });
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
         }
-        const template = await campaignPoolService.getPool(templateId);
-        if (!template || !template.is_template) {
-            return res.status(404).json({
-                success: false,
-                error: 'Not Found',
-                message: 'Template not found'
-            });
+        const poolCheck = await client.query('SELECT id, pool_type FROM campaign_pools WHERE id = $1', [poolId]);
+        if (poolCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Campaign pool not found' });
         }
-        const { name, description, ...customizations } = req.body;
-        const poolData = {
-            name: name || `${template.name} (Copy)`,
-            description: description || template.description,
-            sprint_ids: template.sprint_ids,
-            assignment_strategy: customizations.assignment_strategy || template.assignment_strategy,
-            time_horizon_days: customizations.time_horizon_days || template.time_horizon_days,
-            is_template: false
+        const poolType = poolCheck.rows[0].pool_type;
+        const orderResult = await client.query('SELECT COALESCE(MAX(content_order), 0) + 1 as next_order FROM campaign_pool_content WHERE pool_id = $1', [poolId]);
+        const nextOrder = orderResult.rows[0].next_order;
+        const contentData = {
+            pool_id: poolId,
+            file_path: `/uploads/pools/${req.file.filename}`,
+            file_name: req.file.originalname,
+            caption: req.body.caption,
+            content_order: parseInt(req.body.content_order) || nextOrder,
+            custom_delay_hours: req.body.custom_delay_hours ? parseInt(req.body.custom_delay_hours) : null,
+            content_type: req.body.content_type || poolType,
+            post_group_id: req.body.post_group_id ? parseInt(req.body.post_group_id) : null,
+            batch_number: req.body.batch_number ? parseInt(req.body.batch_number) : null,
+            add_to_highlights: req.body.add_to_highlights === 'true',
+            story_only: req.body.story_only === 'true'
         };
-        const newPool = await campaignPoolService.createPool(poolData);
-        await campaignPoolService.updatePool(templateId, {
-            usage_count: (template.usage_count || 0) + 1
-        });
-        res.status(201).json({
-            success: true,
-            data: newPool,
-            message: 'Pool created from template successfully'
-        });
+        const query = `
+      INSERT INTO campaign_pool_content (
+        pool_id, file_path, file_name, caption, content_order,
+        custom_delay_hours, content_type, post_group_id, batch_number,
+        add_to_highlights, story_only
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING *
+    `;
+        const result = await client.query(query, [
+            contentData.pool_id,
+            contentData.file_path,
+            contentData.file_name,
+            contentData.caption,
+            contentData.content_order,
+            contentData.custom_delay_hours,
+            contentData.content_type,
+            contentData.post_group_id,
+            contentData.batch_number,
+            contentData.add_to_highlights,
+            contentData.story_only
+        ]);
+        const newContent = result.rows[0];
+        res.status(201).json(newContent);
     }
     catch (error) {
-        console.error('Error creating pool from template:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to create pool from template'
-        });
+        console.error('Error adding content to pool:', error);
+        res.status(500).json({ error: 'Failed to add content to pool' });
     }
 });
-router.post('/:id/save-as-template', async (req, res) => {
+router.get('/stats/overview', async (req, res) => {
+    const client = req.app.locals.db;
     try {
-        const poolId = parseInt(req.params.id);
-        if (isNaN(poolId)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Invalid pool ID'
-            });
-        }
-        const { name, category, description } = req.body;
-        if (!name || !category) {
-            return res.status(400).json({
-                success: false,
-                error: 'Validation Error',
-                message: 'Template name and category are required'
-            });
-        }
-        const originalPool = await campaignPoolService.getPool(poolId);
-        if (!originalPool) {
-            return res.status(404).json({
-                success: false,
-                error: 'Not Found',
-                message: 'Pool not found'
-            });
-        }
-        const templateData = {
-            name,
-            description: description || originalPool.description,
-            sprint_ids: originalPool.sprint_ids,
-            assignment_strategy: originalPool.assignment_strategy,
-            time_horizon_days: originalPool.time_horizon_days,
-            is_template: true,
-            template_category: category
-        };
-        const template = await campaignPoolService.createPool(templateData);
-        res.status(201).json({
-            success: true,
-            data: {
-                id: template.id,
-                name: template.name,
-                description: template.description,
-                template_category: template.template_category,
-                usage_count: 0,
-                created_at: template.created_at
+        const queries = await Promise.all([
+            client.query(`
+        SELECT 
+          COUNT(*) as total_pools,
+          COUNT(CASE WHEN pool_type = 'story' THEN 1 END) as story_pools,
+          COUNT(CASE WHEN pool_type = 'post' THEN 1 END) as post_pools,
+          COUNT(CASE WHEN pool_type = 'highlight' THEN 1 END) as highlight_pools
+        FROM campaign_pools
+      `),
+            client.query(`
+        SELECT 
+          COUNT(*) as total_content,
+          COUNT(CASE WHEN content_type = 'story' THEN 1 END) as story_content,
+          COUNT(CASE WHEN content_type = 'post' THEN 1 END) as post_content,
+          COUNT(CASE WHEN content_type = 'highlight' THEN 1 END) as highlight_content
+        FROM campaign_pool_content
+      `),
+            client.query(`
+        SELECT AVG(content_count) as avg_items
+        FROM (
+          SELECT COUNT(cpc.id) as content_count
+          FROM campaign_pools cp
+          LEFT JOIN campaign_pool_content cpc ON cp.id = cpc.pool_id
+          GROUP BY cp.id
+        ) as pool_counts
+      `),
+            client.query(`
+        SELECT pool_type, COUNT(*) as count
+        FROM campaign_pools
+        GROUP BY pool_type
+        ORDER BY count DESC
+        LIMIT 1
+      `)
+        ]);
+        const poolStats = queries[0].rows[0];
+        const contentStats = queries[1].rows[0];
+        const avgItems = queries[2].rows[0].avg_items || 0;
+        const mostUsedType = queries[3].rows[0]?.pool_type || 'story';
+        const stats = {
+            total_pools: parseInt(poolStats.total_pools),
+            pools_by_type: {
+                story: parseInt(poolStats.story_pools),
+                post: parseInt(poolStats.post_pools),
+                highlight: parseInt(poolStats.highlight_pools)
             },
-            message: 'Pool saved as template successfully'
-        });
+            total_content_items: parseInt(contentStats.total_content),
+            content_by_type: {
+                story: parseInt(contentStats.story_content),
+                post: parseInt(contentStats.post_content),
+                highlight: parseInt(contentStats.highlight_content)
+            },
+            average_items_per_pool: parseFloat(avgItems),
+            most_used_pool_type: mostUsedType
+        };
+        res.json(stats);
     }
     catch (error) {
-        console.error('Error saving pool as template:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Internal Server Error',
-            message: 'Failed to save pool as template'
-        });
+        console.error('Error fetching pool stats:', error);
+        res.status(500).json({ error: 'Failed to fetch pool statistics' });
     }
 });
 exports.default = router;

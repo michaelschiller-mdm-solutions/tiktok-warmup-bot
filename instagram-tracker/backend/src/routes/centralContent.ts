@@ -558,7 +558,7 @@ router.get('/bundles/:bundleId/contents', async (req, res) => {
       SELECT 
         bca.id as assignment_id,
         bca.assignment_order,
-        bca.created_at as assigned_at,
+        bca.assigned_at,
         cc.id as content_id,
         cc.filename,
         cc.original_name,
@@ -569,7 +569,7 @@ router.get('/bundles/:bundleId/contents', async (req, res) => {
       FROM bundle_content_assignments bca
       JOIN central_content cc ON bca.content_id = cc.id
       WHERE bca.bundle_id = $1 AND bca.content_id IS NOT NULL
-      ORDER BY bca.assignment_order, bca.created_at
+      ORDER BY bca.assignment_order, bca.assigned_at
     `, [bundleId]);
 
     // Get text assignments
@@ -577,7 +577,7 @@ router.get('/bundles/:bundleId/contents', async (req, res) => {
       SELECT 
         bca.id as assignment_id,
         bca.assignment_order,
-        bca.created_at as assigned_at,
+        bca.assigned_at,
         ctc.id as text_content_id,
         ctc.text_content,
         ctc.template_name,
@@ -586,7 +586,7 @@ router.get('/bundles/:bundleId/contents', async (req, res) => {
       FROM bundle_content_assignments bca
       JOIN central_text_content ctc ON bca.text_content_id = ctc.id
       WHERE bca.bundle_id = $1 AND bca.text_content_id IS NOT NULL
-      ORDER BY bca.assignment_order, bca.created_at
+      ORDER BY bca.assignment_order, bca.assigned_at
     `, [bundleId]);
 
     res.json({
@@ -1033,7 +1033,8 @@ router.post('/generate-username-variations', async (req, res) => {
       return res.status(400).json({ error: 'Text is required' });
     }
 
-    const variations = await GeminiService.generateUsernameVariations(text, count);
+    const geminiService = await GeminiService.getInstance();
+    const variations = await geminiService.generateUsernameVariations(text, count);
     
     res.json({
       variations,
@@ -1058,7 +1059,8 @@ router.post('/generate-bio-variations', async (req, res) => {
       return res.status(400).json({ error: 'Text is required' });
     }
 
-    const variations = await GeminiService.generateBioVariations(text, count);
+    const geminiService = await GeminiService.getInstance();
+    const variations = await geminiService.generateBioVariations(text, count);
     
     res.json({
       variations,
@@ -1069,6 +1071,54 @@ router.post('/generate-bio-variations', async (req, res) => {
     console.error('Bio generation error:', error);
     res.status(500).json({ 
       error: 'Failed to generate bio variations',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Generate enhanced bio variations with location, age, and highlight context
+router.post('/generate-enhanced-bio-variations', async (req, res) => {
+  try {
+    const { 
+      city, 
+      country = 'USA', 
+      university, 
+      age, 
+      birthYear, 
+      highlights = [], 
+      interests = [], 
+      count = 15 
+    } = req.body;
+
+    const geminiService = await GeminiService.getInstance();
+    const variations = await geminiService.generateEnhancedBioVariations({
+      city,
+      country,
+      university,
+      age,
+      birthYear,
+      highlights,
+      interests,
+      count
+    });
+    
+    res.json({
+      variations,
+      count: variations.length,
+      context: {
+        city,
+        country,
+        university,
+        age,
+        birthYear,
+        highlights,
+        interests
+      }
+    });
+  } catch (error) {
+    console.error('Enhanced bio generation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to generate enhanced bio variations',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }

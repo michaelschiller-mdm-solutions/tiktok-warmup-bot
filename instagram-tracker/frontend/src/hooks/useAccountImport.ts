@@ -6,6 +6,7 @@ interface ParsedAccount {
   password?: string;
   email?: string;
   account_code?: string;
+  email_password?: string;
   lineNumber: number;
   originalLine: string;
 }
@@ -26,7 +27,7 @@ interface ImportSummary {
 
 interface UseAccountImportReturn {
   validateAccounts: (accounts: ParsedAccount[]) => Promise<ValidationResults>;
-  importAccounts: (accounts: ParsedAccount[]) => Promise<ImportSummary>;
+  importAccounts: (accounts: ParsedAccount[], orderNumber?: string, importSource?: string) => Promise<ImportSummary>;
   isLoading: boolean;
   progress: number;
   error: string | null;
@@ -163,7 +164,7 @@ export const useAccountImport = (modelId: number): UseAccountImportReturn => {
     }
   }, [modelId]);
 
-  const importAccounts = useCallback(async (accounts: ParsedAccount[]): Promise<ImportSummary> => {
+  const importAccounts = useCallback(async (accounts: ParsedAccount[], orderNumber?: string, importSource?: string): Promise<ImportSummary> => {
     setIsLoading(true);
     setError(null);
     setProgress(0);
@@ -186,11 +187,15 @@ export const useAccountImport = (modelId: number): UseAccountImportReturn => {
         
         try {
           // Convert ParsedAccount[] to account objects with all fields
+          const batchId = orderNumber ? `${orderNumber}_batch_${batchIndex + 1}` : `batch_${Date.now()}_${batchIndex + 1}`;
           const accountsData = batch.map(account => ({
             username: account.username,
             password: account.password,
             email: account.email,
-            account_code: account.account_code
+            account_code: account.email_password || account.account_code || undefined,
+            order_number: orderNumber,
+            import_source: importSource || 'manual_upload',
+            import_batch_id: batchId
           }));
           
           const response = await fetch('/api/import/accounts/import', {
@@ -202,7 +207,9 @@ export const useAccountImport = (modelId: number): UseAccountImportReturn => {
               accounts_data: accountsData, // Send full account objects instead of just usernames
               model_id: modelId,
               batch_index: batchIndex,
-              total_batches: batches.length
+              total_batches: batches.length,
+              order_number: orderNumber,
+              import_source: importSource
             }),
           });
 

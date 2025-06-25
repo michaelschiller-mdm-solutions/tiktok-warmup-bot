@@ -54,7 +54,7 @@ router.post('/check-existing', async (req, res) => {
 });
 router.post('/import', async (req, res) => {
     try {
-        const { usernames, accounts_data, model_id, batch_index, total_batches } = req.body;
+        const { usernames, accounts_data, model_id, batch_index, total_batches, order_number, import_source } = req.body;
         const accountsInput = accounts_data || usernames;
         if (!accountsInput || !Array.isArray(accountsInput)) {
             return res.status(400).json({
@@ -97,7 +97,16 @@ router.post('/import', async (req, res) => {
             });
         }
         console.log(`Starting import batch ${batch_index + 1}/${total_batches || 1} for model ${model_id} with ${accountsInput.length} accounts`);
-        const result = await importService.importAccountsBatch(accountsInput, model_id);
+        let enhancedAccounts = accountsInput;
+        if (accounts_data && (order_number || import_source)) {
+            enhancedAccounts = accountsInput.map((account) => ({
+                ...account,
+                order_number: order_number || account.order_number,
+                import_source: import_source || account.import_source || 'manual_upload',
+                import_batch_id: account.import_batch_id
+            }));
+        }
+        const result = await importService.importAccountsBatch(enhancedAccounts, model_id);
         console.log(`Import batch completed:`, {
             successful: result.successful,
             failed: result.failed,

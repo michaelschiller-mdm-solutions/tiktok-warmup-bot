@@ -184,60 +184,55 @@ export class WarmupProcessService {
   }
 
   /**
-   * Complete manual setup and trigger first random phase assignment
+   * Mark manual setup as complete, transitioning account from 'imported' to 'ready'
    */
-  async completeManualSetup(accountId: number, userId: string): Promise<WarmupProcessResult> {
+  async completeManualSetup(accountId: number, changedBy: string): Promise<WarmupProcessResult> {
     try {
-      // Complete manual setup phase
-      const result = await db.query(`
-        UPDATE account_warmup_phases 
-        SET status = 'completed',
-            completed_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = $1 AND phase = 'manual_setup' AND status = 'available'
-        RETURNING id
-      `, [accountId]);
+      // First, get the current state of the account
+      const accountResult = await db.query(
+        'SELECT lifecycle_state FROM accounts WHERE id = $1',
+        [accountId]
+      );
 
-      if (result.rows.length === 0) {
+      if (accountResult.rows.length === 0) {
         return {
           success: false,
           accountId,
-          message: 'Manual setup phase not available or already completed',
-          error: 'Phase not available'
+          message: 'Account not found',
+          error: 'ACCOUNT_NOT_FOUND'
         };
       }
 
-      // Update account state
+      const currentState = accountResult.rows[0].lifecycle_state;
+
+      // Only allow this transition from 'imported' state
+      if (currentState !== 'imported') {
+        return {
+          success: false,
+          accountId,
+          message: `Account is not in 'imported' state (current: ${currentState}). Cannot complete manual setup.`,
+          error: 'INVALID_STATE_TRANSITION'
+        };
+      }
+
+      // Transition the state to 'ready'
       await db.query(`
         UPDATE accounts 
-        SET lifecycle_state = 'warmup',
+        SET lifecycle_state = 'ready',
             state_changed_at = CURRENT_TIMESTAMP,
             state_changed_by = $2
         WHERE id = $1
-      `, [accountId, userId]);
+      `, [accountId, changedBy]);
 
-      // Ensure content is assigned to all phases after manual setup
-      await this.ensureContentAssigned(accountId);
-
-      // The trigger will automatically make next random phase available
-      // Get the next available phase info
-      const nextPhaseResult = await db.query(`
-        SELECT phase, available_at FROM account_warmup_phases 
-        WHERE account_id = $1 AND status = 'available' AND phase != 'manual_setup'
-        ORDER BY available_at ASC LIMIT 1
-      `, [accountId]);
-
-      const nextPhase = nextPhaseResult.rows.length > 0 ? nextPhaseResult.rows[0] : null;
+      // Initialize warmup phases, which also assigns content
+      await this.initializeWarmupPhases(accountId);
 
       return {
         success: true,
         accountId,
-        message: nextPhase 
-          ? `Manual setup completed. Next phase: ${nextPhase.phase} (available at ${nextPhase.available_at})`
-          : 'Manual setup completed. Next phase will be assigned automatically.',
-        nextPhase: nextPhase?.phase,
-        phaseId: result.rows[0].id
+        message: 'Manual setup complete. Account is now ready for warmup.'
       };
+
     } catch (error) {
       console.error(`Error completing manual setup for account ${accountId}:`, error);
       return {
@@ -343,10 +338,10 @@ export class WarmupProcessService {
 
           const highlightNameResult = await db.query(`
             SELECT id FROM central_text_content 
-            WHERE categories @> '["highlight_group_name"]'::jsonb 
+            WHERE categories @> ($1)::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
-          `);
+          `, [phase === WarmupPhase.FIRST_HIGHLIGHT ? '["highlight_group_category_name"]' : '["highlight_group_name"]']);
           textId = highlightNameResult.rows.length > 0 ? highlightNameResult.rows[0].id : null;
           break;
 
@@ -410,8 +405,21 @@ export class WarmupProcessService {
           contentId = storyNoCapResult.rows.length > 0 ? storyNoCapResult.rows[0].id : null;
           break;
 
-        case WarmupPhase.GENDER:
         case WarmupPhase.USERNAME:
+          // Assign username suggestions text
+          const usernameTextResult = await db.query(`
+            SELECT id FROM central_text_content
+            WHERE categories @> '["username"]'::jsonb
+            AND status = 'active'
+            ORDER BY RANDOM() LIMIT 1
+          `);
+          textId = usernameTextResult.rows.length > 0 ? usernameTextResult.rows[0].id : null;
+          break;
+
+        case WarmupPhase.GENDER:
+          // These phases don't require pre-assigned content
+          break;
+
         default:
           // These phases don't require pre-assigned content
           break;

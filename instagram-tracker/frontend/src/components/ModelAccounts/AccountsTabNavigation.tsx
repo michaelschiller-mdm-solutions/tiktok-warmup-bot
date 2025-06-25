@@ -1,8 +1,8 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Users, UserPlus, Activity, Wifi, Image } from 'lucide-react';
+import { Users, UserPlus, Activity, Wifi, Image, AlertTriangle } from 'lucide-react';
 
-export type AccountsTab = 'overview' | 'available' | 'warmup' | 'proxy' | 'content';
+export type AccountsTab = 'overview' | 'available' | 'warmup' | 'proxy' | 'content' | 'invalid';
 
 interface AccountsTabNavigationProps {
   modelId: number;
@@ -47,6 +47,12 @@ const TAB_CONFIGS: TabConfig[] = [
     label: 'Content',
     icon: Image,
     description: 'Content management for this model'
+  },
+  {
+    id: 'invalid',
+    label: 'Invalid',
+    icon: AlertTriangle,
+    description: 'Invalid accounts with order tracking'
   }
 ];
 

@@ -44,7 +44,10 @@ class AccountImportService {
                             username: parts[0]?.trim() || '',
                             password: parts[1]?.trim() || undefined,
                             email: parts[2]?.trim() || undefined,
-                            token: parts[3]?.trim() || undefined
+                            token: parts[3]?.trim() || undefined,
+                            order_number: parts[4]?.trim(),
+                            import_source: parts[5]?.trim(),
+                            import_batch_id: parts[6]?.trim()
                         };
                     }
                     else {
@@ -69,15 +72,15 @@ class AccountImportService {
                 !existingUsernames.includes(account.username.toLowerCase()));
             if (accountsToImport.length > 0) {
                 const insertValues = accountsToImport.map((_, index) => {
-                    const paramIndex = index * 6;
-                    return `($${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6})`;
+                    const paramIndex = index * 10;
+                    return `($${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10})`;
                 }).join(', ');
                 const insertParams = [];
                 for (const account of accountsToImport) {
-                    insertParams.push(account.username, modelId, 'imported', account.password || null, account.email || null, account.token || null);
+                    insertParams.push(account.username, modelId, 'imported', account.password || null, account.email || null, (account.token || account.account_code || account.email_password) || null, account.order_number || null, account.import_source || 'csv_file', account.import_batch_id || null, new Date());
                 }
                 const insertQuery = `
-          INSERT INTO accounts (username, model_id, lifecycle_state, password, email, account_code)
+          INSERT INTO accounts (username, model_id, lifecycle_state, password, email, account_code, order_number, import_source, import_batch_id, imported_at)
           VALUES ${insertValues}
           RETURNING id, username
         `;

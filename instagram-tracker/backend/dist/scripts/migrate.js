@@ -12,10 +12,11 @@ const SETUP_SCRIPT = 'run-migrations.sql';
 const getMigrationFiles = () => {
     try {
         const allFiles = fs_1.default.readdirSync(MIGRATIONS_DIR);
-        const sqlFiles = allFiles
+        const numbered = allFiles
             .filter(file => /^\d{3}-.+.sql$/.test(file))
             .sort();
-        return sqlFiles;
+        const specials = allFiles.filter(file => file.endsWith(".sql") && !/^\d{3}-.+.sql$/.test(file) && file !== SETUP_SCRIPT);
+        return { numbered, specials };
     }
     catch (error) {
         console.error(`Error reading migrations directory at ${MIGRATIONS_DIR}:`, error);
@@ -38,8 +39,10 @@ const runMigrations = async () => {
         const { rows: executedRows } = await client.query('SELECT migration_name FROM migration_history WHERE success = true');
         const executedMigrations = new Set(executedRows.map(r => r.migration_name));
         console.log(`Found ${executedMigrations.size} successfully executed migrations in history.`);
-        const allMigrationFiles = getMigrationFiles();
-        const pendingMigrations = allMigrationFiles.filter(file => !executedMigrations.has(file.replace('.sql', '')));
+        const { numbered: allNumberedMigrations, specials: allSpecialMigrations } = getMigrationFiles();
+        const pendingNumberedMigrations = allNumberedMigrations.filter(file => !executedMigrations.has(file.replace('.sql', '')));
+        const pendingSpecialMigrations = allSpecialMigrations.filter(file => !executedMigrations.has(file.replace('.sql', '')));
+        const pendingMigrations = [...pendingNumberedMigrations, ...pendingSpecialMigrations];
         if (pendingMigrations.length === 0) {
             console.log('Database schema is up-to-date.');
             return;

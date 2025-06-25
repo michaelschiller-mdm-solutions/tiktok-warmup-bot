@@ -26,6 +26,9 @@ interface BundleContent {
   assignment_order: number;
   assigned_at: string;
   assignment_id: number;
+  image_url?: string;
+  file_size?: number;
+  categories?: string[];
 }
 
 interface BundleContentsModalProps {
@@ -59,12 +62,13 @@ const BundleContentsModal: React.FC<BundleContentsModalProps> = ({
       
       if (response.ok) {
         const data = await response.json();
+        console.log('Bundle contents data:', data); // Debug log
         
         // Transform the data to match our interface
         const transformedContents: BundleContent[] = [];
         
-        // Add content items
-        if (data.content_items) {
+        // Add content items (images/videos)
+        if (data.content_items && data.content_items.length > 0) {
           data.content_items.forEach((item: any) => {
             transformedContents.push({
               content_id: item.content_id,
@@ -73,13 +77,16 @@ const BundleContentsModal: React.FC<BundleContentsModalProps> = ({
               content_type: item.content_type,
               assignment_order: item.assignment_order || 0,
               assigned_at: item.assigned_at,
-              assignment_id: item.assignment_id
+              assignment_id: item.assignment_id,
+              image_url: item.image_url || `/uploads/content/${item.filename}`,
+              file_size: item.file_size,
+              categories: item.categories || []
             });
           });
         }
         
         // Add text items
-        if (data.text_items) {
+        if (data.text_items && data.text_items.length > 0) {
           data.text_items.forEach((item: any) => {
             transformedContents.push({
               text_content_id: item.text_content_id,
@@ -87,18 +94,28 @@ const BundleContentsModal: React.FC<BundleContentsModalProps> = ({
               template_name: item.template_name,
               assignment_order: item.assignment_order || 0,
               assigned_at: item.assigned_at,
-              assignment_id: item.assignment_id
+              assignment_id: item.assignment_id,
+              categories: item.categories || []
             });
           });
         }
         
+        // Sort by assignment order
+        transformedContents.sort((a, b) => (a.assignment_order || 0) - (b.assignment_order || 0));
+        
         setContents(transformedContents);
+        
+        if (transformedContents.length === 0) {
+          console.log('No content items found in bundle');
+        }
       } else {
-        toast.error('Failed to load bundle contents');
+        const errorText = await response.text();
+        console.error('Failed to fetch bundle contents:', response.status, errorText);
+        throw new Error(`Failed to fetch bundle contents: ${response.status}`);
       }
     } catch (error) {
       console.error('Error fetching bundle contents:', error);
-      toast.error('Failed to load bundle contents');
+      setContents([]);
     } finally {
       setLoading(false);
     }
@@ -198,81 +215,145 @@ const BundleContentsModal: React.FC<BundleContentsModalProps> = ({
           ) : filteredContents.length === 0 ? (
             <div className="text-center py-12">
               <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Contents Found</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Content Found</h3>
               <p className="text-gray-500">
                 {searchTerm || contentTypeFilter !== 'all' 
-                  ? 'No contents match your search criteria'
-                  : 'This bundle is empty'
+                  ? 'No content matches your search criteria'
+                  : 'This bundle is empty or content failed to load'
                 }
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredContents.map((item) => (
-                <div key={item.assignment_id} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {filteredContents.map((item, index) => (
+                <div key={`${item.content_id || item.text_content_id}-${index}`} className="bg-white border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                   {/* Content Item */}
                   {item.content_id && (
-                    <div className="flex items-start gap-3">
-                      <div className="w-16 h-16 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-                        {item.content_type === 'image' ? (
-                          <img
-                            src={`/uploads/content/${item.filename}`}
-                            alt={item.original_name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Image className="w-6 h-6 text-gray-400" />
+                    <>
+                      {/* Image/Video Preview */}
+                      <div className="aspect-w-16 aspect-h-9 bg-gray-100 relative">
+                        <img
+                          src={item.image_url}
+                          alt={item.original_name}
+                          className="w-full h-48 object-cover"
+                          onError={(e) => {
+                            console.error('Image load error for:', item.image_url);
+                            (e.target as HTMLImageElement).src = '/placeholder-image.png';
+                          }}
+                        />
+                        <div className="absolute top-2 right-2">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            item.content_type === 'video' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {item.content_type}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Content Details */}
+                      <div className="p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-medium text-gray-900 truncate" title={item.original_name}>
+                              {item.original_name}
+                            </h4>
+                            <p className="text-xs text-gray-500 truncate" title={item.filename}>
+                              {item.filename}
+                            </p>
+                          </div>
+                          {item.assignment_order > 0 && (
+                            <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 flex-shrink-0">
+                              #{item.assignment_order}
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Categories */}
+                        {item.categories && item.categories.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {item.categories.slice(0, 2).map((category, catIndex) => (
+                              <span key={catIndex} className="bg-gray-100 text-gray-700 px-2 py-1 rounded-full text-xs">
+                                {category}
+                              </span>
+                            ))}
+                            {item.categories.length > 2 && (
+                              <span className="text-xs text-gray-500">+{item.categories.length - 2}</span>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* File Size */}
+                        {item.file_size && (
+                          <div className="text-xs text-gray-500">
+                            {(item.file_size / (1024 * 1024)).toFixed(1)} MB
                           </div>
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {item.original_name}
-                        </p>
-                        <p className="text-xs text-gray-500 capitalize">
-                          {item.content_type}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          Added {new Date(item.assigned_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => removeFromBundle(item.assignment_id, item.original_name || 'item')}
-                        className="text-gray-400 hover:text-red-600 p-1"
-                        title="Remove from bundle"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    </>
                   )}
-
+                  
                   {/* Text Item */}
                   {item.text_content_id && (
-                    <div className="flex items-start gap-3">
-                      <div className="w-16 h-16 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Type className="w-6 h-6 text-green-600" />
+                    <>
+                      {/* Text Preview */}
+                      <div className="p-4 bg-gradient-to-br from-gray-50 to-blue-50 border-b">
+                        <div className="flex items-center justify-center h-32">
+                          <Type className="w-12 h-12 text-gray-400" />
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 line-clamp-2">
-                          {item.text_content}
-                        </p>
-                        {item.template_name && (
-                          <p className="text-xs text-gray-500">
-                            Template: {item.template_name}
-                          </p>
+                      
+                      {/* Text Details */}
+                      <div className="p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-sm font-medium text-gray-900 truncate">
+                              {item.template_name || 'Text Content'}
+                            </h4>
+                            {item.text_content && (
+                              <p className="text-xs text-gray-600 mt-1 line-clamp-3" title={item.text_content}>
+                                {item.text_content.length > 100 
+                                  ? `${item.text_content.substring(0, 100)}...` 
+                                  : item.text_content}
+                              </p>
+                            )}
+                          </div>
+                          {item.assignment_order > 0 && (
+                            <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 flex-shrink-0">
+                              #{item.assignment_order}
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Categories */}
+                        {item.categories && item.categories.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {item.categories.slice(0, 2).map((category, catIndex) => (
+                              <span key={catIndex} className="bg-gray-100 text-gray-700 px-2 py-1 rounded-full text-xs">
+                                {category}
+                              </span>
+                            ))}
+                            {item.categories.length > 2 && (
+                              <span className="text-xs text-gray-500">+{item.categories.length - 2}</span>
+                            )}
+                          </div>
                         )}
-                        <p className="text-xs text-gray-400">
-                          Added {new Date(item.assigned_at).toLocaleDateString()}
-                        </p>
+                        
+                        {/* Character Count */}
+                        {item.text_content && (
+                          <div className="text-xs text-gray-500">
+                            {item.text_content.length} characters
+                          </div>
+                        )}
                       </div>
-                      <button
-                        onClick={() => removeFromBundle(item.assignment_id, item.text_content?.substring(0, 30) + '...' || 'text')}
-                        className="text-gray-400 hover:text-red-600 p-1"
-                        title="Remove from bundle"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    </>
+                  )}
+                  
+                  {/* Assignment Info */}
+                  {item.assigned_at && (
+                    <div className="px-4 pb-4">
+                      <div className="text-xs text-gray-500 border-t pt-2">
+                        Added: {new Date(item.assigned_at).toLocaleDateString()}
+                      </div>
                     </div>
                   )}
                 </div>

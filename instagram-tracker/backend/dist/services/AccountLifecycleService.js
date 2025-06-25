@@ -280,6 +280,53 @@ class AccountLifecycleService {
             return [];
         }
     }
+    static async invalidateAccount(accountId, changed_by = 'system') {
+        const client = await database_1.db.connect();
+        try {
+            await client.query('BEGIN');
+            const currentStateQuery = `SELECT lifecycle_state FROM accounts WHERE id = $1`;
+            const currentStateResult = await client.query(currentStateQuery, [accountId]);
+            if (currentStateResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return { success: false, error: 'Account not found' };
+            }
+            const currentState = currentStateResult.rows[0].lifecycle_state;
+            const notes = 'Account marked as invalid; resources released.';
+            const updateStateQuery = `
+          UPDATE accounts
+          SET lifecycle_state = $1,
+              state_changed_at = CURRENT_TIMESTAMP,
+              state_changed_by = $2,
+              state_notes = $3,
+              proxy_id = NULL,
+              proxy_assigned_at = NULL
+          WHERE id = $4
+      `;
+            await client.query(updateStateQuery, [
+                AccountLifecycleState.ARCHIVED,
+                changed_by,
+                notes,
+                accountId
+            ]);
+            await client.query('SELECT release_account_from_iphone_container($1)', [accountId]);
+            const logTransitionQuery = `
+          INSERT INTO account_state_transitions
+              (account_id, from_state, to_state, transition_reason, changed_by, notes)
+          VALUES ($1, $2, $3, 'invalidation', $4, $5)
+      `;
+            await client.query(logTransitionQuery, [accountId, currentState, AccountLifecycleState.ARCHIVED, changed_by, notes]);
+            await client.query('COMMIT');
+            return { success: true };
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            console.error(`Error invalidating account ${accountId}:`, error);
+            return { success: false, error: 'Failed to invalidate account' };
+        }
+        finally {
+            client.release();
+        }
+    }
 }
 exports.AccountLifecycleService = AccountLifecycleService;
 //# sourceMappingURL=AccountLifecycleService.js.map

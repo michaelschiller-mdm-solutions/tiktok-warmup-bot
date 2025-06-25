@@ -12,9 +12,10 @@ import AvailableAccountsTab from '../components/ModelAccounts/AvailableAccountsT
 import WarmupPipelineTab from '../components/ModelAccounts/WarmupPipelineTab';
 import ProxyManagementTab from '../components/ModelAccounts/ProxyManagementTab';
 import ContentManagementTab from '../components/ModelAccounts/ContentManagementTab';
+import InvalidAccountsList from '../components/ModelAccounts/InvalidAccountsList';
 
 const ModelAccountsPage: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { modelId } = useParams<{ modelId: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [model, setModel] = useState<Model | null>(null);
@@ -23,7 +24,7 @@ const ModelAccountsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AccountsTab>('overview');
 
   useEffect(() => {
-    if (!id) {
+    if (!modelId) {
       setError('Invalid model ID');
       setLoading(false);
       return;
@@ -33,7 +34,7 @@ const ModelAccountsPage: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        const model = await apiClient.getModel(parseInt(id));
+        const model = await apiClient.getModel(parseInt(modelId));
         setModel(model);
       } catch (err: any) {
         console.error('Failed to load model:', err);
@@ -45,12 +46,12 @@ const ModelAccountsPage: React.FC = () => {
     };
 
     fetchModel();
-  }, [id]);
+  }, [modelId]);
 
   // Handle tab state from URL parameters
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab') as AccountsTab;
-    if (tabFromUrl && ['overview', 'available', 'warmup', 'proxy', 'content'].includes(tabFromUrl)) {
+    if (tabFromUrl && ['overview', 'available', 'warmup', 'proxy', 'content', 'invalid'].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl);
     } else {
       setActiveTab('overview');
@@ -209,7 +210,8 @@ const ModelAccountsPage: React.FC = () => {
           {activeTab === 'available' && <AvailableAccountsTab modelId={model.id} />}
           {activeTab === 'warmup' && <WarmupPipelineTab modelId={model.id} />}
           {activeTab === 'proxy' && <ProxyManagementTab modelId={model.id} />}
-          {activeTab === 'content' && <ContentManagementTab modelId={model.id} />}
+          {activeTab === 'content' && <ContentManagementTab modelId={model.id} modelName={model.name} />}
+          {activeTab === 'invalid' && <InvalidAccountsList />}
         </div>
       </div>
     </div>

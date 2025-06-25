@@ -857,5 +857,178 @@ router.get('/:id/content-with-texts', validateParams(models_1.modelIdSchema), as
         });
     }
 });
+router.get('/:id/warmup-config', async (req, res) => {
+    try {
+        const modelId = parseInt(req.params.id);
+        if (isNaN(modelId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid model ID'
+            });
+        }
+        const result = await database_1.db.query(`
+      SELECT 
+        id,
+        model_id,
+        min_cooldown_hours,
+        max_cooldown_hours,
+        phase_retry_limits,
+        single_bot_constraint,
+        max_concurrent_accounts,
+        content_assignment_rules,
+        created_at,
+        updated_at
+      FROM warmup_configuration
+      WHERE model_id = $1
+    `, [modelId]);
+        if (result.rows.length === 0) {
+            await database_1.db.query(`
+        INSERT INTO warmup_configuration (model_id)
+        VALUES ($1)
+      `, [modelId]);
+            const newResult = await database_1.db.query(`
+        SELECT 
+          id,
+          model_id,
+          min_cooldown_hours,
+          max_cooldown_hours,
+          phase_retry_limits,
+          single_bot_constraint,
+          max_concurrent_accounts,
+          content_assignment_rules,
+          created_at,
+          updated_at
+        FROM warmup_configuration
+        WHERE model_id = $1
+      `, [modelId]);
+            return res.json({
+                success: true,
+                data: newResult.rows[0]
+            });
+        }
+        res.json({
+            success: true,
+            data: result.rows[0]
+        });
+    }
+    catch (error) {
+        console.error('Error fetching warmup configuration:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch warmup configuration',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+router.put('/:id/warmup-config', async (req, res) => {
+    try {
+        const modelId = parseInt(req.params.id);
+        if (isNaN(modelId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid model ID'
+            });
+        }
+        const { min_cooldown_hours, max_cooldown_hours, phase_retry_limits, single_bot_constraint, max_concurrent_accounts, content_assignment_rules } = req.body;
+        if (min_cooldown_hours !== undefined && (min_cooldown_hours < 1 || min_cooldown_hours > 168)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Minimum cooldown hours must be between 1 and 168 (7 days)'
+            });
+        }
+        if (max_cooldown_hours !== undefined && (max_cooldown_hours < 1 || max_cooldown_hours > 168)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Maximum cooldown hours must be between 1 and 168 (7 days)'
+            });
+        }
+        if (min_cooldown_hours !== undefined && max_cooldown_hours !== undefined && min_cooldown_hours > max_cooldown_hours) {
+            return res.status(400).json({
+                success: false,
+                error: 'Minimum cooldown hours cannot be greater than maximum cooldown hours'
+            });
+        }
+        const updateFields = [];
+        const updateValues = [];
+        let paramCount = 1;
+        if (min_cooldown_hours !== undefined) {
+            updateFields.push(`min_cooldown_hours = $${paramCount + 1}`);
+            updateValues.push(min_cooldown_hours);
+            paramCount++;
+        }
+        if (max_cooldown_hours !== undefined) {
+            updateFields.push(`max_cooldown_hours = $${paramCount + 1}`);
+            updateValues.push(max_cooldown_hours);
+            paramCount++;
+        }
+        if (phase_retry_limits !== undefined) {
+            updateFields.push(`phase_retry_limits = $${paramCount + 1}`);
+            updateValues.push(JSON.stringify(phase_retry_limits));
+            paramCount++;
+        }
+        if (single_bot_constraint !== undefined) {
+            updateFields.push(`single_bot_constraint = $${paramCount + 1}`);
+            updateValues.push(single_bot_constraint);
+            paramCount++;
+        }
+        if (max_concurrent_accounts !== undefined) {
+            updateFields.push(`max_concurrent_accounts = $${paramCount + 1}`);
+            updateValues.push(max_concurrent_accounts);
+            paramCount++;
+        }
+        if (content_assignment_rules !== undefined) {
+            updateFields.push(`content_assignment_rules = $${paramCount + 1}`);
+            updateValues.push(JSON.stringify(content_assignment_rules));
+            paramCount++;
+        }
+        if (updateFields.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'No fields to update'
+            });
+        }
+        updateFields.push('updated_at = CURRENT_TIMESTAMP');
+        await database_1.db.query(`
+      INSERT INTO warmup_configuration (model_id)
+      VALUES ($1)
+      ON CONFLICT (model_id) DO NOTHING
+    `, [modelId]);
+        const updateQuery = `
+      UPDATE warmup_configuration 
+      SET ${updateFields.join(', ')}
+      WHERE model_id = $1
+      RETURNING 
+        id,
+        model_id,
+        min_cooldown_hours,
+        max_cooldown_hours,
+        phase_retry_limits,
+        single_bot_constraint,
+        max_concurrent_accounts,
+        content_assignment_rules,
+        updated_at
+    `;
+        const result = await database_1.db.query(updateQuery, [modelId, ...updateValues]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Model not found'
+            });
+        }
+        res.json({
+            success: true,
+            message: 'Warmup configuration updated successfully',
+            data: result.rows[0]
+        });
+    }
+    catch (error) {
+        console.error('Error updating warmup configuration:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update warmup configuration',
+            message: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
 exports.default = router;
 //# sourceMappingURL=models.js.map

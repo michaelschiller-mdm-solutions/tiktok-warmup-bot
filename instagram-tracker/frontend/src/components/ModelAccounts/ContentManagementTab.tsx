@@ -1,34 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Image, Video, FileText, Upload, RefreshCw, Eye, Calendar, Download, Trash2, Package, Plus } from 'lucide-react';
+import { Upload, Plus, Package, Image, Type, Tag, Search, Filter, RefreshCw, RotateCcw, Edit, Trash2, CheckSquare, Square, AlertTriangle, Users, Calendar, BarChart3, Link, Unlink, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import LoadingSpinner from '../LoadingSpinner';
-import ContentUploadModal from '../ContentUploadModal';
-import TextManagementModal from '../TextManagementModal';
+import CentralContentUploadModal from '../CentralContentUploadModal';
+import BundleCreateModal from '../BundleCreateModal';
+import BundleContentsModal from '../BundleContentsModal';
+import Modal from '../Modal';
 
 interface ModelContent {
   content_id: number;
   filename: string;
   original_name: string;
-  content_type: 'image' | 'video' | 'text';
+  content_type: 'image' | 'video';
   file_size: number;
   categories: string[];
   content_status: string;
+  image_url: string;
   content_created_at: string;
-  text_content_id?: number;
   text_content?: string;
-  text_categories?: string[];
+  text_content_id?: number;
   template_name?: string;
   assignment_type?: string;
   assigned_at?: string;
-  image_url?: string;
-  video_url?: string;
-}
-
-interface ModelContentResponse {
-  model_id: number;
-  model_name: string;
-  content: ModelContent[];
-  total_count: number;
 }
 
 interface ContentBundle {
@@ -36,37 +28,109 @@ interface ContentBundle {
   name: string;
   description?: string;
   bundle_type: string;
+  categories: string[];
+  tags: string[];
+  status: string;
   content_count: number;
   text_count: number;
+  created_at: string;
+  is_assigned?: boolean; // Whether this bundle is assigned to the current model
 }
 
 interface ContentManagementTabProps {
   modelId: number;
+  modelName: string;
 }
 
-const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) => {
+const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId, modelName }) => {
+  const [activeTab, setActiveTab] = useState<'model_content' | 'available_bundles' | 'assigned_bundles'>('model_content');
   const [content, setContent] = useState<ModelContent[]>([]);
   const [bundles, setBundles] = useState<ContentBundle[]>([]);
-  const [selectedBundleId, setSelectedBundleId] = useState<number | null>(null);
-  const [contentSource, setContentSource] = useState<'model' | 'bundles'>('model');
+  const [assignedBundles, setAssignedBundles] = useState<ContentBundle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [bundleLoading, setBundleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Search and filters
   const [searchTerm, setSearchTerm] = useState('');
-  const [contentTypeFilter, setContentTypeFilter] = useState<string>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  
+  // Modals
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [showTextModal, setShowTextModal] = useState(false);
+  const [showBundleModal, setShowBundleModal] = useState(false);
+  const [showBundleContentsModal, setShowBundleContentsModal] = useState(false);
+  const [selectedBundle, setSelectedBundle] = useState<ContentBundle | null>(null);
 
-  // Fetch model bundles
-  const fetchBundles = async () => {
+  useEffect(() => {
+    loadModelContent();
+    loadAvailableBundles();
+    loadAssignedBundles();
+  }, [modelId]);
+
+  const loadModelContent = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Try to load from central registry bundles first
+      const response = await fetch(`/api/central/models/${modelId}/bundles`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch model content: ${response.statusText}`);
+      }
+      
+      const bundleData = await response.json();
+      
+      // If no bundles, fall back to model-specific content
+      if (!bundleData || bundleData.length === 0) {
+        const modelResponse = await fetch(`/api/models/${modelId}/content`);
+        if (modelResponse.ok) {
+          const modelData = await modelResponse.json();
+          setContent(modelData || []);
+        }
+      } else {
+        // Fetch content from assigned bundles
+        const bundleId = bundleData[0]?.id;
+        if (bundleId) {
+          await fetchBundleContent(bundleId);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch model content:', err);
+      setError(err.message || 'Failed to fetch model content');
+      setContent([]);
+      toast.error('Failed to load model content');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAvailableBundles = async () => {
+    try {
+      setBundleLoading(true);
+      const response = await fetch('/api/central/bundles');
+      if (response.ok) {
+        const data = await response.json();
+        setBundles(data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load bundles:', error);
+      toast.error('Failed to load content bundles');
+    } finally {
+      setBundleLoading(false);
+    }
+  };
+
+  const loadAssignedBundles = async () => {
     try {
       const response = await fetch(`/api/central/models/${modelId}/bundles`);
       if (response.ok) {
-        const bundleData = await response.json();
-        setBundles(bundleData);
+        const data = await response.json();
+        setAssignedBundles(data || []);
       }
-    } catch (err) {
-      console.error('Failed to fetch bundles:', err);
+    } catch (error) {
+      console.error('Failed to load assigned bundles:', error);
     }
   };
 
@@ -114,475 +178,514 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId }) 
     }
   };
 
-  // Fetch model content
-  const fetchContent = async () => {
+  const handleAssignBundle = async (bundleId: number, bundleName: string) => {
     try {
-      setLoading(true);
-      setError(null);
-      
-      const params = new URLSearchParams();
-      if (contentTypeFilter !== 'all') {
-        params.append('content_type', contentTypeFilter);
-      }
-      if (categoryFilter !== 'all') {
-        params.append('category', categoryFilter);
-      }
-      
-      const response = await fetch(`/api/models/${modelId}/content-with-texts?${params}`);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch content: ${response.statusText}`);
-      }
-      
-      const data: { success: boolean; data: ModelContentResponse } = await response.json();
-      
-      if (data.success) {
-        setContent(data.data.content || []);
+      const response = await fetch(`/api/central/models/${modelId}/bundles/${bundleId}/assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model_id: modelId,
+          bundle_id: bundleId,
+          assigned_by: 'frontend_user'
+        })
+      });
+
+      if (response.ok) {
+        toast.success(`Bundle "${bundleName}" assigned to model`);
+        loadAssignedBundles();
+        loadModelContent();
+        loadAvailableBundles(); // Refresh to update assignment status
       } else {
-        throw new Error('Failed to fetch content');
+        const errorData = await response.json();
+        toast.error(`Failed to assign bundle: ${errorData.error}`);
       }
-    } catch (err: any) {
-      console.error('Failed to fetch model content:', err);
-      setError(err.message || 'Failed to fetch content');
-      setContent([]);
-      toast.error('Failed to load content');
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.error('Error assigning bundle:', error);
+      toast.error('Failed to assign bundle to model');
     }
   };
 
-  // Load content based on source
-  const loadContent = () => {
-    if (contentSource === 'bundles' && selectedBundleId) {
-      fetchBundleContent(selectedBundleId);
-    } else {
-      fetchContent();
+  const handleUnassignBundle = async (bundleId: number, bundleName: string) => {
+    try {
+      const response = await fetch(`/api/central/models/${modelId}/bundles/${bundleId}/unassign`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (response.ok) {
+        toast.success(`Bundle "${bundleName}" unassigned from model`);
+        loadAssignedBundles();
+        loadModelContent();
+        loadAvailableBundles(); // Refresh to update assignment status
+      } else {
+        const errorData = await response.json();
+        toast.error(`Failed to unassign bundle: ${errorData.error}`);
+      }
+    } catch (error) {
+      console.error('Error unassigning bundle:', error);
+      toast.error('Failed to unassign bundle from model');
     }
   };
 
-  // Initial load and when filters change
-  useEffect(() => {
-    fetchBundles();
-    loadContent();
-  }, [modelId, contentTypeFilter, categoryFilter, contentSource, selectedBundleId]);
+  const handleViewBundleContents = (bundle: ContentBundle) => {
+    setSelectedBundle(bundle);
+    setShowBundleContentsModal(true);
+  };
 
-  // Filter content based on search term
+  const handleRefresh = () => {
+    loadModelContent();
+    loadAvailableBundles();
+    loadAssignedBundles();
+  };
+
+  // Filter content based on search and filters
   const filteredContent = content.filter(item => {
     const matchesSearch = !searchTerm || 
       item.original_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.categories.some(cat => cat.toLowerCase().includes(searchTerm.toLowerCase()));
+      item.template_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCategory = !categoryFilter || 
+      item.categories.includes(categoryFilter);
+    
+    const matchesType = !typeFilter || 
+      (typeFilter === 'text' && item.text_content) ||
+      (typeFilter === 'image' && item.content_type === 'image') ||
+      (typeFilter === 'video' && item.content_type === 'video');
+    
+    return matchesSearch && matchesCategory && matchesType;
+  });
+
+  // Filter bundles
+  const filteredBundles = bundles.filter(bundle => {
+    const matchesSearch = !searchTerm || 
+      bundle.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      bundle.description?.toLowerCase().includes(searchTerm.toLowerCase());
     
     return matchesSearch;
   });
 
-  // Calculate content stats
-  const contentStats = {
-    images: content.filter(c => c.content_type === 'image').length,
-    videos: content.filter(c => c.content_type === 'video').length,
-    totalSize: content.reduce((sum, c) => sum + c.file_size, 0),
-    categories: {
-      pfp: content.filter(c => c.categories.includes('pfp')).length,
-      bio: content.filter(c => c.categories.includes('bio')).length,
-      post: content.filter(c => c.categories.includes('post')).length,
-      highlight: content.filter(c => c.categories.includes('highlight')).length,
-      story: content.filter(c => c.categories.includes('story')).length,
-      any: content.filter(c => c.categories.includes('any')).length,
-    }
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleDateString();
-  };
-
-  const getCategoryColor = (category: string): string => {
-    const colors: Record<string, string> = {
-      pfp: 'bg-blue-100 text-blue-800',
-      bio: 'bg-green-100 text-green-800',
-      post: 'bg-purple-100 text-purple-800',
-      highlight: 'bg-yellow-100 text-yellow-800',
-      story: 'bg-pink-100 text-pink-800',
-      any: 'bg-gray-100 text-gray-800'
-    };
-    return colors[category] || 'bg-gray-100 text-gray-800';
-  };
-
-  if (loading && content.length === 0) {
-    return (
-      <div className="p-8">
-        <LoadingSpinner size="lg" text="Loading content..." className="min-h-96" />
-      </div>
-    );
-  }
-
-  if (error && content.length === 0) {
-    return (
-      <div className="p-8">
-        <div className="text-center py-12">
-          <div className="text-red-400 text-6xl mb-4">⚠️</div>
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Failed to Load Content</h3>
-          <p className="text-gray-500 mb-6">{error}</p>
-          <button 
-            onClick={fetchContent}
-            className="btn-primary flex items-center gap-2 mx-auto"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6 h-screen flex flex-col">
+    <div className="p-6 h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-medium text-gray-900">Content Management</h3>
+          <h3 className="text-lg font-medium text-gray-900">Content Management: {modelName}</h3>
           <p className="text-sm text-gray-500">
-            {filteredContent.length} of {content.length} content files
-            {contentSource === 'bundles' && selectedBundleId && (
-              <span className="ml-2 text-blue-600">
-                from {bundles.find(b => b.id === selectedBundleId)?.name}
-              </span>
-            )}
+            Manage model content and assign content bundles
           </p>
         </div>
         <div className="flex items-center gap-3">
           <button 
-            onClick={loadContent}
-            className="btn-secondary flex items-center gap-2"
-            disabled={loading}
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <button 
-            className="btn-secondary flex items-center gap-2"
-            onClick={() => setShowTextModal(true)}
-          >
-            <FileText className="h-4 w-4" />
-            Manage Texts
-          </button>
-          <button 
-            className="btn-primary flex items-center gap-2"
             onClick={() => setShowUploadModal(true)}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
           >
             <Upload className="h-4 w-4" />
             Upload Content
           </button>
+          <button 
+            onClick={() => setShowBundleModal(true)}
+            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
+          >
+            <Package className="h-4 w-4" />
+            Create Bundle
+          </button>
+          <button 
+            onClick={handleRefresh}
+            className="btn-secondary flex items-center gap-2"
+            disabled={loading || bundleLoading}
+          >
+            <RotateCcw className={`h-4 w-4 ${(loading || bundleLoading) ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
       </div>
 
-      {/* Content Source Selection */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <div className="flex items-center gap-4 mb-4">
-          <h4 className="text-sm font-medium text-gray-900">Content Source:</h4>
-          <div className="flex items-center gap-2">
+      {/* Tab Navigation */}
+      <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-lg">
             <button
-              onClick={() => {
-                setContentSource('model');
-                setSelectedBundleId(null);
-              }}
-              className={`px-3 py-1 rounded-full text-sm font-medium ${
-                contentSource === 'model'
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Model Content
+          onClick={() => setActiveTab('model_content')}
+          className={`flex-1 flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            activeTab === 'model_content'
+              ? 'bg-white text-blue-700 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Image className="w-4 h-4 mr-2" />
+          Model Content ({filteredContent.length})
             </button>
             <button
-              onClick={() => setContentSource('bundles')}
-              className={`px-3 py-1 rounded-full text-sm font-medium ${
-                contentSource === 'bundles'
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              <Package className="w-4 h-4 inline mr-1" />
-              Content Bundles
+          onClick={() => setActiveTab('available_bundles')}
+          className={`flex-1 flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            activeTab === 'available_bundles'
+              ? 'bg-white text-purple-700 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Package className="w-4 h-4 mr-2" />
+          Available Bundles ({filteredBundles.length})
             </button>
-          </div>
-        </div>
-
-        {contentSource === 'bundles' && (
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-gray-700">Select Bundle:</label>
-            <select
-              value={selectedBundleId || ''}
-              onChange={(e) => setSelectedBundleId(e.target.value ? parseInt(e.target.value) : null)}
-              className="form-select flex-1 max-w-md"
-            >
-              <option value="">Choose a bundle...</option>
-              {bundles.map((bundle) => (
-                <option key={bundle.id} value={bundle.id}>
-                  {bundle.name} ({bundle.content_count} items)
-                </option>
-              ))}
-            </select>
             <button
-              onClick={() => window.open('/content', '_blank')}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Manage Bundles
+          onClick={() => setActiveTab('assigned_bundles')}
+          className={`flex-1 flex items-center justify-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+            activeTab === 'assigned_bundles'
+              ? 'bg-white text-green-700 shadow-sm'
+              : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Link className="w-4 h-4 mr-2" />
+          Assigned Bundles ({assignedBundles.length})
             </button>
-          </div>
-        )}
       </div>
 
-      {/* Content Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Images</p>
-              <p className="text-2xl font-bold text-blue-600">{contentStats.images}</p>
-            </div>
-            <Image className="h-8 w-8 text-blue-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Videos</p>
-              <p className="text-2xl font-bold text-purple-600">{contentStats.videos}</p>
-            </div>
-            <Video className="h-8 w-8 text-purple-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Size</p>
-              <p className="text-2xl font-bold text-green-600">{formatFileSize(contentStats.totalSize)}</p>
-            </div>
-            <Calendar className="h-8 w-8 text-green-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Files</p>
-              <p className="text-2xl font-bold text-orange-600">{content.length}</p>
-            </div>
-            <FileText className="h-8 w-8 text-orange-600" />
-          </div>
-        </div>
-      </div>
-
-      {/* Category Stats */}
-      <div className="bg-white rounded-lg shadow p-4 mb-6">
-        <h4 className="text-sm font-medium text-gray-900 mb-3">Content by Category</h4>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          <div className="text-center">
-            <div className="text-lg font-bold text-blue-600">{contentStats.categories.pfp}</div>
-            <div className="text-xs text-gray-500">Profile Pictures</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-bold text-green-600">{contentStats.categories.bio}</div>
-            <div className="text-xs text-gray-500">Bio Content</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-bold text-purple-600">{contentStats.categories.post}</div>
-            <div className="text-xs text-gray-500">Posts</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-bold text-yellow-600">{contentStats.categories.highlight}</div>
-            <div className="text-xs text-gray-500">Highlights</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-bold text-pink-600">{contentStats.categories.story}</div>
-            <div className="text-xs text-gray-500">Stories</div>
-          </div>
-          <div className="text-center">
-            <div className="text-lg font-bold text-gray-600">{contentStats.categories.any}</div>
-            <div className="text-xs text-gray-500">Universal</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-4 mb-4">
+      {/* Search and Filters */}
+      <div className="flex items-center gap-4 mb-6">
         <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
             type="text"
             placeholder="Search content..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="form-input"
+            className="form-input pl-10"
           />
         </div>
-        <select
-          value={contentTypeFilter}
-          onChange={(e) => setContentTypeFilter(e.target.value)}
-          className="form-select"
-        >
-          <option value="all">All Types</option>
-          <option value="image">Images</option>
-          <option value="video">Videos</option>
-        </select>
+        {activeTab === 'model_content' && (
+          <>
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
           className="form-select"
         >
-          <option value="all">All Categories</option>
-          <option value="pfp">Profile Pictures</option>
-          <option value="bio">Bio Content</option>
-          <option value="post">Posts</option>
-          <option value="highlight">Highlights</option>
-          <option value="story">Stories</option>
-          <option value="any">Universal</option>
+              <option value="">All Categories</option>
+              <option value="bio">Bio</option>
+              <option value="post">Post</option>
+              <option value="story">Story</option>
+              <option value="highlight">Highlight</option>
+            </select>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="form-select"
+            >
+              <option value="">All Types</option>
+              <option value="image">Images</option>
+              <option value="video">Videos</option>
+              <option value="text">Text</option>
         </select>
+          </>
+        )}
       </div>
 
-      {/* Content Grid */}
-      <div className="flex-1 bg-white rounded-lg shadow overflow-hidden">
-        {filteredContent.length === 0 && !loading ? (
-          <div className="p-8 text-center">
-            <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+      {/* Tab Content */}
+      <div className="flex-1 overflow-hidden">
+        {activeTab === 'model_content' && (
+          <div className="h-full">
+            {loading ? (
+              <div className="flex justify-center items-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+              </div>
+            ) : error ? (
+              <div className="text-center py-12">
+                <AlertTriangle className="w-16 h-16 mx-auto mb-4 text-red-400" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Content</h3>
+                <p className="text-gray-500 mb-6">{error}</p>
+                <button onClick={handleRefresh} className="btn-primary">Try Again</button>
+              </div>
+            ) : filteredContent.length === 0 ? (
+              <div className="text-center py-12">
+                <Image className="w-16 h-16 mx-auto mb-4 text-gray-300" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No Content Found</h3>
             <p className="text-gray-500 mb-6">
-              {searchTerm || contentTypeFilter !== 'all' || categoryFilter !== 'all'
-                ? 'No content matches your current filters.' 
-                : 'No content has been uploaded yet.'
+                  {searchTerm || categoryFilter || typeFilter 
+                    ? 'No content matches your search criteria'
+                    : 'Upload content or assign a content bundle to get started'
               }
             </p>
-            {(!searchTerm && contentTypeFilter === 'all' && categoryFilter === 'all') && (
-              <button 
-                className="btn-primary flex items-center gap-2 mx-auto"
-                onClick={() => setShowUploadModal(true)}
-              >
-                <Upload className="h-4 w-4" />
+                <div className="flex justify-center gap-4">
+                  <button onClick={() => setShowUploadModal(true)} className="btn-primary">
                 Upload Content
               </button>
-            )}
+                  <button onClick={() => setActiveTab('available_bundles')} className="btn-secondary">
+                    Browse Bundles
+                  </button>
+                </div>
           </div>
         ) : (
-          <div className="h-full overflow-y-auto">
-            <div className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 overflow-y-auto">
                 {filteredContent.map((item) => (
-                  <div key={item.content_id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                    {/* Content Preview */}
-                    <div className="aspect-square bg-gray-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
-                      {item.content_type === 'image' && item.image_url ? (
+                  <div key={`${item.content_id}-${item.text_content_id || 'no-text'}`} className="bg-white border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                    {/* Image/Video Content */}
+                    {item.content_type && (
+                      <div className="aspect-w-16 aspect-h-9 bg-gray-100">
                         <img 
                           src={item.image_url}
                           alt={item.original_name}
-                          className="w-full h-full object-cover"
+                          className="w-full h-48 object-cover"
                           onError={(e) => {
-                            // Fallback to icon if image fails to load
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            const iconDiv = document.createElement('div');
-                            iconDiv.className = 'h-8 w-8 text-gray-400';
-                            iconDiv.innerHTML = '<svg class="w-full h-full" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path></svg>';
-                            target.parentElement!.appendChild(iconDiv);
+                            (e.target as HTMLImageElement).src = '/placeholder-image.png';
                           }}
                         />
-                      ) : item.content_type === 'video' && item.video_url ? (
-                        <video 
-                          src={item.video_url}
-                          className="w-full h-full object-cover"
-                          muted
-                          onError={(e) => {
-                            // Fallback to icon if video fails to load
-                            const target = e.target as HTMLVideoElement;
-                            target.style.display = 'none';
-                            const iconDiv = document.createElement('div');
-                            iconDiv.className = 'h-8 w-8 text-gray-400';
-                            iconDiv.innerHTML = '<svg class="w-full h-full" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" clip-rule="evenodd"></path></svg>';
-                            target.parentElement!.appendChild(iconDiv);
-                          }}
-                        />
-                      ) : item.content_type === 'image' ? (
-                        <Image className="h-8 w-8 text-gray-400" />
-                      ) : (
-                        <Video className="h-8 w-8 text-gray-400" />
-                      )}
-                    </div>
+                      </div>
+                    )}
                     
-                    {/* Content Info */}
-                    <div className="space-y-2">
-                      <h4 className="font-medium text-gray-900 truncate" title={item.original_name}>
-                        {item.original_name}
+                    {/* Text Content */}
+                    {item.text_content && !item.content_type && (
+                      <div className="h-48 bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center p-4">
+                        <Type className="w-16 h-16 text-gray-400" />
+                    </div>
+                    )}
+                    
+                    {/* Content Details */}
+                    <div className="p-4">
+                      <h4 className="text-sm font-medium text-gray-900 mb-2 truncate">
+                        {item.original_name || item.template_name || 'Untitled'}
                       </h4>
                       
-                      <div className="flex items-center justify-between text-sm text-gray-500">
-                        <span>{item.content_type}</span>
-                        <span>{formatFileSize(item.file_size)}</span>
-                      </div>
-                      
-                      <div className="flex flex-wrap gap-1">
-                        {item.categories.map((category) => (
-                          <span
-                            key={category}
-                            className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(category)}`}
-                          >
-                            {category}
-                          </span>
-                        ))}
-                      </div>
-                      
-                      {/* Text Content */}
                       {item.text_content && (
-                        <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
-                          <div className="font-medium text-blue-800 mb-1">Assigned Text:</div>
-                          <div className="text-blue-700 line-clamp-2" title={item.text_content}>
-                            {item.text_content}
-                          </div>
-                          {item.template_name && (
-                            <div className="text-blue-600 mt-1">Template: {item.template_name}</div>
-                          )}
-                        </div>
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">
+                          {item.text_content.length > 100 
+                            ? `${item.text_content.substring(0, 100)}...` 
+                            : item.text_content}
+                        </p>
                       )}
                       
-                      <div className="text-xs text-gray-400">
-                        Uploaded {formatDate(item.content_created_at)}
+                      <div className="flex items-center justify-between text-xs text-gray-500">
+                        <span className="capitalize">
+                          {item.content_type || 'Text'}
+                        </span>
+                        {item.categories.length > 0 && (
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full">
+                            {item.categories[0]}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'available_bundles' && (
+          <div className="h-full">
+            {bundleLoading ? (
+              <div className="flex justify-center items-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+              </div>
+            ) : filteredBundles.length === 0 ? (
+              <div className="text-center py-12">
+                <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Bundles Available</h3>
+                <p className="text-gray-500 mb-6">
+                  Create content bundles to organize and share content across models
+                </p>
+                <button onClick={() => setShowBundleModal(true)} className="btn-primary">
+                  Create First Bundle
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto">
+                {filteredBundles.map((bundle) => {
+                  const isAssigned = assignedBundles.some(ab => ab.id === bundle.id);
+                  
+                  return (
+                    <div key={bundle.id} className="bg-white border rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
+                      {/* Bundle Header */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-lg font-medium text-gray-900 truncate">{bundle.name}</h4>
+                          {bundle.description && (
+                            <p className="text-sm text-gray-600 mt-1 line-clamp-2">{bundle.description}</p>
+                          )}
+                        </div>
+                        {isAssigned && (
+                          <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 flex-shrink-0">
+                            Assigned
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Bundle Stats */}
+                      <div className="flex items-center gap-4 mb-4 text-sm text-gray-600">
+                        <div className="flex items-center gap-1">
+                          <Image className="h-4 w-4" />
+                          <span>{bundle.content_count} content</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Type className="h-4 w-4" />
+                          <span>{bundle.text_count} texts</span>
+                        </div>
+                          </div>
+
+                      {/* Bundle Categories */}
+                      {bundle.categories.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-4">
+                          {bundle.categories.slice(0, 3).map((category, index) => (
+                            <span key={index} className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
+                              {category}
+                            </span>
+                          ))}
+                          {bundle.categories.length > 3 && (
+                            <span className="text-xs text-gray-500">+{bundle.categories.length - 3}</span>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Bundle Actions */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleViewBundleContents(bundle)}
+                          className="btn-secondary text-sm flex-1"
+                        >
+                          View Contents
+                        </button>
+                        {isAssigned ? (
+                          <button
+                            onClick={() => handleUnassignBundle(bundle.id, bundle.name)}
+                            className="flex items-center gap-1 px-3 py-2 text-sm bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors"
+                          >
+                            <X className="h-4 w-4" />
+                            Unassign
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleAssignBundle(bundle.id, bundle.name)}
+                            className="flex items-center gap-1 px-3 py-2 text-sm bg-green-50 hover:bg-green-100 text-green-700 rounded transition-colors"
+                          >
+                            <Plus className="h-4 w-4" />
+                            Assign
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'assigned_bundles' && (
+          <div className="h-full">
+            {bundleLoading ? (
+              <div className="flex justify-center items-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+              </div>
+            ) : assignedBundles.length === 0 ? (
+              <div className="text-center py-12">
+                <Link className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Bundles Assigned</h3>
+                <p className="text-gray-500 mb-6">
+                  Assign content bundles to make them available for this model's warmup phases
+                </p>
+                <button onClick={() => setActiveTab('available_bundles')} className="btn-primary">
+                  Browse Available Bundles
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto">
+                {assignedBundles.map((bundle) => (
+                  <div key={bundle.id} className="bg-white border border-green-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow">
+                    {/* Bundle Header */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-lg font-medium text-gray-900 truncate">{bundle.name}</h4>
+                        {bundle.description && (
+                          <p className="text-sm text-gray-600 mt-1 line-clamp-2">{bundle.description}</p>
+                        )}
+                      </div>
+                      <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 flex-shrink-0">
+                        Active
+                      </span>
+                    </div>
+
+                    {/* Bundle Stats */}
+                    <div className="flex items-center gap-4 mb-4 text-sm text-gray-600">
+                      <div className="flex items-center gap-1">
+                        <Image className="h-4 w-4" />
+                        <span>{bundle.content_count} content</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Type className="h-4 w-4" />
+                        <span>{bundle.text_count} texts</span>
+                      </div>
+                    </div>
+
+                    {/* Bundle Categories */}
+                    {bundle.categories.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-4">
+                        {bundle.categories.slice(0, 3).map((category, index) => (
+                          <span key={index} className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
+                            {category}
+                          </span>
+                        ))}
+                        {bundle.categories.length > 3 && (
+                          <span className="text-xs text-gray-500">+{bundle.categories.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Bundle Actions */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleViewBundleContents(bundle)}
+                        className="btn-secondary text-sm flex-1"
+                      >
+                        View Contents
+                      </button>
+                      <button
+                        onClick={() => handleUnassignBundle(bundle.id, bundle.name)}
+                        className="flex items-center gap-1 px-3 py-2 text-sm bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors"
+                      >
+                        <X className="h-4 w-4" />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Upload Modal */}
-      <ContentUploadModal
+      {/* Modals */}
+      <CentralContentUploadModal
         isOpen={showUploadModal}
         onClose={() => setShowUploadModal(false)}
-        modelId={modelId}
         onSuccess={() => {
-          fetchContent();
           setShowUploadModal(false);
+          handleRefresh();
         }}
       />
 
-      {/* Text Management Modal */}
-      <TextManagementModal
-        isOpen={showTextModal}
-        onClose={() => setShowTextModal(false)}
-        modelId={modelId}
+      <BundleCreateModal
+        isOpen={showBundleModal}
+        onClose={() => setShowBundleModal(false)}
         onSuccess={() => {
-          fetchContent(); // Refresh content to show updated text assignments
+          setShowBundleModal(false);
+          handleRefresh();
         }}
       />
+
+      {selectedBundle && (
+        <BundleContentsModal
+          isOpen={showBundleContentsModal}
+          onClose={() => {
+            setShowBundleContentsModal(false);
+            setSelectedBundle(null);
+          }}
+          bundle={selectedBundle}
+          onUpdate={() => {
+            handleRefresh();
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Play, Pause, RotateCcw, TrendingUp, Clock, Eye, ChevronRight, User, Hash, Image, FileText, CheckCircle, X } from 'lucide-react';
+import { Activity, Play, Pause, RotateCcw, TrendingUp, Clock, Eye, ChevronRight, User, Hash, Image, FileText, CheckCircle, X, Settings, AlertCircle, Mail } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { DataGrid } from '../DataGrid';
 import { DataGridColumn } from '../../types/dataGrid';
@@ -8,6 +8,7 @@ import { useAccountsData } from '../../hooks/useAccountsData';
 import LoadingSpinner from '../LoadingSpinner';
 import WarmupPhaseTracker from '../AccountLifecycle/WarmupPhaseTracker';
 import { apiClient } from '../../services/api';
+import AutomationSetupModal from './AutomationSetupModal';
 import { 
   WarmupPhase, 
   WarmupPhaseStatus, 
@@ -117,6 +118,15 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
   const [error, setError] = useState<string | null>(null);
   const [completingManualSetup, setCompletingManualSetup] = useState<Record<number, boolean>>({});
   const [markingInvalid, setMarkingInvalid] = useState<Record<number, boolean>>({});
+  const [showAutomationModal, setShowAutomationModal] = useState(false);
+  const [fetchingTokens, setFetchingTokens] = useState<Record<number, boolean>>({});
+  const [accountTokens, setAccountTokens] = useState<Record<number, string>>({});
+  const [showTokenPopup, setShowTokenPopup] = useState<{ accountId: number; token: string; username: string } | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [warmupConfig, setWarmupConfig] = useState<any>(null);
+  const [availableIphones, setAvailableIphones] = useState<any[]>([]);
+  const [selectedIphoneId, setSelectedIphoneId] = useState<number | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(false);
 
   const { 
     accounts, 
@@ -164,68 +174,88 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       // Group accounts by their current warmup phase
       const phaseGroups: Record<string, WarmupAccountWithPhases[]> = {
         manual_setup: [],
+        invalid: [],
         ready_for_assignment: [],
         ...Object.fromEntries(WARMUP_PHASES.map(phase => [phase.id, []]))
       };
       
       accounts.forEach(account => {
-        const warmupStatus = statusMap[account.id];
-        const warmupAccount: WarmupAccountWithPhases = {
-          ...account,
-          warmup_progress: warmupStatus?.progress_percent || 0,
-          phases: warmupStatus?.phases || [],
-          current_phase: undefined,
-          phase_status: undefined,
-          assigned_content: undefined,
-          next_available_at: undefined,
-          account_details: warmupStatus?.account_details
-        };
+        const status = statusMap[account.id];
+        
+        // First, check if account is invalid (banned, suspended, or has critical issues)
+        if (account.lifecycle_state === 'archived' || account.lifecycle_state === 'cleanup' ||
+            account.status === 'banned' || account.status === 'suspended') {
+          phaseGroups.invalid.push({
+            ...account,
+            phases: status?.phases || [],
+            current_phase: undefined,
+            phase_status: undefined,
+            warmup_progress: 0
+          });
+          return;
+        }
 
-        if (account.lifecycle_state === 'imported') {
-          // Accounts that need manual setup
-          phaseGroups.manual_setup.push(warmupAccount);
-        } else if (account.lifecycle_state === 'ready') {
-          // Accounts ready for bot assignment
-          phaseGroups.ready_for_assignment.push(warmupAccount);
-        } else if (account.lifecycle_state === 'warmup' && warmupStatus) {
-          // Find the current active phase (available now or in progress)
-          const availablePhase = warmupStatus.phases.find(p => 
-            p.status === WarmupPhaseStatus.AVAILABLE || p.status === WarmupPhaseStatus.IN_PROGRESS
+        // Manual setup phase - accounts in imported state
+        if (account.lifecycle_state === 'imported' || 
+            (!account.email || !account.password || !account.email_password)) {
+          phaseGroups.manual_setup.push({
+            ...account,
+            phases: status?.phases || [],
+            current_phase: undefined,
+            phase_status: undefined,
+            warmup_progress: 0
+          });
+          return;
+        }
+
+        // Ready for assignment - accounts in ready state
+        if (account.lifecycle_state === 'ready') {
+          phaseGroups.ready_for_assignment.push({
+            ...account,
+            phases: status?.phases || [],
+            current_phase: undefined,
+            phase_status: undefined,
+            warmup_progress: 0
+          });
+          return;
+        }
+
+        // Active warmup phases - accounts in warmup state
+        if (account.lifecycle_state === 'warmup' && status?.phases) {
+          // Find the current active phase
+          const activePhase = status.phases.find(p => 
+            p.status === 'available' || p.status === 'in_progress'
           );
           
-          if (availablePhase) {
-            const phaseId = availablePhase.phase;
-            warmupAccount.current_phase = phaseId;
-            warmupAccount.phase_status = availablePhase.status as WarmupPhaseStatus;
-            warmupAccount.assigned_content = availablePhase.assigned_text?.text_content || 
-                                           availablePhase.assigned_content?.original_name;
-            
-            if (phaseGroups[phaseId]) {
-              phaseGroups[phaseId].push(warmupAccount);
-            }
+          if (activePhase && phaseGroups[activePhase.phase]) {
+            phaseGroups[activePhase.phase].push({
+              ...account,
+              phases: status.phases,
+              current_phase: activePhase.phase as any,
+              phase_status: activePhase.status as any,
+              warmup_progress: status.progress_percent || 0
+            });
           } else {
-            // Check if there are phases waiting for timeout to expire
-            const waitingPhase = warmupStatus.phases.find(p => 
-              p.status === WarmupPhaseStatus.PENDING && 
-              p.available_at && 
-              new Date(p.available_at) > new Date()
-            );
-            
-            if (waitingPhase) {
-              // Account is waiting for cooldown to expire
-              warmupAccount.current_phase = 'waiting_cooldown';
-              warmupAccount.phase_status = WarmupPhaseStatus.PENDING;
-              warmupAccount.next_available_at = waitingPhase.available_at;
-              phaseGroups.ready_for_assignment.push(warmupAccount);
-            } else {
-              // No active phase, put in ready for assignment
-              phaseGroups.ready_for_assignment.push(warmupAccount);
-            }
+            // No active phase found, put in ready for assignment
+            phaseGroups.ready_for_assignment.push({
+              ...account,
+              phases: status.phases,
+              current_phase: undefined,
+              phase_status: undefined,
+              warmup_progress: status.progress_percent || 0
+            });
           }
-        } else {
-          // Default to ready for assignment
-          phaseGroups.ready_for_assignment.push(warmupAccount);
+          return;
         }
+
+        // Default case - put in ready for assignment
+        phaseGroups.ready_for_assignment.push({
+          ...account,
+          phases: status?.phases || [],
+          current_phase: undefined,
+          phase_status: undefined,
+          warmup_progress: 0
+        });
       });
       
       setPhaseAccounts(phaseGroups);
@@ -257,9 +287,15 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       
       if (result.success) {
         toast.success(`Manual setup completed for account ${accountId}`);
-        // Refresh data to show updated state
-        await fetchWarmupData();
-        await refreshData();
+        // 🔄 Optimistic update: remove the account from Manual-Setup list immediately so the page doesn't flash-reload
+        setPhaseAccounts(prev => {
+          const updated: Record<string, typeof prev[keyof typeof prev]> = {} as any;
+          for (const key in prev) {
+            updated[key] = prev[key].filter(acc => acc.id !== accountId);
+          }
+          return updated;
+        });
+        // Defer full refresh; keep UI responsive. User can hit manual Refresh when ready.
       } else {
         toast.error(result.message || 'Failed to complete manual setup');
       }
@@ -280,9 +316,15 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       
       if (result.success) {
         toast.success(`Account marked as invalid. Proxy and container resources freed.`);
-        // Refresh data to show updated state
-        await fetchWarmupData();
-        await refreshData();
+        // 🔄 Optimistic update: remove the invalidated account from current lists
+        setPhaseAccounts(prev => {
+          const updated: Record<string, typeof prev[keyof typeof prev]> = {} as any;
+          for (const key in prev) {
+            updated[key] = prev[key].filter(acc => acc.id !== accountId);
+          }
+          return updated;
+        });
+        // Defer full refresh to avoid jarring table reload.
       } else {
         toast.error(result.message || 'Failed to mark account as invalid');
       }
@@ -291,6 +333,145 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       toast.error(error.message || 'Failed to mark account as invalid');
     } finally {
       setMarkingInvalid(prev => ({ ...prev, [accountId]: false }));
+    }
+  };
+
+  // Handle copying text to iPhone clipboard
+  const handleCopyToIphoneClipboard = async (text: string, label: string = 'text') => {
+    try {
+      // Check if iPhone is selected
+      if (!selectedIphoneId) {
+        toast.error('❌ No iPhone selected. Please select an iPhone in settings.');
+        return;
+      }
+
+      const result = await apiClient.copyToIphoneClipboard(text, selectedIphoneId);
+
+      toast.success(`📱 ${label} copied to iPhone "${result.iphone?.name || 'Unknown'}" clipboard`);
+    } catch (error: any) {
+      console.error('Error copying to iPhone clipboard:', error);
+      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
+      const hint = error.response?.data?.hint;
+      
+      toast.error(`❌ Failed to copy ${label}: ${errorMsg}${hint ? '\n' + hint : ''}`);
+    }
+  };
+
+  // Handle switching iPhone container
+  const handleSwitchContainer = async (containerNumber: number) => {
+    if (!selectedIphoneId) {
+      toast.error('❌ No iPhone selected. Please select an iPhone in settings.', { duration: 7000 });
+      return;
+    }
+
+    if (!containerNumber || containerNumber < 1) {
+      toast.error('❌ Invalid container number', { duration: 7000 });
+      return;
+    }
+
+    const loadingToastId = toast.loading(`🔄 Switching to container #${containerNumber}...`);
+
+    try {
+      const result = await apiClient.switchContainer(containerNumber, selectedIphoneId);
+
+      toast.dismiss(loadingToastId);
+      toast.success(`✅ Switched to container #${containerNumber} on ${result.iphone}`, { duration: 7000 });
+    } catch (error: any) {
+      toast.dismiss(loadingToastId);
+      console.error('Error switching container:', error);
+      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
+      const details = error.response?.data?.details;
+      toast.error(`❌ Failed to switch container: ${errorMsg}${details ? '\n' + details : ''}`, { duration: 7000 });
+    }
+  };
+
+  // Handle email token fetching
+  const handleFetchEmailToken = async (accountId: number, email: string, emailPassword: string) => {
+    try {
+      setFetchingTokens(prev => ({ ...prev, [accountId]: true }));
+      
+      const response = await fetch('/api/automation/fetch-manual-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, email_password: emailPassword }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch token');
+      }
+
+      // Store the token for this account
+      setAccountTokens(prev => ({ ...prev, [accountId]: data.token }));
+      toast.success(`Token retrieved: ${data.token}`);
+
+      // Show the token popup
+      const account = accounts.find(acc => acc.id === accountId);
+      setShowTokenPopup({
+        accountId,
+        token: data.token,
+        username: account?.username || `Account ${accountId}`
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching email token:', error);
+      toast.error(error.message || 'Failed to fetch email token');
+    } finally {
+      setFetchingTokens(prev => ({ ...prev, [accountId]: false }));
+    }
+  };
+
+  const handleAutomationSuccess = (sessionId: string) => {
+    refreshData();
+    fetchWarmupData();
+    toast.success('Automation session completed successfully');
+  };
+
+  // Add missing handlers for invalid account actions
+  const handleReactivateAccount = async (accountId: number) => {
+    try {
+      const response = await fetch(`/api/accounts/lifecycle/${accountId}/reactivate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ changed_by: 'warmup_frontend' })
+      });
+
+      if (response.ok) {
+        toast.success('Account reactivation attempted');
+        refreshData();
+        fetchWarmupData();
+      } else {
+        toast.error('Failed to reactivate account');
+      }
+    } catch (error) {
+      console.error('Error reactivating account:', error);
+      toast.error('Error reactivating account');
+    }
+  };
+
+  const handleMarkForReplacement = async (accountId: number) => {
+    try {
+      const response = await fetch(`/api/accounts/lifecycle/${accountId}/mark-for-replacement`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ changed_by: 'warmup_frontend' })
+      });
+
+      if (response.ok) {
+        toast.success('Account marked for replacement');
+        refreshData();
+        fetchWarmupData();
+      } else {
+        toast.error('Failed to mark account for replacement');
+      }
+    } catch (error) {
+      console.error('Error marking account for replacement:', error);
+      toast.error('Error marking account for replacement');
     }
   };
 
@@ -317,9 +498,13 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         render: (value) => (
           <div className="text-center">
             {value ? (
-              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+              <button
+                onClick={() => handleSwitchContainer(value)}
+                className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 hover:bg-blue-200 text-blue-800 cursor-pointer transition-colors"
+                title={`Click to switch iPhone to container #${value}`}
+              >
                 #{value}
-              </span>
+              </button>
             ) : (
               <span className="text-gray-400 italic text-xs">Auto</span>
             )}
@@ -350,7 +535,17 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
               row.status === 'suspended' ? 'bg-yellow-500' :
               'bg-gray-500'
             }`} title={row.status} />
-            <span className="font-medium text-sm">{value}</span>
+            {phaseId === 'manual_setup' ? (
+              <button
+                onClick={() => handleCopyToIphoneClipboard(value, 'Username')}
+                className="font-medium text-sm text-blue-600 hover:text-blue-800 underline cursor-pointer transition-colors"
+                title="Click to copy username to iPhone clipboard"
+              >
+                {value}
+              </button>
+            ) : (
+              <span className="font-medium text-sm">{value}</span>
+            )}
           </div>
         )
       }
@@ -361,15 +556,120 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
 
     // Add phase-specific columns based on the phase
     switch (phaseId) {
-      case 'manual_setup':
-        // Manual setup shows all required account details
+      case 'invalid':
+        // Invalid accounts show status, issues, and recovery actions
         phaseSpecificColumns.push(
           {
-            id: 'password',
-            field: 'password',
-            header: 'Password',
-            width: 150,
+            id: 'account_status',
+            field: 'status',
+            header: 'Account Status',
+            width: 140,
             minWidth: 120,
+            resizable: true,
+            sortable: true,
+            filterable: true,
+            type: 'select',
+            align: 'left',
+            visible: true,
+            order: 3,
+            frozen: false,
+            editable: false,
+            required: false,
+            options: [
+              { value: 'banned', label: 'Banned' },
+              { value: 'suspended', label: 'Suspended' },
+              { value: 'inactive', label: 'Inactive' }
+            ],
+            render: (value) => (
+              <span className={`text-xs px-2 py-1 rounded-full ${
+                value === 'banned' ? 'bg-red-100 text-red-800' :
+                value === 'suspended' ? 'bg-yellow-100 text-yellow-800' :
+                'bg-gray-100 text-gray-700'
+              }`}>
+                {value || 'Unknown'}
+              </span>
+            )
+          },
+          {
+            id: 'lifecycle_state',
+            field: 'lifecycle_state',
+            header: 'Lifecycle State',
+            width: 140,
+            minWidth: 120,
+            resizable: true,
+            sortable: true,
+            filterable: true,
+            type: 'text',
+            align: 'left',
+            visible: true,
+            order: 4,
+            frozen: false,
+            editable: false,
+            required: false,
+            render: (value) => (
+              <span className="text-xs text-gray-600 capitalize">{value || 'Unknown'}</span>
+            )
+          },
+          {
+            id: 'invalid_actions',
+            field: 'id',
+            header: 'Recovery Actions',
+            width: 240,
+            minWidth: 200,
+            resizable: false,
+            sortable: false,
+            filterable: false,
+            type: 'custom',
+            align: 'center',
+            visible: true,
+            order: 5,
+            frozen: false,
+            editable: false,
+            required: false,
+            render: (value, row) => (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => handleReactivateAccount(row.id)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-green-50 hover:bg-green-100 text-green-700 rounded transition-colors"
+                  title="Attempt to reactivate account"
+                >
+                  <CheckCircle className="h-3 w-3" />
+                  Reactivate
+                </button>
+                <button
+                  onClick={() => handleMarkForReplacement(row.id)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 rounded transition-colors"
+                  title="Mark for replacement"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Replace
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedAccountId(row.id);
+                    setShowPhaseDetails(true);
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors"
+                  title="View account details"
+                >
+                  <Eye className="h-3 w-3" />
+                  Details
+                </button>
+              </div>
+            )
+          }
+        );
+        break;
+
+      case 'manual_setup':
+        // Manual setup shows all required account details with better visibility
+        phaseSpecificColumns.push(
+          {
+            id: 'email',
+            field: 'email',
+            header: 'Email',
+            width: 220,
+            minWidth: 180,
             resizable: true,
             sortable: false,
             filterable: false,
@@ -380,16 +680,27 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
             frozen: false,
             editable: false,
             required: false,
-            render: (value, row) => (
-              <span className="text-xs text-gray-700 font-mono">{row.account_details?.password || 'Not set'}</span>
-            )
+            render: (value, row) => {
+              const email = row.account_details?.email || row.email || 'Not set';
+              return email !== 'Not set' ? (
+                <button
+                  onClick={() => handleCopyToIphoneClipboard(email, 'Email')}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-mono underline cursor-pointer transition-colors"
+                  title="Click to copy email to iPhone clipboard"
+                >
+                  {email}
+                </button>
+              ) : (
+                <span className="text-xs text-gray-700 font-mono">{email}</span>
+              );
+            }
           },
           {
-            id: 'email',
-            field: 'email',
-            header: 'Email',
-            width: 200,
-            minWidth: 160,
+            id: 'password',
+            field: 'password',
+            header: 'Password',
+            width: 140,
+            minWidth: 120,
             resizable: true,
             sortable: false,
             filterable: false,
@@ -400,16 +711,27 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
             frozen: false,
             editable: false,
             required: false,
-            render: (value, row) => (
-              <span className="text-xs text-gray-700">{row.account_details?.email || 'Not set'}</span>
-            )
+            render: (value, row) => {
+              const password = row.account_details?.password || row.password || 'Not set';
+              return password !== 'Not set' ? (
+                <button
+                  onClick={() => handleCopyToIphoneClipboard(password, 'Password')}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-mono underline cursor-pointer transition-colors"
+                  title="Click to copy password to iPhone clipboard"
+                >
+                  {password}
+                </button>
+              ) : (
+                <span className="text-xs text-gray-700 font-mono">{password}</span>
+              );
+            }
           },
           {
             id: 'email_password',
             field: 'email_password',
             header: 'Email Password',
-            width: 160,
-            minWidth: 130,
+            width: 140,
+            minWidth: 120,
             resizable: true,
             sortable: false,
             filterable: false,
@@ -420,25 +742,63 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
             frozen: false,
             editable: false,
             required: false,
+            render: (value, row) => {
+              const emailPassword = row.account_details?.email_password || row.email_password || 'Not set';
+              return emailPassword !== 'Not set' ? (
+                <button
+                  onClick={() => handleCopyToIphoneClipboard(emailPassword, 'Email Password')}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-mono underline cursor-pointer transition-colors"
+                  title="Click to copy email password to iPhone clipboard"
+                >
+                  {emailPassword}
+                </button>
+              ) : (
+                <span className="text-xs text-gray-700 font-mono">{emailPassword}</span>
+              );
+            }
+          },
+          {
+            id: 'proxy_info',
+            field: 'proxy_host',
+            header: 'Proxy',
+            width: 150,
+            minWidth: 130,
+            resizable: true,
+            sortable: false,
+            filterable: false,
+            type: 'text',
+            align: 'left',
+            visible: true,
+            order: 6,
+            frozen: false,
+            editable: false,
+            required: false,
             render: (value, row) => (
-              <span className="text-xs text-gray-700 font-mono">{row.account_details?.email_password || 'Not set'}</span>
+              <div className="text-xs text-gray-600">
+                {row.proxy_host ? (
+                  <div>
+                    <div className="font-mono">{row.proxy_host}:{row.proxy_port}</div>
+                    <div className="text-gray-500">{row.proxy_username}</div>
+                  </div>
+                ) : (
+                  <span className="text-gray-400">No proxy</span>
+                )}
+              </div>
             )
           },
-
-
           {
             id: 'manual_setup_actions',
             field: 'id',
             header: 'Actions',
-            width: 260,
-            minWidth: 240,
+            width: 280,
+            minWidth: 260,
             resizable: false,
             sortable: false,
             filterable: false,
             type: 'custom',
             align: 'center',
             visible: true,
-            order: 6,
+            order: 7,
             frozen: false,
             editable: false,
             required: false,
@@ -446,7 +806,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => handleCompleteManualSetup(row.id)}
-                  disabled={completingManualSetup[row.id] || markingInvalid[row.id]}
+                  disabled={completingManualSetup[row.id] || markingInvalid[row.id] || fetchingTokens[row.id]}
                   className="flex items-center gap-1 px-2 py-1 text-xs bg-green-50 hover:bg-green-100 text-green-700 rounded transition-colors disabled:opacity-50"
                   title="Complete manual setup"
                 >
@@ -464,7 +824,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
                 </button>
                 <button
                   onClick={() => handleMarkInvalid(row.id)}
-                  disabled={completingManualSetup[row.id] || markingInvalid[row.id]}
+                  disabled={completingManualSetup[row.id] || markingInvalid[row.id] || fetchingTokens[row.id]}
                   className="flex items-center gap-1 px-2 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors disabled:opacity-50"
                   title="Mark account as invalid and free resources"
                 >
@@ -480,17 +840,41 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
                     </>
                   )}
                 </button>
-                <button
-                  onClick={() => {
-                    setSelectedAccountId(row.id);
-                    setShowPhaseDetails(true);
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors"
-                  title="View account details"
-                >
-                  <Eye className="h-3 w-3" />
-                  Details
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      const email = row.account_details?.email || row.email;
+                      const emailPassword = row.account_details?.email_password || row.email_password;
+                      
+                      if (!email || !emailPassword) {
+                        toast.error('Email and email password are required');
+                        return;
+                      }
+                      
+                      handleFetchEmailToken(row.id, email, emailPassword);
+                    }}
+                    disabled={completingManualSetup[row.id] || markingInvalid[row.id] || fetchingTokens[row.id]}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors disabled:opacity-50"
+                    title={accountTokens[row.id] ? `Token: ${accountTokens[row.id]}` : 'Fetch Instagram verification token from email'}
+                  >
+                    {fetchingTokens[row.id] ? (
+                      <>
+                        <div className="w-3 h-3 border border-blue-600 border-t-transparent rounded-full animate-spin" />
+                        Fetching...
+                      </>
+                    ) : (
+                      <>
+                        <Mail className="h-3 w-3" />
+                        Get Token
+                      </>
+                    )}
+                  </button>
+                  {accountTokens[row.id] && (
+                    <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 hover:opacity-100 transition-opacity pointer-events-none z-10">
+                      {accountTokens[row.id]}
+                    </div>
+                  )}
+                </div>
               </div>
             )
           }
@@ -667,6 +1051,55 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
     return [...baseColumns, ...phaseSpecificColumns, ...endColumns];
   };
 
+  // Load warmup configuration and iPhones
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        setLoadingConfig(true);
+        
+        // Load warmup config for the first model (if any accounts exist)
+        if (accounts.length > 0) {
+          const firstAccount = accounts[0];
+          if (firstAccount.model_id) {
+            const config = await apiClient.getWarmupConfig(firstAccount.model_id);
+            setWarmupConfig(config);
+          }
+        }
+
+        // Load available iPhones
+        const iphones = await apiClient.getActiveIphones();
+        setAvailableIphones(iphones);
+        
+        // Auto-select first iPhone if available
+        if (iphones.length > 0 && !selectedIphoneId) {
+          setSelectedIphoneId(iphones[0].id);
+        }
+        
+      } catch (error) {
+        console.error('Error loading configuration:', error);
+        toast.error('Failed to load warmup configuration');
+      } finally {
+        setLoadingConfig(false);
+      }
+    };
+
+    loadInitialData();
+  }, [accounts]);
+
+  // Update warmup configuration
+  const handleUpdateWarmupConfig = async (updates: any) => {
+    if (!warmupConfig?.model_id) return;
+
+    try {
+      const updatedConfig = await apiClient.updateWarmupConfig(warmupConfig.model_id, updates);
+      setWarmupConfig(updatedConfig);
+      toast.success('✅ Warmup configuration updated successfully');
+    } catch (error: any) {
+      console.error('Error updating warmup config:', error);
+      toast.error(`Failed to update configuration: ${error.response?.data?.error || error.message}`);
+    }
+  };
+
   if (accountsLoading && accounts.length === 0) {
     return (
       <div className="p-8">
@@ -696,8 +1129,9 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
 
   const totalAccounts = Object.values(phaseAccounts).reduce((sum, accounts) => sum + accounts.length, 0);
   const activeWarmupAccounts = Object.entries(phaseAccounts)
-    .filter(([phase]) => !['manual_setup', 'ready_for_assignment'].includes(phase))
+    .filter(([phase]) => !['manual_setup', 'invalid', 'ready_for_assignment'].includes(phase))
     .reduce((sum, [, accounts]) => sum + accounts.length, 0);
+  const invalidAccounts = phaseAccounts.invalid?.length || 0;
 
   return (
     <div className="p-6 h-full flex flex-col">
@@ -706,10 +1140,24 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         <div>
           <h3 className="text-lg font-medium text-gray-900">10-Phase Warmup Pipeline</h3>
           <p className="text-sm text-gray-500">
-            {totalAccounts} accounts • {activeWarmupAccounts} in active warmup phases
+            {totalAccounts} accounts • {activeWarmupAccounts} in warmup • {invalidAccounts} need attention
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowSettings(!showSettings)}
+            className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-md flex items-center gap-2 transition-colors"
+          >
+            <Settings className="h-4 w-4" />
+            Settings
+          </button>
+          <button 
+            onClick={() => setShowAutomationModal(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
+          >
+            <Play className="h-4 w-4" />
+            Setup Automation
+          </button>
           <button 
             onClick={() => {
               refreshData();
@@ -724,8 +1172,144 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         </div>
       </div>
 
-      {/* Warmup Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="bg-white rounded-lg shadow-lg border mb-6">
+          <div className="p-4 border-b border-gray-200">
+            <h4 className="text-lg font-medium text-gray-900">Warmup Configuration</h4>
+            <p className="text-sm text-gray-500">Configure cooldown settings and iPhone selection</p>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Cooldown Settings */}
+              <div className="space-y-4">
+                <h5 className="font-medium text-gray-900">Phase Cooldown Settings</h5>
+                {loadingConfig ? (
+                  <div className="animate-pulse space-y-3">
+                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                    <div className="h-8 bg-gray-200 rounded"></div>
+                    <div className="h-8 bg-gray-200 rounded"></div>
+                  </div>
+                ) : warmupConfig ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Minimum Cooldown (hours)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="168"
+                        value={warmupConfig.min_cooldown_hours || 15}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (value >= 1 && value <= 168) {
+                            handleUpdateWarmupConfig({ min_cooldown_hours: value });
+                          }
+                        }}
+                        className="form-input"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Minimum time between warmup phases (1-168 hours)
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Maximum Cooldown (hours)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="168"
+                        value={warmupConfig.max_cooldown_hours || 24}
+                        onChange={(e) => {
+                          const value = parseInt(e.target.value);
+                          if (value >= 1 && value <= 168) {
+                            handleUpdateWarmupConfig({ max_cooldown_hours: value });
+                          }
+                        }}
+                        className="form-input"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Maximum time between warmup phases (1-168 hours)
+                      </p>
+                    </div>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-sm text-blue-700">
+                        💡 Current cooldown range: {warmupConfig.min_cooldown_hours}-{warmupConfig.max_cooldown_hours} hours
+                      </p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        Each account will wait a random time within this range between phases
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500">No warmup configuration found</p>
+                    <p className="text-xs text-gray-400">Create an account with a model to set up configuration</p>
+                  </div>
+                )}
+              </div>
+
+              {/* iPhone Selection */}
+              <div className="space-y-4">
+                <h5 className="font-medium text-gray-900">iPhone Selection</h5>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    iPhone for Clipboard (Any Status)
+                  </label>
+                  {availableIphones.length > 0 ? (
+                    <div className="space-y-2">
+                      <select
+                        value={selectedIphoneId || ''}
+                        onChange={(e) => setSelectedIphoneId(e.target.value ? parseInt(e.target.value) : null)}
+                        className="form-select"
+                      >
+                        <option value="">Select an iPhone...</option>
+                        {availableIphones.map(iphone => (
+                          <option key={iphone.id} value={iphone.id}>
+                            {iphone.name} ({iphone.ip_address})
+                          </option>
+                        ))}
+                      </select>
+                      {selectedIphoneId && (
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                          {(() => {
+                            const selectedIphone = availableIphones.find(ip => ip.id === selectedIphoneId);
+                            return selectedIphone ? (
+                              <div>
+                                <p className="text-sm text-green-700 font-medium">
+                                  📱 {selectedIphone.name}
+                                </p>
+                                <p className="text-xs text-green-600">
+                                  IP: {selectedIphone.ip_address}:{selectedIphone.xxtouch_port || 46952}
+                                </p>
+                                <p className="text-xs text-green-600 mt-1">
+                                  Click username fields in manual setup to copy to this iPhone
+                                </p>
+                              </div>
+                            ) : null;
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 border-2 border-dashed border-gray-300 rounded-lg">
+                      <p className="text-gray-500">No iPhones found</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Register an iPhone in the iPhone Management section
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Enhanced Warmup Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -735,6 +1319,18 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
               </p>
             </div>
             <User className="h-8 w-8 text-blue-600" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Invalid/Banned</p>
+              <p className="text-2xl font-bold text-red-600">
+                {phaseAccounts.invalid?.length || 0}
+              </p>
+            </div>
+            <AlertCircle className="h-8 w-8 text-red-600" />
           </div>
         </div>
         
@@ -800,201 +1396,290 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         </select>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex gap-6">
-        {/* Phase Sections */}
-        <div className={`${showPhaseDetails ? 'flex-1' : 'w-full'} space-y-6 overflow-y-auto`}>
-          
-          {/* Manual Setup Phase */}
-          <div className="bg-white rounded-lg shadow">
+      {/* Main Content Area - Wall of Tables Layout */}
+      <div className={`${showPhaseDetails ? 'flex-1' : 'w-full'} space-y-6 overflow-y-auto`}>
+        
+        {/* Invalid/Banned Accounts Section */}
+        {phaseAccounts.invalid && phaseAccounts.invalid.length > 0 && (
+          <div className="bg-white rounded-lg shadow border-l-4 border-red-500">
             <div className="p-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                  <User className="h-4 w-4 text-blue-600" />
+                <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
+                  <AlertCircle className="h-4 w-4 text-red-600" />
                 </div>
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900">Phase 0: Manual Setup</h4>
-                  <p className="text-sm text-gray-500">Human container configuration and Instagram login</p>
+                  <h4 className="text-lg font-medium text-gray-900">Invalid/Banned Accounts</h4>
+                  <p className="text-sm text-gray-500">Accounts that need immediate attention</p>
                   <p className="text-xs text-gray-400 mt-1">
-                    Fields: Username, Container, Proxy Host, Complete Button
+                    Fields: Username, Container, Status, Account Issues, Recovery Actions
                   </p>
                 </div>
                 <div className="ml-auto">
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {phaseAccounts.manual_setup?.length || 0} accounts
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                    {phaseAccounts.invalid.length} accounts
                   </span>
                 </div>
               </div>
             </div>
-            {phaseAccounts.manual_setup && phaseAccounts.manual_setup.length > 0 ? (
-              <DataGrid
-                data={phaseAccounts.manual_setup}
-                columns={getPhaseColumns('manual_setup')}
-                loading={loading}
-                error={error}
-                height={200}
-                virtualScrolling={false}
-                multiSelect={true}
-                rowSelection={true}
-                keyboardNavigation={true}
-              />
-            ) : (
-              <div className="p-8 text-center text-gray-500">
-                No accounts in manual setup phase
-              </div>
-            )}
-          </div>
-
-          {/* Ready for Assignment Phase */}
-          <div className="bg-white rounded-lg shadow">
-            <div className="p-4 border-b border-gray-200">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                  <Activity className="h-4 w-4 text-green-600" />
-                </div>
-                <div>
-                  <h4 className="text-lg font-medium text-gray-900">Ready for Bot Assignment</h4>
-                  <p className="text-sm text-gray-500">Accounts ready for random phase assignment</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Fields: Username, Container, Proxy Status
-                  </p>
-                </div>
-                <div className="ml-auto">
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                    {phaseAccounts.ready_for_assignment?.length || 0} accounts
-                  </span>
-                </div>
-              </div>
-            </div>
-            {phaseAccounts.ready_for_assignment && phaseAccounts.ready_for_assignment.length > 0 ? (
-              <DataGrid
-                data={phaseAccounts.ready_for_assignment}
-                columns={getPhaseColumns('ready_for_assignment')}
-                loading={loading}
-                error={error}
-                height={200}
-                virtualScrolling={false}
-                multiSelect={true}
-                rowSelection={true}
-                keyboardNavigation={true}
-              />
-            ) : (
-              <div className="p-8 text-center text-gray-500">
-                No accounts ready for assignment
-              </div>
-            )}
-          </div>
-
-          {/* Bot Phases - Always show all phases */}
-          {WARMUP_PHASES.map((phase) => {
-            const Icon = phase.icon;
-            const phaseAccountsList = phaseAccounts[phase.id] || [];
-            
-            // Define field descriptions for each phase
-            const getFieldDescription = (phaseId: WarmupPhase) => {
-              switch (phaseId) {
-                case WarmupPhase.BIO:
-                  return 'Fields: Username, Container, Assigned Content (Bio Text), Phase Status';
-                case WarmupPhase.GENDER:
-                  return 'Fields: Username, Container, Phase Status';
-                case WarmupPhase.NAME:
-                  return 'Fields: Username, Container, Assigned Content (Name Text), Phase Status';
-                case WarmupPhase.USERNAME:
-                  return 'Fields: Username, Container, New Username, Phase Status';
-                case WarmupPhase.FIRST_HIGHLIGHT:
-                case WarmupPhase.NEW_HIGHLIGHT:
-                  return 'Fields: Username, Container, Assigned Content (Highlight Name + Image), Phase Status';
-                case WarmupPhase.POST_CAPTION:
-                case WarmupPhase.STORY_CAPTION:
-                  return 'Fields: Username, Container, Assigned Content (Caption + Image), Phase Status';
-                case WarmupPhase.POST_NO_CAPTION:
-                case WarmupPhase.STORY_NO_CAPTION:
-                  return 'Fields: Username, Container, Phase Status';
-                default:
-                  return 'Fields: Username, Container, Proxy Status';
-              }
-            };
-            
-            return (
-              <div key={phase.id} className="bg-white rounded-lg shadow">
-                <div className="p-4 border-b border-gray-200">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full bg-${phase.color}-100 flex items-center justify-center`}>
-                      <Icon className={`h-4 w-4 text-${phase.color}-600`} />
-                    </div>
-                    <div>
-                      <h4 className="text-lg font-medium text-gray-900">{phase.name}</h4>
-                      <p className="text-sm text-gray-500">
-                        {phase.description}
-                        {phase.dependency && (
-                          <span className="ml-2 text-xs text-orange-600">
-                            (Requires: {WARMUP_PHASES.find(p => p.id === phase.dependency)?.name})
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {getFieldDescription(phase.id)}
-                      </p>
-                      {phase.contentTypes.length > 0 && (
-                        <p className="text-xs text-blue-600 mt-1">
-                          Content Required: {phase.contentTypes.join(', ')}
-                        </p>
-                      )}
-                    </div>
-                    <div className="ml-auto">
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${phase.color}-100 text-${phase.color}-800`}>
-                        {phaseAccountsList.length} accounts
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                {phaseAccountsList.length > 0 ? (
-                  <DataGrid
-                    data={phaseAccountsList}
-                    columns={getPhaseColumns(phase.id)}
-                    loading={loading}
-                    error={error}
-                    height={200}
-                    virtualScrolling={false}
-                    multiSelect={true}
-                    rowSelection={true}
-                    keyboardNavigation={true}
-                  />
-                ) : (
-                  <div className="p-8 text-center text-gray-500">
-                    No accounts in {phase.name.toLowerCase()} phase
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Phase Details Panel */}
-        {showPhaseDetails && selectedAccountId && (
-          <div className="w-96 flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-lg font-medium text-gray-900">Phase Details</h4>
-              <button
-                onClick={() => {
-                  setShowPhaseDetails(false);
-                  setSelectedAccountId(null);
-                }}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex-1">
-              <WarmupPhaseTracker 
-                accountId={selectedAccountId} 
-                showTitle={false}
-                compact={true}
-              />
-            </div>
+            <DataGrid
+              data={phaseAccounts.invalid}
+              columns={getPhaseColumns('invalid')}
+              loading={loading}
+              error={error}
+              height={600}
+              virtualScrolling={false}
+              multiSelect={true}
+              rowSelection={true}
+              keyboardNavigation={true}
+            />
           </div>
         )}
+
+        {/* Manual Setup Phase */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                <User className="h-4 w-4 text-blue-600" />
+              </div>
+              <div>
+                <h4 className="text-lg font-medium text-gray-900">Phase 0: Manual Setup</h4>
+                <p className="text-sm text-gray-500">Human container configuration and Instagram login</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Fields: Username, Container, Email, Password, Complete Button
+                </p>
+              </div>
+              <div className="ml-auto">
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  {phaseAccounts.manual_setup?.length || 0} accounts
+                </span>
+              </div>
+            </div>
+          </div>
+          {phaseAccounts.manual_setup && phaseAccounts.manual_setup.length > 0 ? (
+            <DataGrid
+              data={phaseAccounts.manual_setup}
+              columns={getPhaseColumns('manual_setup')}
+              loading={loading}
+              error={error}
+              height={600}
+              virtualScrolling={false}
+              multiSelect={true}
+              rowSelection={true}
+              keyboardNavigation={true}
+            />
+          ) : (
+            <div className="p-8 text-center text-gray-500">
+              No accounts in manual setup phase
+            </div>
+          )}
+        </div>
+
+        {/* Ready for Assignment Phase */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                <Activity className="h-4 w-4 text-green-600" />
+              </div>
+              <div>
+                <h4 className="text-lg font-medium text-gray-900">Ready for Bot Assignment</h4>
+                <p className="text-sm text-gray-500">Accounts ready for random phase assignment</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Fields: Username, Container, Proxy Status, Last Action
+                </p>
+              </div>
+              <div className="ml-auto">
+                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  {phaseAccounts.ready_for_assignment?.length || 0} accounts
+                </span>
+              </div>
+            </div>
+          </div>
+          {phaseAccounts.ready_for_assignment && phaseAccounts.ready_for_assignment.length > 0 ? (
+            <DataGrid
+              data={phaseAccounts.ready_for_assignment}
+              columns={getPhaseColumns('ready_for_assignment')}
+              loading={loading}
+              error={error}
+              height={500}
+              virtualScrolling={false}
+              multiSelect={true}
+              rowSelection={true}
+              keyboardNavigation={true}
+            />
+          ) : (
+            <div className="p-8 text-center text-gray-500">
+              No accounts ready for assignment
+            </div>
+          )}
+        </div>
+
+        {/* Bot Phases - Always show all phases with improved visibility */}
+        {WARMUP_PHASES.map((phase) => {
+          const Icon = phase.icon;
+          const phaseAccountsList = phaseAccounts[phase.id] || [];
+          
+          // Define field descriptions for each phase
+          const getFieldDescription = (phaseId: WarmupPhase) => {
+            switch (phaseId) {
+              case WarmupPhase.BIO:
+                return 'Fields: Username, Container, Assigned Bio Content, Phase Status, Progress';
+              case WarmupPhase.GENDER:
+                return 'Fields: Username, Container, Phase Status, Last Action Time';
+              case WarmupPhase.NAME:
+                return 'Fields: Username, Container, Assigned Name, Phase Status, Progress';
+              case WarmupPhase.USERNAME:
+                return 'Fields: Username, Container, New Username, Phase Status, Progress';
+              case WarmupPhase.FIRST_HIGHLIGHT:
+              case WarmupPhase.NEW_HIGHLIGHT:
+                return 'Fields: Username, Container, Highlight Group + Images, Phase Status, Progress';
+              case WarmupPhase.POST_CAPTION:
+              case WarmupPhase.STORY_CAPTION:
+                return 'Fields: Username, Container, Caption + Image, Phase Status, Progress';
+              case WarmupPhase.POST_NO_CAPTION:
+              case WarmupPhase.STORY_NO_CAPTION:
+                return 'Fields: Username, Container, Image Only, Phase Status, Progress';
+              default:
+                return 'Fields: Username, Container, Proxy Status, Phase Status';
+            }
+          };
+          
+          return (
+            <div key={phase.id} className="bg-white rounded-lg shadow">
+              <div className="p-4 border-b border-gray-200">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full bg-${phase.color}-100 flex items-center justify-center`}>
+                    <Icon className={`h-4 w-4 text-${phase.color}-600`} />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900">{phase.name}</h4>
+                    <p className="text-sm text-gray-500">
+                      {phase.description}
+                      {phase.dependency && (
+                        <span className="ml-2 text-xs text-orange-600">
+                          (Requires: {WARMUP_PHASES.find(p => p.id === phase.dependency)?.name})
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {getFieldDescription(phase.id)}
+                    </p>
+                    {phase.contentTypes.length > 0 && (
+                      <p className="text-xs text-blue-600 mt-1">
+                        Content Required: {phase.contentTypes.join(', ')}
+                      </p>
+                    )}
+                  </div>
+                  <div className="ml-auto">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${phase.color}-100 text-${phase.color}-800`}>
+                      {phaseAccountsList.length} accounts
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {phaseAccountsList.length > 0 ? (
+                <DataGrid
+                  data={phaseAccountsList}
+                  columns={getPhaseColumns(phase.id)}
+                  loading={loading}
+                  error={error}
+                  height={500}
+                  virtualScrolling={false}
+                  multiSelect={true}
+                  rowSelection={true}
+                  keyboardNavigation={true}
+                />
+              ) : (
+                <div className="p-8 text-center text-gray-500">
+                  No accounts in {phase.name.toLowerCase()} phase
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
+
+      {/* Phase Details Panel */}
+      {showPhaseDetails && selectedAccountId && (
+        <div className="w-96 flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-lg font-medium text-gray-900">Phase Details</h4>
+            <button
+              onClick={() => {
+                setShowPhaseDetails(false);
+                setSelectedAccountId(null);
+              }}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex-1">
+            <WarmupPhaseTracker 
+              accountId={selectedAccountId} 
+              showTitle={false}
+              compact={true}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Automation Setup Modal */}
+      <AutomationSetupModal
+        isOpen={showAutomationModal}
+        onClose={() => setShowAutomationModal(false)}
+        onSuccess={handleAutomationSuccess}
+        modelId={modelId}
+        accounts={phaseAccounts.manual_setup || []}
+      />
+
+      {/* Token Popup Modal */}
+      {showTokenPopup && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Instagram Verification Token</h3>
+              <button
+                onClick={() => setShowTokenPopup(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="text-center">
+              <p className="text-sm text-gray-600 mb-2">
+                Token for <strong>{showTokenPopup.username}</strong>:
+              </p>
+              
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                <p className="text-3xl font-mono font-bold text-blue-900 tracking-wider">
+                  {showTokenPopup.token}
+                </p>
+              </div>
+              
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(showTokenPopup.token);
+                    toast.success('Token copied to clipboard!');
+                  }}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Copy Token
+                </button>
+                <button
+                  onClick={() => setShowTokenPopup(null)}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

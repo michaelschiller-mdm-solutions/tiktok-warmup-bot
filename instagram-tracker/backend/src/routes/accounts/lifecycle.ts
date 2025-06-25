@@ -340,4 +340,89 @@ router.get('/states', async (req: any, res: any) => {
   }
 });
 
+/**
+ * POST /api/accounts/lifecycle/:accountId/invalidate
+ * Mark an account as invalid, releasing its resources.
+ */
+router.post('/:accountId/invalidate', async (req: any, res: any) => {
+  try {
+    const { accountId } = req.params;
+    const changed_by = 'api_user'; // TODO: Get from auth context
+
+    if (!accountId || isNaN(parseInt(accountId))) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid Account ID',
+        message: 'Valid account ID is required'
+      });
+    }
+
+    const result = await AccountLifecycleService.invalidateAccount(parseInt(accountId), changed_by);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: 'Account invalidated successfully'
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Invalidation Failed',
+        message: result.error
+      });
+    }
+  } catch (error) {
+    console.error('Error invalidating account:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Failed to invalidate account'
+    });
+  }
+});
+
+/**
+ * POST /api/accounts/lifecycle/:accountId/complete-setup
+ * Mark manual setup as complete and move account to 'ready' state
+ */
+router.post('/:accountId/complete-setup', async (req: any, res: any) => {
+  try {
+    const { accountId } = req.params;
+    const { changed_by = 'automation_script' } = req.body;
+    
+    if (!accountId || isNaN(parseInt(accountId))) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid Account ID',
+        message: 'Valid account ID is required'
+      });
+    }
+
+    const result = await AccountLifecycleService.completeManualSetup(
+      parseInt(accountId),
+      changed_by
+    );
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `Account ${accountId} has been moved to the 'ready' state.`
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Setup Completion Failed',
+        message: result.error
+      });
+    }
+  } catch (error) {
+    console.error('Error completing manual setup:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal Server Error',
+      message: 'Failed to complete manual setup'
+    });
+  }
+});
+
 export default router; 

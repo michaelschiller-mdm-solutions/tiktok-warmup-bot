@@ -72,7 +72,7 @@ router.post('/check-existing', async (req: any, res: any) => {
  */
 router.post('/import', async (req: any, res: any) => {
   try {
-    const { usernames, accounts_data, model_id, batch_index, total_batches } = req.body;
+    const { usernames, accounts_data, model_id, batch_index, total_batches, order_number, import_source } = req.body;
 
     // Accept either usernames array (legacy) or accounts_data array (new)
     const accountsInput = accounts_data || usernames;
@@ -126,8 +126,19 @@ router.post('/import', async (req: any, res: any) => {
 
     console.log(`Starting import batch ${batch_index + 1}/${total_batches || 1} for model ${model_id} with ${accountsInput.length} accounts`);
 
+    // If we have accounts_data with order tracking info, enhance the accounts with that data
+    let enhancedAccounts = accountsInput;
+    if (accounts_data && (order_number || import_source)) {
+      enhancedAccounts = accountsInput.map((account: any) => ({
+        ...account,
+        order_number: order_number || account.order_number,
+        import_source: import_source || account.import_source || 'manual_upload',
+        import_batch_id: account.import_batch_id
+      }));
+    }
+
     // Import the accounts - the service now handles both string[] and AccountToImport[]
-    const result = await importService.importAccountsBatch(accountsInput, model_id);
+    const result = await importService.importAccountsBatch(enhancedAccounts, model_id);
 
     console.log(`Import batch completed:`, {
       successful: result.successful,

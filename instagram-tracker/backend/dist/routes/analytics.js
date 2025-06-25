@@ -642,5 +642,123 @@ router.get('/proxy-providers', async (req, res) => {
         });
     }
 });
+router.get('/models/:id/performance', async (req, res) => {
+    try {
+        const modelId = Number(req.params.id);
+        if (!Number.isInteger(modelId) || modelId <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid model ID',
+                message: 'Model ID must be a positive integer'
+            });
+        }
+        const { period = '30d' } = req.query;
+        let dateRange = '30 days';
+        switch (period) {
+            case '24h':
+                dateRange = '24 hours';
+                break;
+            case '7d':
+                dateRange = '7 days';
+                break;
+            case '30d':
+                dateRange = '30 days';
+                break;
+            case '90d':
+                dateRange = '90 days';
+                break;
+        }
+        const modelQuery = 'SELECT * FROM models WHERE id = $1';
+        const modelResult = await database_1.db.query(modelQuery, [modelId]);
+        if (modelResult.rowCount === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Not Found',
+                message: `Model with ID ${modelId} does not exist`
+            });
+        }
+        const model = modelResult.rows[0];
+        const followStatsQuery = `
+      SELECT 
+        COUNT(*)                                  AS total_follows,
+        COUNT(CASE WHEN status = 'following' THEN 1 END)     AS active_follows,
+        COUNT(CASE WHEN status = 'unfollowed' THEN 1 END)    AS unfollowed_follows,
+        COUNT(CASE WHEN followed_at >= NOW() - INTERVAL '24 hours' THEN 1 END) AS recent_follows,
+        AVG(
+          CASE 
+            WHEN unfollowed_at IS NOT NULL THEN EXTRACT(EPOCH FROM (unfollowed_at - followed_at)) / 86400
+            ELSE NULL
+          END
+        ) AS avg_follow_duration_days
+      FROM model_target_follows
+      WHERE model_id = $1;
+    `;
+        const followStatsResult = await database_1.db.query(followStatsQuery, [modelId]);
+        const followStatsRaw = followStatsResult.rows[0];
+        const dailyFollowRate = parseInt(followStatsRaw.recent_follows || 0);
+        const follow_stats = {
+            total_follows: parseInt(followStatsRaw.total_follows) || 0,
+            active_follows: parseInt(followStatsRaw.active_follows) || 0,
+            unfollowed_follows: parseInt(followStatsRaw.unfollowed_follows) || 0,
+            recent_follows: parseInt(followStatsRaw.recent_follows) || 0,
+            avg_follow_duration_days: parseFloat(followStatsRaw.avg_follow_duration_days) || 0,
+            daily_follow_rate: dailyFollowRate
+        };
+        const accountStatsQuery = `
+      SELECT 
+        COUNT(*)                                                   AS total_accounts,
+        COUNT(CASE WHEN status = 'active' THEN 1 END)             AS active_accounts,
+        COUNT(CASE WHEN status = 'banned' THEN 1 END)             AS banned_accounts,
+        COUNT(CASE WHEN status = 'suspended' THEN 1 END)          AS suspended_accounts,
+        MAX(last_activity)                                        AS last_account_activity
+      FROM accounts
+      WHERE model_id = $1;
+    `;
+        const accountStatsResult = await database_1.db.query(accountStatsQuery, [modelId]);
+        const accountStatsRaw = accountStatsResult.rows[0];
+        const account_stats = {
+            total_accounts: parseInt(accountStatsRaw.total_accounts) || 0,
+            active_accounts: parseInt(accountStatsRaw.active_accounts) || 0,
+            banned_accounts: parseInt(accountStatsRaw.banned_accounts) || 0,
+            suspended_accounts: parseInt(accountStatsRaw.suspended_accounts) || 0,
+            last_account_activity: accountStatsRaw.last_account_activity || null
+        };
+        const dailyActivityQuery = `
+      SELECT 
+        DATE(followed_at)                               AS activity_date,
+        COUNT(*)                                        AS follows_count,
+        COUNT(DISTINCT account_id)                      AS active_accounts
+      FROM model_target_follows
+      WHERE model_id = $1 AND followed_at >= NOW() - INTERVAL '${dateRange}'
+      GROUP BY DATE(followed_at)
+      ORDER BY activity_date DESC
+      LIMIT 90;
+    `;
+        const dailyActivityResult = await database_1.db.query(dailyActivityQuery, [modelId]);
+        const daily_activity = dailyActivityResult.rows.map((row) => ({
+            activity_date: row.activity_date,
+            follows_count: parseInt(row.follows_count),
+            active_accounts: parseInt(row.active_accounts)
+        }));
+        res.json({
+            success: true,
+            data: {
+                model,
+                follow_stats,
+                account_stats,
+                daily_activity,
+                period
+            }
+        });
+    }
+    catch (error) {
+        console.error('Model performance analytics error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: 'Failed to fetch model performance data'
+        });
+    }
+});
 exports.default = router;
 //# sourceMappingURL=analytics.js.map

@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, Fragment } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { BarChart3, Home, Package, Users, Settings, Smartphone } from 'lucide-react';
+import { BarChart3, Home, Package, Users, Settings, Smartphone, BrainCircuit } from 'lucide-react';
+import { Transition } from '@headlessui/react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -16,7 +17,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Content Registry', href: '/content', icon: Package },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },
     { name: 'iPhone Settings', href: '/iphones', icon: Smartphone },
+    { name: 'AI Settings', href: '/settings', icon: BrainCircuit },
   ];
+
+  const secondaryNavigation = [
+    // { name: 'Help', href: '#', icon: LifeBuoy },
+    // { name: 'Settings', href: '#', icon: Settings },
+  ]
 
   const isActive = (href: string) => {
     return location.pathname === href || location.pathname.startsWith(href + '/');

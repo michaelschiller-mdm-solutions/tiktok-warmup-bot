@@ -50,13 +50,17 @@ BEGIN
                 LIMIT 1;
                 
             WHEN 'username' THEN
-                -- Assign username text content
-                SELECT id INTO text_id
-                FROM central_text_content 
-                WHERE categories @> '["username"]'::jsonb 
-                  AND status = 'active'
-                ORDER BY RANDOM() 
-                LIMIT 1;
+                -- Select an available username and lock it for update
+                SELECT id INTO text_id FROM central_text_content
+                WHERE categories @> '["username"]'::jsonb AND status = 'active'
+                ORDER BY RANDOM()
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED;
+                
+                -- If a username was found, mark it as used
+                IF text_id IS NOT NULL THEN
+                    UPDATE central_text_content SET status = 'used' WHERE id = text_id;
+                END IF;
                 
             WHEN 'first_highlight', 'new_highlight' THEN
                 -- Assign highlight image

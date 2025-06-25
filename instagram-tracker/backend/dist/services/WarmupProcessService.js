@@ -142,46 +142,38 @@ class WarmupProcessService {
             };
         }
     }
-    async completeManualSetup(accountId, userId) {
+    async completeManualSetup(accountId, changedBy) {
         try {
-            const result = await database_1.db.query(`
-        UPDATE account_warmup_phases 
-        SET status = 'completed',
-            completed_at = CURRENT_TIMESTAMP,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = $1 AND phase = 'manual_setup' AND status = 'available'
-        RETURNING id
-      `, [accountId]);
-            if (result.rows.length === 0) {
+            const accountResult = await database_1.db.query('SELECT lifecycle_state FROM accounts WHERE id = $1', [accountId]);
+            if (accountResult.rows.length === 0) {
                 return {
                     success: false,
                     accountId,
-                    message: 'Manual setup phase not available or already completed',
-                    error: 'Phase not available'
+                    message: 'Account not found',
+                    error: 'ACCOUNT_NOT_FOUND'
+                };
+            }
+            const currentState = accountResult.rows[0].lifecycle_state;
+            if (currentState !== 'imported') {
+                return {
+                    success: false,
+                    accountId,
+                    message: `Account is not in 'imported' state (current: ${currentState}). Cannot complete manual setup.`,
+                    error: 'INVALID_STATE_TRANSITION'
                 };
             }
             await database_1.db.query(`
         UPDATE accounts 
-        SET lifecycle_state = 'warmup',
+        SET lifecycle_state = 'ready',
             state_changed_at = CURRENT_TIMESTAMP,
             state_changed_by = $2
         WHERE id = $1
-      `, [accountId, userId]);
-            await this.ensureContentAssigned(accountId);
-            const nextPhaseResult = await database_1.db.query(`
-        SELECT phase, available_at FROM account_warmup_phases 
-        WHERE account_id = $1 AND status = 'available' AND phase != 'manual_setup'
-        ORDER BY available_at ASC LIMIT 1
-      `, [accountId]);
-            const nextPhase = nextPhaseResult.rows.length > 0 ? nextPhaseResult.rows[0] : null;
+      `, [accountId, changedBy]);
+            await this.initializeWarmupPhases(accountId);
             return {
                 success: true,
                 accountId,
-                message: nextPhase
-                    ? `Manual setup completed. Next phase: ${nextPhase.phase} (available at ${nextPhase.available_at})`
-                    : 'Manual setup completed. Next phase will be assigned automatically.',
-                nextPhase: nextPhase?.phase,
-                phaseId: result.rows[0].id
+                message: 'Manual setup complete. Account is now ready for warmup.'
             };
         }
         catch (error) {
@@ -270,10 +262,10 @@ class WarmupProcessService {
                     contentId = highlightImageResult.rows.length > 0 ? highlightImageResult.rows[0].id : null;
                     const highlightNameResult = await database_1.db.query(`
             SELECT id FROM central_text_content 
-            WHERE categories @> '["highlight_group_name"]'::jsonb 
+            WHERE categories @> ($1)::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
-          `);
+          `, [phase === warmupProcess_1.WarmupPhase.FIRST_HIGHLIGHT ? '["highlight_group_category_name"]' : '["highlight_group_name"]']);
                     textId = highlightNameResult.rows.length > 0 ? highlightNameResult.rows[0].id : null;
                     break;
                 case warmupProcess_1.WarmupPhase.POST_CAPTION:
@@ -326,8 +318,17 @@ class WarmupProcessService {
           `);
                     contentId = storyNoCapResult.rows.length > 0 ? storyNoCapResult.rows[0].id : null;
                     break;
-                case warmupProcess_1.WarmupPhase.GENDER:
                 case warmupProcess_1.WarmupPhase.USERNAME:
+                    const usernameTextResult = await database_1.db.query(`
+            SELECT id FROM central_text_content
+            WHERE categories @> '["username"]'::jsonb
+            AND status = 'active'
+            ORDER BY RANDOM() LIMIT 1
+          `);
+                    textId = usernameTextResult.rows.length > 0 ? usernameTextResult.rows[0].id : null;
+                    break;
+                case warmupProcess_1.WarmupPhase.GENDER:
+                    break;
                 default:
                     break;
             }

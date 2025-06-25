@@ -1605,110 +1605,6 @@ router.post('/:id/complete-manual-setup', async (req: any, res: any) => {
 });
 
 /**
- * POST /api/accounts/:id/mark-invalid
- * Mark account as invalid and free up proxy/container resources
- */
-router.post('/:id/mark-invalid', async (req: any, res: any) => {
-  try {
-    const accountId = parseInt(req.params.id);
-    const { reason = 'Marked as invalid by user' } = req.body;
-
-    if (isNaN(accountId)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid account ID'
-      });
-    }
-
-    // Get current account details
-    const accountResult = await db.query(`
-      SELECT id, username, proxy_host, proxy_port, container_number, lifecycle_state
-      FROM accounts WHERE id = $1
-    `, [accountId]);
-
-    if (accountResult.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: 'Account not found'
-      });
-    }
-
-    const account = accountResult.rows[0];
-
-    // Start transaction to ensure atomicity
-    const client = await db.connect();
-    try {
-      await client.query('BEGIN');
-
-      // 1. Update account status to invalid and clear proxy/container assignments
-      await client.query(`
-        UPDATE accounts 
-        SET 
-          lifecycle_state = 'invalid',
-          status = 'inactive',
-          proxy_host = NULL,
-          proxy_port = NULL,
-          proxy_username = NULL,
-          proxy_password_encrypted = NULL,
-          proxy_provider = NULL,
-          proxy_location = NULL,
-          proxy_status = NULL,
-          container_number = NULL,
-          state_changed_at = CURRENT_TIMESTAMP,
-          state_changed_by = $2,
-          last_error_message = $3,
-          last_error_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-      `, [accountId, 'frontend-user', reason]);
-
-      // 2. Cancel any pending warmup phases
-      await client.query(`
-        UPDATE account_warmup_phases 
-        SET 
-          status = 'cancelled',
-          error_message = 'Account marked as invalid',
-          updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = $1 
-          AND status IN ('pending', 'available', 'in_progress')
-      `, [accountId]);
-
-      // 3. Log the invalidation in console for audit trail
-      console.log(`Account ${accountId} (${account.username}) marked as invalid: ${reason}`);
-
-      await client.query('COMMIT');
-
-      res.json({
-        success: true,
-        data: {
-          account_id: accountId,
-          username: account.username,
-          previous_state: account.lifecycle_state,
-          new_state: 'invalid',
-          freed_proxy: account.proxy_host ? `${account.proxy_host}:${account.proxy_port}` : null,
-          freed_container: account.container_number,
-          reason: reason
-        },
-        message: `Account ${account.username} marked as invalid. Proxy and container resources freed.`
-      });
-
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-
-  } catch (error) {
-    console.error('Error marking account as invalid:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Internal Server Error',
-      message: error instanceof Error ? error.message : 'Failed to mark account as invalid'
-    });
-  }
-});
-
-/**
  * GET /api/accounts/warmup/ready
  * Get accounts ready for warmup processing
  */
@@ -1888,6 +1784,80 @@ router.post('/:id/assign-sprint', async (req: any, res: any) => {
       success: false,
       error: 'Failed to assign sprint to account',
       message: error.message || 'Unknown error occurred'
+    });
+  }
+});
+
+/**
+ * GET /api/accounts/invalid
+ * Get all invalid accounts with order tracking information
+ */
+router.get('/invalid', async (req: any, res: any) => {
+  try {
+    const query = `
+      SELECT 
+        a.id,
+        a.username,
+        a.email,
+        a.status,
+        a.lifecycle_state,
+        a.order_number,
+        a.import_source,
+        a.import_batch_id,
+        a.imported_at,
+        a.state_changed_at,
+        a.state_changed_by,
+        a.state_notes,
+        m.name as model_name
+      FROM accounts a
+      LEFT JOIN models m ON a.model_id = m.id
+      WHERE 
+        a.lifecycle_state = 'archived' 
+        OR a.lifecycle_state = 'cleanup'
+        OR a.status IN ('banned', 'suspended')
+      ORDER BY 
+        a.order_number ASC NULLS LAST,
+        a.imported_at DESC NULLS LAST,
+        a.created_at DESC
+    `;
+
+    const result = await db.query(query);
+
+    // Group by order number for better organization
+    const groupedAccounts: Record<string, any[]> = {};
+    const ungroupedAccounts: any[] = [];
+
+    result.rows.forEach(account => {
+      if (account.order_number) {
+        if (!groupedAccounts[account.order_number]) {
+          groupedAccounts[account.order_number] = [];
+        }
+        groupedAccounts[account.order_number].push(account);
+      } else {
+        ungroupedAccounts.push(account);
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        grouped_by_order: groupedAccounts,
+        ungrouped: ungroupedAccounts,
+        total_count: result.rows.length,
+        order_summary: Object.keys(groupedAccounts).map(orderNum => ({
+          order_number: orderNum,
+          account_count: groupedAccounts[orderNum].length,
+          accounts: groupedAccounts[orderNum].map(acc => acc.username)
+        }))
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching invalid accounts:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch invalid accounts',
+      message: error.message
     });
   }
 });

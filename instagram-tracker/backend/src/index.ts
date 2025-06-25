@@ -1,4 +1,5 @@
 import express, { Express } from 'express';
+import { createServer, Server } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
@@ -26,6 +27,8 @@ import highlightGroupsRouter from './routes/highlightGroups';
 import ganttRouter from './routes/gantt';
 import maintenanceStatusRouter from './routes/maintenanceStatus';
 import botIntegrationRouter from './routes/botIntegration';
+import settingsRoutes from './routes/settings';
+import automationRouter, { setupWebSocket } from './routes/automation';
 
 // Load environment variables
 dotenv.config();
@@ -35,6 +38,7 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3090';
 
 // Initialize Express app
 const app: Express = express();
+const server: Server = createServer(app); // Create an HTTP server
 
 // Test database connection on startup
 testConnection().then(connected => {
@@ -117,6 +121,12 @@ app.use('/api/maintenance-status', maintenanceStatusRouter);
 // Bot Integration API Routes
 app.use('/api/bot-integration', botIntegrationRouter);
 
+// Settings API Routes
+app.use('/api/settings', settingsRoutes);
+
+// Automation API Routes
+app.use('/api/automation', automationRouter);
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({
@@ -149,7 +159,10 @@ async function startServer() {
     await testConnection();
     console.log('✅ Database connected successfully');
     
-    app.listen(PORT, () => {
+    // Attach WebSocket server
+    setupWebSocket(server);
+
+    server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Dashboard: http://localhost:${PORT}/health`);
       console.log(`🔗 CORS enabled for: ${CORS_ORIGIN}`);

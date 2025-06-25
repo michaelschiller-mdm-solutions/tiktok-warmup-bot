@@ -393,4 +393,64 @@ export class AccountLifecycleService {
       return [];
     }
   }
+
+  /**
+   * Invalidate an account, releasing its resources and archiving it.
+   */
+  static async invalidateAccount(accountId: number, changed_by: string = 'system'): Promise<{ success: boolean; error?: string }> {
+    const client: PoolClient = await db.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Get current state for audit logging
+      const currentStateQuery = `SELECT lifecycle_state FROM accounts WHERE id = $1`;
+      const currentStateResult = await client.query(currentStateQuery, [accountId]);
+      if (currentStateResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return { success: false, error: 'Account not found' };
+      }
+      const currentState = currentStateResult.rows[0].lifecycle_state;
+
+      // The trigger 'trigger_release_container_on_archive' will automatically handle container release.
+      // We just need to transition the state to ARCHIVED and release the proxy.
+      
+      const notes = 'Account marked as invalid; resources released.';
+      const updateStateQuery = `
+          UPDATE accounts
+          SET lifecycle_state = $1,
+              state_changed_at = CURRENT_TIMESTAMP,
+              state_changed_by = $2,
+              state_notes = $3,
+              proxy_id = NULL,
+              proxy_assigned_at = NULL
+          WHERE id = $4
+      `;
+      await client.query(updateStateQuery, [
+        AccountLifecycleState.ARCHIVED,
+        changed_by,
+        notes,
+        accountId
+      ]);
+
+      // Release any iPhone container (new device-level system)
+      await client.query('SELECT release_account_from_iphone_container($1)', [accountId]);
+
+      // Log the transition in the audit table
+      const logTransitionQuery = `
+          INSERT INTO account_state_transitions
+              (account_id, from_state, to_state, transition_reason, changed_by, notes)
+          VALUES ($1, $2, $3, 'invalidation', $4, $5)
+      `;
+      await client.query(logTransitionQuery, [accountId, currentState, AccountLifecycleState.ARCHIVED, changed_by, notes]);
+
+      await client.query('COMMIT');
+      return { success: true };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error(`Error invalidating account ${accountId}:`, error);
+      return { success: false, error: 'Failed to invalidate account' };
+    } finally {
+      client.release();
+    }
+  }
 } 
