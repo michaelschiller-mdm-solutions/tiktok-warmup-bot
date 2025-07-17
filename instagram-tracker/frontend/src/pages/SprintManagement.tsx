@@ -53,85 +53,13 @@ const SprintManagement: React.FC = () => {
 
   const loadTimelineData = async () => {
     try {
-      // Load sample data for timeline view
-      const sampleAccounts: Account[] = [
-        {
-          id: 1,
-          model_id: 1,
-          username: 'travel_enthusiast',
-          password: 'dummy_password',
-          display_name: 'Travel Enthusiast',
-          email: 'travel@example.com',
-          status: 'active',
-          device_info: {},
-          lifecycle_state: 'active',
-          state_changed_at: new Date().toISOString(),
-          location: 'paris',
-          proxy_status: 'active',
-          follow_back_rate: 85.5,
-          conversion_rate: 12.3,
-          total_follows: 150,
-          total_conversions: 18,
-          monthly_cost: 45.00,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          id: 2,
-          model_id: 1,
-          username: 'fitness_guru',
-          password: 'dummy_password',
-          display_name: 'Fitness Guru',
-          email: 'fitness@example.com',
-          status: 'active',
-          device_info: {},
-          lifecycle_state: 'active',
-          state_changed_at: new Date().toISOString(),
-          location: 'london',
-          proxy_status: 'active',
-          follow_back_rate: 78.2,
-          conversion_rate: 15.8,
-          total_follows: 200,
-          total_conversions: 32,
-          monthly_cost: 55.00,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-      ];
-
-      const sampleAssignments: SprintAssignment[] = [
-        {
-          id: 1,
-          account_id: 1,
-          sprint_id: sprints[0]?.id || 1,
-          assignment_date: new Date().toISOString(),
-          start_date: new Date().toISOString(),
-          end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'active',
-          current_content_index: 3,
-          next_content_due: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-          sprint_instance_id: 'vacation-paris-2024',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          id: 2,
-          account_id: 2,
-          sprint_id: sprints[1]?.id || 2,
-          assignment_date: new Date().toISOString(),
-          start_date: new Date().toISOString(),
-          end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'active',
-          current_content_index: 8,
-          next_content_due: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(),
-          sprint_instance_id: 'fitness-london-2024',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-      ];
-
-      setAccounts(sampleAccounts);
-      setAssignments(sampleAssignments);
+      // TODO: Replace with actual API calls when endpoints are ready
+      // const accountsResponse = await fetch('/api/accounts');
+      // const assignmentsResponse = await fetch('/api/assignments');
+      
+      // For now, set empty arrays until real API integration
+      setAccounts([]);
+      setAssignments([]);
     } catch (error) {
       console.error('Error loading timeline data:', error);
     }

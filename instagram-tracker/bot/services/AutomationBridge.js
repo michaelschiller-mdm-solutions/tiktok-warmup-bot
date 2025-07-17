@@ -590,10 +590,10 @@ class AutomationBridge extends EventEmitter {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
                 // Acquire lock with better error handling
-                const lockAcquired = await this.acquireLockWithTimeout(5000);
+                const lockAcquired = await this.acquireLockWithTimeout(10000); // Increased from 5s to 10s
                 if (!lockAcquired) {
-                    const delay = Math.min(2000 * attempt, 10000); // Exponential backoff, max 10s
-                    console.warn(`[AutomationBridge] Could not acquire lock for ${scriptName}, attempt ${attempt}. Waiting ${delay}ms...`);
+                    const delay = Math.min(3000 * attempt, 15000); // Increased base delay and max delay
+                    console.warn(`[AutomationBridge] Could not acquire lock for ${scriptName}, attempt ${attempt}/${maxRetries}. Waiting ${delay}ms...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                     continue;
                 }
@@ -634,16 +634,30 @@ class AutomationBridge extends EventEmitter {
             } catch (error) {
                 this.releaseLock();
                 lastError = error;
-                console.error(`[AutomationBridge] 💥 Attempt ${attempt} for ${scriptName} failed:`, error.message);
+                
+                // Enhanced error logging with context
+                if (error.message.includes('currently running another script')) {
+                    console.error(`[AutomationBridge] 🔄 Attempt ${attempt}/${maxRetries} for ${scriptName} failed: Script conflict detected - ${error.message}`);
+                } else if (error.message.includes('Failed to select') || error.message.includes('Failed to launch')) {
+                    console.error(`[AutomationBridge] 📱 Attempt ${attempt}/${maxRetries} for ${scriptName} failed: Device/script issue - ${error.message}`);
+                } else {
+                    console.error(`[AutomationBridge] 💥 Attempt ${attempt}/${maxRetries} for ${scriptName} failed: ${error.message}`);
+                }
                 
                 if (attempt === maxRetries) {
                     this.recordFailure();
-                    this.emit('automation_error', { scriptName, message: error.message });
+                    this.emit('automation_error', { 
+                        scriptName, 
+                        message: error.message,
+                        attempts: maxRetries,
+                        finalError: true
+                    });
                     break;
                 }
                 
                 // Intelligent retry delay based on error type
                 const retryDelay = this.calculateRetryDelay(error, attempt);
+                console.log(`[AutomationBridge] ⏰ Waiting ${retryDelay}ms before retry ${attempt + 1}/${maxRetries} for ${scriptName}`);
                 await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
         }
@@ -670,24 +684,41 @@ class AutomationBridge extends EventEmitter {
     /**
      * Ensure no script is running before starting a new one
      */
-    async ensureNoScriptRunning(maxWaitMs = 10000) {
+    async ensureNoScriptRunning(maxWaitMs = 20000) {
         const startTime = Date.now();
+        let checkCount = 0;
         
         while (Date.now() - startTime < maxWaitMs) {
-            if (!await this.isScriptRunning()) {
+            checkCount++;
+            const isRunning = await this.isScriptRunning();
+            
+            if (!isRunning) {
+                if (checkCount > 1) {
+                    console.log(`[AutomationBridge] ✅ Script finished after ${checkCount} checks`);
+                }
                 return true;
             }
             
-            console.log('[AutomationBridge] ⏳ Waiting for current script to finish...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            if (checkCount === 1 || checkCount % 5 === 0) { // Log every 5th check to reduce spam
+                console.log(`[AutomationBridge] ⏳ Waiting for current script to finish... (check ${checkCount})`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Increased from 1s to 2s intervals
         }
         
         // Force stop if still running
-        console.warn('[AutomationBridge] ⚠️ Force stopping script due to timeout');
+        console.warn(`[AutomationBridge] ⚠️ Force stopping script due to timeout after ${maxWaitMs}ms`);
         await this.stopScript();
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Increased cleanup wait
         
-        return !await this.isScriptRunning();
+        // Final check
+        const stillRunning = await this.isScriptRunning();
+        if (stillRunning) {
+            console.error('[AutomationBridge] ❌ Script still running after force stop attempt');
+            return false;
+        }
+        
+        console.log('[AutomationBridge] ✅ Script successfully stopped');
+        return true;
     }
 
     /**
@@ -823,6 +854,9 @@ class AutomationBridge extends EventEmitter {
             const clipboardScriptPath = path.join(__dirname, '..', 'scripts', 'api', 'clipboard.js');
             const baseUrl = `http://${this.config.iphoneIP}:${this.config.iphonePort}`;
             
+            console.log(`[AutomationBridge] 🔗 Using baseUrl: ${baseUrl}`);
+            console.log(`[AutomationBridge] 📁 Script path: ${clipboardScriptPath}`);
+            
             return new Promise((resolve, reject) => {
                 const process = spawn('node', [clipboardScriptPath, text, baseUrl], {
                     stdio: ['pipe', 'pipe', 'pipe']
@@ -833,13 +867,19 @@ class AutomationBridge extends EventEmitter {
                 
                 process.stdout.on('data', (data) => {
                     stdout += data.toString();
+                    console.log(`[AutomationBridge] 📋 Clipboard stdout: ${data.toString().trim()}`);
                 });
                 
                 process.stderr.on('data', (data) => {
                     stderr += data.toString();
+                    console.log(`[AutomationBridge] 📋 Clipboard stderr: ${data.toString().trim()}`);
                 });
                 
                 process.on('close', (code) => {
+                    console.log(`[AutomationBridge] 📋 Clipboard process closed with code: ${code}`);
+                    console.log(`[AutomationBridge] 📋 Full stdout: ${stdout}`);
+                    console.log(`[AutomationBridge] 📋 Full stderr: ${stderr}`);
+                    
                     if (code === 0) {
                         console.log(`[AutomationBridge] ✅ Clipboard set successfully`);
                         resolve(true);
@@ -850,8 +890,14 @@ class AutomationBridge extends EventEmitter {
                     }
                 });
                 
+                process.on('error', (error) => {
+                    console.error(`[AutomationBridge] ❌ Clipboard process error:`, error.message);
+                    resolve(false);
+                });
+                
                 // Timeout after 15 seconds
                 setTimeout(() => {
+                    console.log(`[AutomationBridge] ⏱️ Clipboard operation timed out - killing process`);
                     process.kill('SIGTERM');
                     console.error(`[AutomationBridge] ⏱️ Clipboard operation timed out`);
                     resolve(false);
@@ -1232,6 +1278,77 @@ class AutomationBridge extends EventEmitter {
                 lastHealthCheck: new Date()
             }
         };
+    }
+
+    /**
+     * Capture screenshot for verification purposes
+     * @param {string} filename - Desired filename for the screenshot
+     * @returns {Promise<Object>} Screenshot result with success status and file info
+     */
+    async captureScreenshot(filename = null) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const finalFilename = filename || `screenshot_${timestamp}.jpeg`;
+        const screenshotDir = path.join(__dirname, '..', 'screenshots');
+        const fullPath = path.join(screenshotDir, finalFilename);
+
+        try {
+            console.log(`[AutomationBridge] 📸 Capturing screenshot: ${finalFilename}`);
+            
+            // Ensure screenshots directory exists
+            if (!fs.existsSync(screenshotDir)) {
+                fs.mkdirSync(screenshotDir, { recursive: true });
+                console.log(`[AutomationBridge] 📁 Created screenshots directory: ${screenshotDir}`);
+            }
+
+            // Configure screenshot parameters for optimal quality and full screen capture
+            const screenshotParams = new URLSearchParams({
+                ext: 'jpeg',           // JPEG format for smaller file size
+                compress: '0.9',       // High quality compression
+                orient: '0'            // Portrait mode (home button at bottom)
+            });
+
+            const screenshotUrl = `${this.baseURL}/snapshot?${screenshotParams.toString()}`;
+            
+            console.log(`[AutomationBridge] 🔗 Screenshot URL: ${screenshotUrl}`);
+
+            // Make the screenshot request
+            const response = await fetch(screenshotUrl, {
+                method: 'GET',
+                timeout: 10000 // 10 second timeout
+            });
+
+            if (!response.ok) {
+                throw new Error(`Screenshot request failed: ${response.status} ${response.statusText}`);
+            }
+
+            // Get the image data as buffer
+            const imageBuffer = await response.buffer();
+            
+            if (!imageBuffer || imageBuffer.length === 0) {
+                throw new Error('Screenshot response was empty');
+            }
+
+            // Save screenshot to file
+            fs.writeFileSync(fullPath, imageBuffer);
+            
+            console.log(`[AutomationBridge] ✅ Screenshot saved successfully: ${fullPath} (${imageBuffer.length} bytes)`);
+
+            return {
+                success: true,
+                filename: finalFilename,
+                fullPath: fullPath,
+                fileSize: imageBuffer.length,
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            console.error(`[AutomationBridge] ❌ Screenshot capture failed:`, error);
+            return {
+                success: false,
+                error: error.message,
+                filename: finalFilename
+            };
+        }
     }
 }
 

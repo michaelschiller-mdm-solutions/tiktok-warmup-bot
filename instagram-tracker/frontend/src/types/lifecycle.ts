@@ -3,10 +3,12 @@
 export enum AccountLifecycleState {
   IMPORTED = 'imported',
   READY = 'ready',
+  READY_FOR_BOT_ASSIGNMENT = 'ready_for_bot_assignment',
   WARMUP = 'warmup',
   ACTIVE = 'active',
   PAUSED = 'paused',
   CLEANUP = 'cleanup',
+  MAINTENANCE = 'maintenance',
   ARCHIVED = 'archived'
 }
 
@@ -100,11 +102,13 @@ export interface AccountWithLifecycle {
 // State transition matrix - defines valid transitions
 export const VALID_TRANSITIONS: Record<AccountLifecycleState, AccountLifecycleState[]> = {
   [AccountLifecycleState.IMPORTED]: [AccountLifecycleState.READY, AccountLifecycleState.ARCHIVED],
-  [AccountLifecycleState.READY]: [AccountLifecycleState.WARMUP, AccountLifecycleState.ARCHIVED],
-  [AccountLifecycleState.WARMUP]: [AccountLifecycleState.ACTIVE, AccountLifecycleState.PAUSED, AccountLifecycleState.ARCHIVED],
+  [AccountLifecycleState.READY]: [AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT, AccountLifecycleState.WARMUP, AccountLifecycleState.ARCHIVED],
+  [AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT]: [AccountLifecycleState.WARMUP, AccountLifecycleState.ARCHIVED],
+  [AccountLifecycleState.WARMUP]: [AccountLifecycleState.MAINTENANCE, AccountLifecycleState.PAUSED, AccountLifecycleState.ARCHIVED],
   [AccountLifecycleState.ACTIVE]: [AccountLifecycleState.PAUSED, AccountLifecycleState.CLEANUP, AccountLifecycleState.ARCHIVED],
   [AccountLifecycleState.PAUSED]: [AccountLifecycleState.ACTIVE, AccountLifecycleState.CLEANUP, AccountLifecycleState.ARCHIVED],
   [AccountLifecycleState.CLEANUP]: [AccountLifecycleState.READY, AccountLifecycleState.ARCHIVED],
+  [AccountLifecycleState.MAINTENANCE]: [AccountLifecycleState.PAUSED, AccountLifecycleState.CLEANUP, AccountLifecycleState.ARCHIVED],
   [AccountLifecycleState.ARCHIVED]: [] // Terminal state
 };
 
@@ -129,6 +133,13 @@ export const STATE_CONFIG: Record<AccountLifecycleState, {
     bgColor: 'bg-blue-100',
     description: 'Account configured and ready for warmup',
     icon: 'CheckCircle'
+  },
+  [AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT]: {
+    label: 'Ready for Bot Assignment',
+    color: 'text-indigo-600',
+    bgColor: 'bg-indigo-100',
+    description: 'Account has verification code and ready for content assignment',
+    icon: 'Smartphone'
   },
   [AccountLifecycleState.WARMUP]: {
     label: 'Warmup',
@@ -157,6 +168,13 @@ export const STATE_CONFIG: Record<AccountLifecycleState, {
     bgColor: 'bg-purple-100',
     description: 'Account being prepared for reassignment',
     icon: 'RefreshCw'
+  },
+  [AccountLifecycleState.MAINTENANCE]: {
+    label: 'Maintenance',
+    color: 'text-emerald-600',
+    bgColor: 'bg-emerald-100',
+    description: 'Account completed warmup and in maintenance mode',
+    icon: 'Settings'
   },
   [AccountLifecycleState.ARCHIVED]: {
     label: 'Archived',

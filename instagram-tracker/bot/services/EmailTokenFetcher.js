@@ -3,8 +3,8 @@ const qp = require('quoted-printable');
 const utf8 = require('utf8');
 const Imap = require('imap');
 
-const POLL_INTERVAL = 5000; // 5 seconds
-const POLL_TIMEOUT = 60000; // 60 seconds
+const POLL_INTERVAL = 2000; // 2 seconds - Faster polling for quicker response
+const POLL_TIMEOUT = 30000; // 30 seconds - Shorter timeout for faster failure detection
 const INSTAGRAM_FROM_EMAIL = 'security@mail.instagram.com';
 
 class EmailTokenFetcher {
@@ -312,129 +312,119 @@ class EmailTokenFetcher {
             ...imapSettings,
             user: email,
             password: password,
-            authTimeout: 5000, // Shorter timeout for quick check
+            authTimeout: 15000, // Increased timeout for better reliability
+            connTimeout: 20000,
             tlsOptions: {
-                rejectUnauthorized: false
+                rejectUnauthorized: false,
+                servername: imapSettings.host
             }
         };
 
-        console.log(`[EmailTokenFetcher] 🔍 Quick verification check for ${email}`);
+        console.error(`[EmailTokenFetcher] 🔍 Quick verification check for ${email}`);
 
-        return new Promise((resolve) => {
-            const connection = new Imap(config);
+        try {
+            // Use imap-simple for better reliability
+            const connection = await imaps.connect({ imap: config });
+            await connection.openBox('INBOX');
 
-            const cleanup = () => {
-                try {
-                    connection.end();
-                } catch (e) {
-                    // Ignore cleanup errors
-                }
-            };
+            // Search for recent Instagram emails (last 7 days) with corrected syntax
+            const lastWeek = new Date();
+            lastWeek.setDate(lastWeek.getDate() - 7);
+            
+            const searchCriteria = [
+                ['FROM', 'security@mail.instagram.com'],
+                ['SINCE', lastWeek.toDateString()]
+            ];
 
-            const timeout = setTimeout(() => {
-                cleanup();
-                console.log(`[EmailTokenFetcher] ⏰ Quick check timeout for ${email}`);
-                resolve({ success: false, error: 'Connection timeout' });
-            }, 10000); // 10 second timeout for quick check
+            console.error(`[EmailTokenFetcher] 🔍 Searching for Instagram emails since ${lastWeek.toDateString()}`);
+            const messages = await connection.search(searchCriteria, {
+                bodies: ['HEADER.FIELDS (FROM SUBJECT DATE)', 'TEXT'],
+                markSeen: false
+            });
 
-            connection.once('ready', () => {
-                console.log(`[EmailTokenFetcher] ✅ Connected to ${email} for quick verification check`);
+            if (!messages || messages.length === 0) {
+                console.error(`[EmailTokenFetcher] 📭 No recent Instagram emails found for ${email}`);
+                connection.end();
+                return { success: true, token: null };
+            }
 
-                connection.openBox('INBOX', true, (err, box) => {
-                    if (err) {
-                        clearTimeout(timeout);
-                        cleanup();
-                        console.error(`[EmailTokenFetcher] ❌ Failed to open inbox for ${email}:`, err.message);
-                        resolve({ success: false, error: 'Failed to open inbox' });
-                        return;
+            console.error(`[EmailTokenFetcher] 📧 Found ${messages.length} recent Instagram emails for ${email}`);
+
+            // Check each message for verification token
+            for (let i = 0; i < messages.length; i++) {
+                const message = messages[i];
+                const textPart = message.parts.find(part => part.which === 'TEXT');
+                
+                if (textPart && textPart.body) {
+                    const emailBody = textPart.body;
+                    
+                    // Try to decode if it's quoted-printable
+                    let decodedBody;
+                    try {
+                        decodedBody = utf8.decode(qp.decode(emailBody));
+                    } catch (e) {
+                        decodedBody = emailBody; // Use raw body if decoding fails
                     }
-
-                    // Search for recent Instagram emails (last 24 hours)
-                    const yesterday = new Date();
-                    yesterday.setDate(yesterday.getDate() - 1);
-                    const searchCriteria = [
-                        'UNSEEN',
-                        ['FROM', 'instagram'],
-                        ['SINCE', yesterday.toDateString()]
-                    ];
-
-                    connection.search(searchCriteria, (err, results) => {
-                        if (err) {
-                            clearTimeout(timeout);
-                            cleanup();
-                            console.error(`[EmailTokenFetcher] ❌ Search error for ${email}:`, err.message);
-                            resolve({ success: false, error: 'Search failed' });
-                            return;
+                    
+                    // Multiple token detection strategies
+                    let token = null;
+                    
+                    // Strategy 1: HTML font tag pattern
+                    let tokenMatch = decodedBody.match(/<font[^>]*>(\d{6})<\/font>/);
+                    if (tokenMatch && tokenMatch[1]) {
+                        token = tokenMatch[1].trim();
+                        console.error(`[EmailTokenFetcher] ✅ Found token "${token}" using HTML font pattern`);
+                    }
+                    
+                    // Strategy 2: General HTML tag pattern
+                    if (!token) {
+                        tokenMatch = decodedBody.match(/>\s*(\d{6})\s*</);
+                        if (tokenMatch && tokenMatch[1]) {
+                            token = tokenMatch[1].trim();
+                            console.error(`[EmailTokenFetcher] ✅ Found token "${token}" using HTML tag pattern`);
                         }
-
-                        if (!results || results.length === 0) {
-                            clearTimeout(timeout);
-                            cleanup();
-                            console.log(`[EmailTokenFetcher] 📭 No recent Instagram emails found for ${email}`);
-                            resolve({ success: true, token: null });
-                            return;
+                    }
+                    
+                    // Strategy 3: Plain text 6-digit number
+                    if (!token) {
+                        tokenMatch = decodedBody.match(/\b(\d{6})\b/);
+                        if (tokenMatch && tokenMatch[0]) {
+                            token = tokenMatch[0].trim();
+                            console.error(`[EmailTokenFetcher] ✅ Found token "${token}" using plain text pattern`);
                         }
+                    }
+                    
+                    if (token) {
+                        console.error(`[EmailTokenFetcher] ✅ Successfully found existing verification token: ${token}`);
+                        connection.end();
+                        return { success: true, token };
+                    }
+                }
+            }
 
-                        console.log(`[EmailTokenFetcher] 📧 Found ${results.length} recent Instagram emails for ${email}`);
+            // No verification token found in any message
+            console.error(`[EmailTokenFetcher] 📭 No verification token found in ${messages.length} Instagram emails`);
+            connection.end();
+            return { success: true, token: null };
 
-                        // Fetch the most recent email
-                        const fetch = connection.fetch(results.slice(-1), { bodies: '' });
-                        let emailBody = '';
-
-                        fetch.on('message', (msg) => {
-                            msg.on('body', (stream) => {
-                                stream.on('data', (chunk) => {
-                                    emailBody += chunk.toString('utf8');
-                                });
-                            });
-
-                            msg.once('end', () => {
-                                // Extract verification token from email body
-                                const tokenMatch = emailBody.match(/\b\d{6}\b/);
-                                
-                                if (tokenMatch) {
-                                    const token = tokenMatch[0];
-                                    console.log(`[EmailTokenFetcher] ✅ Found existing verification token: ${token}`);
-                                    clearTimeout(timeout);
-                                    cleanup();
-                                    resolve({ success: true, token });
-                                } else {
-                                    console.log(`[EmailTokenFetcher] ❌ No verification token found in recent email`);
-                                    clearTimeout(timeout);
-                                    cleanup();
-                                    resolve({ success: true, token: null });
-                                }
-                            });
-                        });
-
-                        fetch.once('error', (err) => {
-                            clearTimeout(timeout);
-                            cleanup();
-                            console.error(`[EmailTokenFetcher] ❌ Fetch error for ${email}:`, err.message);
-                            resolve({ success: false, error: 'Failed to fetch email' });
-                        });
-
-                        fetch.once('end', () => {
-                            if (!emailBody) {
-                                clearTimeout(timeout);
-                                cleanup();
-                                console.log(`[EmailTokenFetcher] 📭 No email body found for ${email}`);
-                                resolve({ success: true, token: null });
-                            }
-                        });
-                    });
-                });
-            });
-
-            connection.once('error', (err) => {
-                clearTimeout(timeout);
-                cleanup();
-                console.error(`[EmailTokenFetcher] ❌ IMAP connection error for ${email}:`, err.message);
-                resolve({ success: false, error: `Connection failed: ${err.message}` });
-            });
-
-            connection.connect();
-        });
+        } catch (error) {
+            console.error(`[EmailTokenFetcher] ❌ Error during quick verification check for ${email}:`, error.message);
+            
+            // Determine if it's a connection/auth error (should mark invalid) or other error
+            if (error.message.includes('Invalid credentials') || 
+                error.message.includes('Authentication failed') ||
+                error.message.includes('AUTHENTICATIONFAILED') ||
+                error.message.includes('LOGIN failed') ||
+                error.code === 'ECONNREFUSED' ||
+                error.code === 'ENOTFOUND' ||
+                error.code === 'ETIMEDOUT') {
+                console.error(`[EmailTokenFetcher] 🚫 Connection/authentication error - email should be marked invalid`);
+                return { success: false, error: `Connection failed: ${error.message}` };
+            } else {
+                console.error(`[EmailTokenFetcher] ⚠️ Temporary error - account should remain unchanged`);
+                return { success: true, token: null };
+            }
+        }
     }
 }
 

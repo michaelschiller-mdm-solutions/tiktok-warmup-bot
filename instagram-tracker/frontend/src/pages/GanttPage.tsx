@@ -4,6 +4,7 @@ import type { Account } from '../types/accounts';
 import type { ContentSprint } from '../types/sprintCreation';
 import type { SprintAssignment } from '../types/assignments';
 import type { GanttFilters } from '../types/ganttChart';
+import { AccountLifecycleState } from '../types/lifecycle';
 
 export const GanttPage: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -11,210 +12,28 @@ export const GanttPage: React.FC = () => {
   const [assignments, setAssignments] = useState<SprintAssignment[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Sample data for demonstration
+  // Load real data from API
   useEffect(() => {
-    const loadSampleData = () => {
-             // Sample accounts
-       const sampleAccounts: Account[] = [
-         {
-           id: 1,
-           model_id: 1,
-           username: 'travel_enthusiast',
-           password: 'dummy_password',
-           display_name: 'Travel Enthusiast',
-           email: 'travel@example.com',
-           status: 'active',
-           device_info: {},
-           lifecycle_state: 'active',
-           state_changed_at: new Date().toISOString(),
-           location: 'paris',
-           proxy_status: 'active',
-           follow_back_rate: 85.5,
-           conversion_rate: 12.3,
-           total_follows: 150,
-           total_conversions: 18,
-           monthly_cost: 45.00,
-           created_at: new Date().toISOString(),
-           updated_at: new Date().toISOString()
-         },
-                 {
-           id: 2,
-           model_id: 1,
-           username: 'fitness_guru',
-           password: 'dummy_password',
-           display_name: 'Fitness Guru',
-           email: 'fitness@example.com',
-           status: 'active',
-           device_info: {},
-           lifecycle_state: 'active',
-           state_changed_at: new Date().toISOString(),
-           location: 'london',
-           proxy_status: 'active',
-           follow_back_rate: 78.2,
-           conversion_rate: 15.6,
-           total_follows: 230,
-           total_conversions: 36,
-           monthly_cost: 50.00,
-           created_at: new Date().toISOString(),
-           updated_at: new Date().toISOString()
-         },
-         {
-           id: 3,
-           model_id: 1,
-           username: 'food_lover',
-           password: 'dummy_password',
-           display_name: 'Food Lover',
-           email: 'food@example.com',
-           status: 'active',
-           device_info: {},
-           lifecycle_state: 'active',
-           state_changed_at: new Date().toISOString(),
-           location: 'newyork',
-           proxy_status: 'active',
-           follow_back_rate: 92.1,
-           conversion_rate: 18.4,
-           total_follows: 180,
-           total_conversions: 33,
-           monthly_cost: 40.00,
-           created_at: new Date().toISOString(),
-           updated_at: new Date().toISOString()
-         },
-         {
-           id: 4,
-           model_id: 1,
-           username: 'tech_reviewer',
-           password: 'dummy_password',
-           display_name: 'Tech Reviewer',
-           email: 'tech@example.com',
-           status: 'active',
-           device_info: {},
-           lifecycle_state: 'active',
-           state_changed_at: new Date().toISOString(),
-           location: 'tokyo',
-           proxy_status: 'active',
-           follow_back_rate: 65.8,
-           conversion_rate: 22.1,
-           total_follows: 95,
-           total_conversions: 21,
-           monthly_cost: 55.00,
-           created_at: new Date().toISOString(),
-           updated_at: new Date().toISOString()
-         }
-      ];
-
-             // Sample sprints
-       const sampleSprints: ContentSprint[] = [
-         {
-           id: 1,
-           name: 'Summer Vacation',
-           description: 'Summer vacation content in Paris',
-           sprint_type: 'vacation',
-           location: 'paris',
-           target_duration_hours: 168,
-           created_at: new Date().toISOString(),
-           updated_at: new Date().toISOString()
-         },
-         {
-           id: 2,
-           name: 'Morning Workout',
-           description: 'Daily fitness routines',
-           sprint_type: 'fitness',
-           location: 'london',
-           target_duration_hours: 720,
-           created_at: new Date().toISOString(),
-           updated_at: new Date().toISOString()
-         },
-         {
-           id: 3,
-           name: 'Home Cooking',
-           description: 'Home cooking recipes and tips',
-           sprint_type: 'lifestyle',
-           location: 'newyork',
-           target_duration_hours: 504,
-           created_at: new Date().toISOString(),
-           updated_at: new Date().toISOString()
-         },
-         {
-           id: 4,
-           name: 'Tech Reviews',
-           description: 'Latest gadget reviews',
-           sprint_type: 'work',
-           location: 'tokyo',
-           target_duration_hours: 336,
-           created_at: new Date().toISOString(),
-           updated_at: new Date().toISOString()
-         }
-      ];
-
-      // Sample assignments
-      const sampleAssignments: SprintAssignment[] = [
-        {
-          id: 1,
-          account_id: 1,
-          sprint_id: 1,
-          assignment_date: new Date().toISOString(),
-          start_date: new Date().toISOString(),
-          end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'active',
-          current_content_index: 3,
-          next_content_due: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-          sprint_instance_id: 'vacation-paris-2024',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          id: 2,
-          account_id: 2,
-          sprint_id: 2,
-          assignment_date: new Date().toISOString(),
-          start_date: new Date().toISOString(),
-          end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'active',
-          current_content_index: 8,
-          next_content_due: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString(),
-          sprint_instance_id: 'fitness-london-2024',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          id: 3,
-          account_id: 3,
-          sprint_id: 3,
-          assignment_date: new Date().toISOString(),
-          start_date: new Date().toISOString(),
-          end_date: new Date(Date.now() + 21 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'scheduled',
-          current_content_index: 0,
-          next_content_due: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-          sprint_instance_id: 'cooking-ny-2024',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          id: 4,
-          account_id: 4,
-          sprint_id: 4,
-          assignment_date: new Date().toISOString(),
-          start_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          end_date: new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'scheduled',
-          current_content_index: 0,
-          next_content_due: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000).toISOString(),
-          sprint_instance_id: 'tech-tokyo-2024',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-      ];
-
-      setAccounts(sampleAccounts);
-      setSprints(sampleSprints);
-      setAssignments(sampleAssignments);
-      setLoading(false);
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        // TODO: Replace with actual API calls when endpoints are ready
+        // const accountsResponse = await fetch('/api/accounts');
+        // const sprintsResponse = await fetch('/api/sprints');
+        // const assignmentsResponse = await fetch('/api/assignments');
+        
+        // For now, set empty arrays until real API integration
+        setAccounts([]);
+        setSprints([]);
+        setAssignments([]);
+      } catch (error) {
+        console.error('Failed to load Gantt data:', error);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    // Simulate loading delay
-    const timer = setTimeout(loadSampleData, 1000);
-    return () => clearTimeout(timer);
+    loadData();
   }, []);
 
   const defaultFilters: GanttFilters = {};

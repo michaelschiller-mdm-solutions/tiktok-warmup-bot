@@ -1,5 +1,12 @@
+/*
+ * Enhanced automation modal with improved verification flow and user experience.
+ * - Fixed 400 error when completing account setup after verification
+ * - Added sound notification when manual verification is required
+ * - Enhanced "no token" detection with script pausing and real-time UI updates
+ * - Real-time updates without needing to close/reopen modal
+ */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Play, Loader2, CheckCircle, AlertCircle, Wifi, WifiOff, User, Clock, Pause, ChevronDown } from 'lucide-react';
+import { X, Play, Loader2, CheckCircle, AlertCircle, Wifi, WifiOff, User, Clock, Pause, ChevronDown, Settings, AlertTriangle } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Account } from '../../types/accounts';
 
@@ -33,11 +40,12 @@ interface QueuedAccount {
   email: string;
   email_password?: string;
   container_number?: number;
-  status: 'queued' | 'in_progress' | 'completed' | 'failed' | 'invalid_password';
+  status: 'queued' | 'in_progress' | 'completed' | 'failed' | 'invalid_password' | 'completed_pre_verified' | 'invalid' | 'manual_completion_required';
   progress?: ProgressData;
   error?: string;
-  errorType?: 'technical' | 'password_reset_detected' | 'resource' | 'timeout' | 'no_token_found';
+  errorType?: 'technical' | 'password_reset_detected' | 'resource' | 'timeout' | 'no_token_found' | 'email_connection_failed' | 'manual_completion_required';
   invalidatedAt?: string;
+  token?: string; // For pre-verified accounts
 }
 
 interface ProgressData {
@@ -102,16 +110,33 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
   const [isPreVerifying, setIsPreVerifying] = useState(false);
   const [preVerificationResults, setPreVerificationResults] = useState<any>(null);
   
+  // 🆕 NEW: Verification configuration
+  const [requireManualVerification, setRequireManualVerification] = useState(true);
+  
+  // 🆕 NEW: Manual verification state
+  const [waitingForVerification, setWaitingForVerification] = useState<{
+    accountId: number;
+    username: string;
+    token: string;
+    screenshotPath?: string;
+    reason?: string;
+  } | null>(null);
+  
+  // Sound notification refs
+  const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
+  
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const steps = [
-    { id: 1, name: 'Pre-Email Check', description: 'Check if verification codes already exist in email' },
-    { id: 2, name: 'Selecting Container', description: 'Navigate to and select the specified container' },
-    { id: 3, name: 'Entering Username', description: 'Open Instagram and paste username/email' },
-    { id: 4, name: 'Entering Password & Login', description: 'Enter password and submit login form' },
-    { id: 5, name: 'Fetching Verification Token', description: 'Poll email for Instagram verification code' },
-    { id: 6, name: 'Entering Token & Skipping Onboarding', description: 'Enter verification code and skip onboarding' }
+    { id: 1, name: 'Selecting Container', description: 'Navigate to and select the specified container' },
+    { id: 2, name: 'Cleaning Container Data', description: 'Clean container data before opening Instagram' },
+    { id: 3, name: 'Opening Instagram', description: 'Open Instagram app' },
+    { id: 4, name: 'Pressing "Already have an account"', description: 'Navigate past create account screen' },
+    { id: 5, name: 'Entering Username', description: 'Paste username/email into login field' },
+    { id: 6, name: 'Entering Password & Login', description: 'Enter password and submit login form' },
+    { id: 7, name: 'Monitoring Email', description: 'Poll email for Instagram verification code' },
+    { id: 8, name: 'Entering Token & Skipping Onboarding', description: 'Enter verification code and skip onboarding' }
   ];
 
   useEffect(() => {
@@ -145,6 +170,22 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
       wsRef.current.onmessage = async (event) => {
         const message = JSON.parse(event.data);
 
+        // Handle session paused for verification
+        if (message.type === 'session_paused_for_verification') {
+          const verificationData = message.data;
+          setWaitingForVerification({
+            accountId: verificationData.accountId,
+            username: verificationData.username,
+            token: verificationData.token,
+            screenshotPath: verificationData.screenshotPath,
+            reason: verificationData.message,
+          });
+          setIsPaused(true);
+          playNotificationSound();
+          toast.success(`📸 ${verificationData.username} requires manual verification.`);
+          return;
+        }
+
         // Handle password reset detection - immediate account invalidation
         if (message.type === 'password_reset_detected') {
           const resetData = message.data as PasswordResetData;
@@ -156,6 +197,35 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
         if (message.type === 'account_status_change') {
           const statusData = message.data as AccountStatusChangeData;
           handleAccountStatusChange(statusData);
+          
+          // 🆕 NEW: Handle pending verification status with sound notification
+          if (statusData.status === 'pending_verification') {
+            const targetAccountId = statusData.accountId;
+            const token = (statusData as any).token || 'No token';
+            const reason = (statusData as any).reason || 'Manual verification required';
+            
+            setWaitingForVerification({
+              accountId: targetAccountId,
+              username: statusData.username,
+              token: token,
+              screenshotPath: (statusData as any).screenshotPath,
+              reason: reason
+            });
+            
+            // 🔊 Play notification sound
+            playNotificationSound();
+            
+            // Show different messages based on token availability
+            if (token === 'No token' || token === 'Unknown' || !token || token.length !== 6) {
+              toast(`🔔 ${statusData.username} automation paused - no verification token found. Please manually complete setup on device.`, { 
+                icon: '⚠️',
+                duration: 8000
+              });
+            } else {
+              toast.success(`📸 ${statusData.username} setup completed - please verify the result on device`);
+            }
+          }
+          
           return;
         }
 
@@ -168,7 +238,11 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
                 
                 if (sessionData.currentAccountIndex > index) {
                     // Account has been processed
-                    if (result?.status === 'failed') {
+                    if (result?.status === 'completed_pre_verified') {
+                        status = 'completed_pre_verified';
+                    } else if (result?.status === 'invalid') {
+                        status = 'invalid';
+                    } else if (result?.status === 'failed') {
                         status = result.errorType === 'no_token_found' ? 'failed' : result.errorType === 'password_reset_detected' ? 'invalid_password' : 'failed';
                     } else {
                         status = 'completed';
@@ -187,6 +261,7 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
                     status: status,
                     error: result?.error,
                     errorType: result?.errorType || 'technical',
+                    token: result?.token // Include token for pre-verified accounts
                 };
             });
             setAutomationQueue(newQueue);
@@ -209,31 +284,87 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
                   account.id === targetAccountId
                       ? { 
                           ...account, 
-                          status: otherData.status === 'failed' && otherData.error?.includes('password') ? 'invalid_password' : (otherData.status as QueuedAccount['status']),
+                          status: (progressData as any).status === 'completed_pre_verified' ? 'completed_pre_verified' 
+                                : (progressData as any).status === 'invalid' ? 'invalid'
+                                : otherData.status === 'failed' && otherData.error?.includes('password') ? 'invalid_password' 
+                                : (otherData.status as QueuedAccount['status']),
                           progress: progressData,
                           error: otherData.error,
-                          errorType: otherData.error?.includes('password') ? 'password_reset_detected' : 'technical'
+                          errorType: (progressData as any).errorType || (otherData.error?.includes('password') ? 'password_reset_detected' : 'technical'),
+                          token: (progressData as any).token // Include token for pre-verified accounts
                         }
                       : account
               ));
 
-              if (otherData.status === 'in_progress') {
+              // Update progress state for all step updates and when processing starts
+              if (message.type === 'step_update' || otherData.status === 'in_progress') {
                   setCurrentProcessingId(targetAccountId);
                   setProgress(progressData);
               }
 
               if (message.type === 'session_completed') {
-                  if (otherData.status === 'completed') {
+                  const sessionData = progressData as any;
+
+                  // Handle manual completion required
+                  if (sessionData.errorType === 'manual_completion_required') {
+                      toast(`⚠️ Account ${progressData.username ?? 'Account'} requires manual completion on device`, { icon: '⚠️' });
+                      setAutomationQueue(prev => prev.map(account =>
+                          account.id === targetAccountId
+                              ? { ...account, status: 'manual_completion_required' as any }
+                              : account
+                      ));
+                      return;
+                  }
+                  
+                  if (sessionData.status === 'completed_pre_verified') {
+                      toast.success(`✅ Account ${progressData.username ?? 'Account'} already had verification code - setup completed automatically!`);
                       handleAccountSetupSuccess(targetAccountId);
+                      // Mark as completed in UI
+                      setAutomationQueue(prev => prev.map(account =>
+                          account.id === targetAccountId
+                              ? { ...account, status: 'completed' }
+                              : account
+                      ));
+                  } else if (sessionData.status === 'invalid') {
+                      if (sessionData.errorType === 'email_connection_failed') {
+                          toast.error(`❌ Account ${progressData.username ?? 'Account'} marked invalid: Email connection failed`);
+                      } else {
+                          toast.error(`❌ Account ${progressData.username ?? 'Account'} marked invalid: ${sessionData.error}`);
+                      }
+                  } else if (otherData.status === 'completed') {
+                      // 🔧 FIX: Account completed successfully - handle both verification and non-verification
+                      if (sessionData.requiresManualVerification) {
+                          // 🆕 NEW: Show manual verification UI
+                          setWaitingForVerification({
+                              accountId: targetAccountId,
+                              username: progressData.username ?? 'Account',
+                              token: sessionData.token || '',
+                              screenshotPath: sessionData.screenshotPath
+                          });
+                          toast.success(`📸 Account ${progressData.username ?? 'Account'} setup completed - please verify the result`);
+                      } else {
+                          toast.success(`✅ Account ${progressData.username ?? 'Account'} setup completed successfully!`);
+                      handleAccountSetupSuccess(targetAccountId);
+                          // Mark as completed in UI immediately
+                          setAutomationQueue(prev => prev.map(account =>
+                              account.id === targetAccountId
+                                  ? { ...account, status: 'completed' }
+                                  : account
+                          ));
+                      }
                   } else if (otherData.status === 'failed') {
                       if (otherData.errorType === 'password_reset_detected' || otherData.error?.includes('password')) {
                           toast.error(`Account ${progressData.username ?? 'Account'} has incorrect password`);
                       } else if (otherData.errorType === 'no_token_found' || otherData.error?.includes('token')) {
-                          toast(`Account ${progressData.username ?? 'Account'} skipped - no verification token found`, { icon: '⚠️' });
+                          toast(`⚠️ Account ${progressData.username ?? 'Account'} skipped - no verification token found (staying in manual setup)`, { icon: '⚠️' });
                       } else {
                           toast.error(`Account ${progressData.username ?? 'Account'} setup failed: ${otherData.error}`);
                       }
                   }
+                  
+                  // 🔧 FIX: Clear currentProcessingId when session completes
+                  setCurrentProcessingId(null);
+                  setProgress(null);
               }
             }
         }
@@ -264,23 +395,55 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
 
   const handleAccountSetupSuccess = async (accountId: number) => {
     try {
-      const response = await fetch(`/api/accounts/lifecycle/${accountId}/complete-setup`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ changed_by: 'automation_frontend' })
-      });
+      // First check the current state of the account
+      const statusResponse = await fetch(`/api/accounts/${accountId}/status`);
+      if (!statusResponse.ok) {
+        toast.error(`Failed to check account ${accountId} status`);
+        return;
+      }
+      
+      const statusData = await statusResponse.json();
+      const currentState = statusData.data?.lifecycle_state;
+      
+      // If account is already in ready_for_bot_assignment state, no need to call complete-setup
+      if (currentState === 'ready_for_bot_assignment') {
+        toast.success(`Account ${accountId} is already ready for bot assignment.`);
+        return;
+      }
+      
+      // Only call complete-setup if account is in imported state
+      if (currentState === 'imported') {
+        const response = await fetch(`/api/accounts/lifecycle/${accountId}/complete-setup`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ changed_by: 'automation_frontend' })
+        });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        toast.error(`Failed to move account ${accountId} to ready state: ${errorData.message}`);
+        if (!response.ok) {
+          const errorData = await response.json();
+          toast.error(`Failed to move account ${accountId} to ready state: ${errorData.message}`);
+        } else {
+          toast.success(`Account ${accountId} moved to 'Ready for Bot Assignment'.`);
+        }
       } else {
-        toast.success(`Account ${accountId} moved to 'Ready for Bot Assignment'.`);
+        // Account is in some other state, just acknowledge the success
+        toast.success(`Account ${accountId} setup completed successfully.`);
       }
     } catch (error) {
       console.error(`Error transitioning account ${accountId}:`, error);
       toast.error(`Error transitioning account ${accountId} to ready state.`);
+    }
+  };
+
+  // Play notification sound for verification required
+  const playNotificationSound = () => {
+    if (notificationAudioRef.current) {
+      notificationAudioRef.current.currentTime = 0;
+      notificationAudioRef.current.play().catch(error => {
+        console.warn('Could not play notification sound:', error);
+      });
     }
   };
 
@@ -354,11 +517,22 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
         email_password: acc.email_password,
       }));
 
+    // 🆕 NEW: Include verification configuration in the request
+    const requestBody = {
+      accounts: payload,
+      verificationConfig: {
+        requireManualVerification,
+        skipVerification: !requireManualVerification,
+        requireScreenshot: requireManualVerification,
+        autoCompleteOnSuccess: !requireManualVerification
+      }
+    };
+
     try {
       const response = await fetch('/api/automation/start-account-setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -561,7 +735,26 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
             .then(data => {
                 if (data.hasActiveSession) {
                     toast.success('Restored active automation session.');
-                    const { status, results, accounts, currentAccountIndex } = data;
+                    // 🔧 FIX: Handle case where accounts data might not be in response
+                    const { status, results, accounts: sessionAccounts } = data;
+                    const accounts = sessionAccounts || [];
+                    const currentAccountIndex = data.currentAccountIndex || -1;
+                    
+                    // If session is paused, check if it's for verification
+                    if (status === 'paused' && currentAccountIndex > -1) {
+                      const pausedAccount = accounts[currentAccountIndex];
+                      const pausedResult = results.find((r: any) => r.accountId === pausedAccount.accountId && r.errorType === 'paused_for_verification');
+                      if (pausedAccount && pausedResult) {
+                        setWaitingForVerification({
+                          accountId: pausedAccount.accountId,
+                          username: pausedAccount.username,
+                          token: pausedResult.token || 'Unknown',
+                          screenshotPath: pausedResult.screenshotPath,
+                          reason: 'Session paused, manual verification required.',
+                        });
+                      }
+                    }
+
                     // Re-hydrate the queue
                     const restoredQueue: QueuedAccount[] = accounts.map((acc: AccountPayload, index: number) => {
                         const result = results.find((r:any) => r.accountId === acc.accountId);
@@ -587,6 +780,7 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
                     });
                     setAutomationQueue(restoredQueue);
                     setIsRunning(status === 'in_progress' || status === 'queued');
+                    setIsPaused(status === 'paused');
                 } else {
                     // Session is no longer active on server, clear it from storage
                     localStorage.removeItem('automationSessionId');
@@ -597,7 +791,6 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
                 localStorage.removeItem('automationSessionId');
                 setSessionId(null);
             });
-      }
       connectWebSocket(savedSessionId);
     } else {
       disconnectWebSocket();
@@ -606,8 +799,19 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
       setIsPaused(false);
       setAutomationQueue([]);
       setCurrentProcessingId(null);
+        setWaitingForVerification(null);
+      }
     }
   }, [isOpen]);
+
+  // Initialize notification sound
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      notificationAudioRef.current = new Audio('/voice-actions/open-inbox.mp3');
+      notificationAudioRef.current.volume = 0.7;
+      notificationAudioRef.current.preload = 'auto';
+    }
+  }, []);
 
   /*
    * Prevent disconnecting the active session when the modal is merely hidden.
@@ -687,11 +891,138 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
     }
   };
 
+  /**
+   * Handle manual completion actions from the queue UI
+   */
+  const handleManualAction = async (accountId: number, approved: boolean) => {
+    try {
+      const endpoint = approved ? 'approve' : 'reject';
+      const response = await fetch(`/api/accounts/verification/${accountId}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ verified_by: 'user', verification_notes: approved ? 'Completed manually' : 'Could not complete manually' })
+      });
+      if (response.ok) {
+        const result = await response.json();
+        toast.success(result.message);
+        if (approved) {
+          await handleAccountSetupSuccess(accountId);
+        }
+        setAutomationQueue(prev => prev.map(acc =>
+          acc.id === accountId
+            ? { ...acc, status: approved ? 'completed' : 'invalid' }
+            : acc
+        ));
+      } else {
+        const err = await response.json();
+        toast.error(`Action failed: ${err.message}`);
+      }
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
+    }
+  };
+
+  /**
+   * Handle real-time manual verification during automation
+   */
+  const handleVerificationAction = async (approved: boolean) => {
+    if (!waitingForVerification) return;
+    
+    try {
+      const endpoint = approved ? 'approve' : 'reject';
+      const response = await fetch(`/api/accounts/verification/${waitingForVerification.accountId}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          verified_by: 'user', 
+          verification_notes: approved ? 'Verified during automation' : 'Invalid during automation' 
+        })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (approved) {
+          toast.success(`✅ ${waitingForVerification.username} verified successfully! Resuming session...`);
+          await handleAccountSetupSuccess(waitingForVerification.accountId);
+          
+          // Mark as completed in UI
+          setAutomationQueue(prev => prev.map(account =>
+            account.id === waitingForVerification.accountId
+              ? { ...account, status: 'completed' }
+              : account
+          ));
+        } else {
+          toast.error(`❌ ${waitingForVerification.username} marked as invalid`);
+          
+          // Mark as invalid in UI
+          setAutomationQueue(prev => prev.map(account =>
+            account.id === waitingForVerification.accountId
+              ? { ...account, status: 'invalid', error: 'Manual verification failed' }
+              : account
+          ));
+        }
+        
+        // Find the index of the just-verified account
+        const currentIndex = automationQueue.findIndex(acc => acc.id === waitingForVerification.accountId);
+        const nextAccount = automationQueue[currentIndex + 1];
+
+        // Clear verification state
+        setWaitingForVerification(null);
+        
+        // --- KEY FIX ---
+        // Proactively set the next account as "in_progress" to avoid UI lag/desync
+        if (nextAccount) {
+          setCurrentProcessingId(nextAccount.id);
+          setAutomationQueue(prev => prev.map(acc => 
+            acc.id === nextAccount.id ? { ...acc, status: 'in_progress' } : acc
+          ));
+        } else {
+          // This was the last account
+          setCurrentProcessingId(null);
+          setIsRunning(false); // The session is over
+        }
+
+        setProgress(null);
+        setIsPaused(false); // No longer paused
+        
+        // RESUME the session on the backend
+        if (sessionId) {
+          try {
+            await fetch(`/api/automation/resume/${sessionId}`, { method: 'POST' });
+          } catch (resumeError) {
+            console.error('Failed to resume session:', resumeError);
+            toast.error('Failed to resume automation session on the backend.');
+          }
+        }
+        
+        // 🆕 Enhanced: Force UI refresh by fetching latest account states
+        try {
+          const statusResponse = await fetch(`/api/accounts/${waitingForVerification.accountId}/status`);
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            console.log('Account status after verification:', statusData.data);
+          }
+        } catch (error) {
+          console.warn('Could not refresh account status:', error);
+        }
+        
+      } else {
+        const err = await response.json();
+        toast.error(`Verification failed: ${err.message}`);
+      }
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
+    }
+  };
+
   if (!isOpen) return null;
 
   const completedCount = automationQueue.filter(account => account.status === 'completed').length;
+  const preVerifiedCount = automationQueue.filter(account => account.status === 'completed_pre_verified').length;
   const failedCount = automationQueue.filter(account => account.status === 'failed').length;
   const invalidPasswordCount = automationQueue.filter(account => account.status === 'invalid_password').length;
+  const invalidEmailCount = automationQueue.filter(account => account.status === 'invalid').length;
   const totalCount = automationQueue.length;
 
   return (
@@ -727,9 +1058,11 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
                 <h3 className="font-medium text-blue-900">Automation Queue Status</h3>
                 <div className="flex items-center space-x-4 text-sm">
                   <span className="text-green-700">{completedCount} completed</span>
+                  <span className="text-green-600">{preVerifiedCount} pre-verified</span>
                   <span className="text-red-700">{failedCount} failed</span>
                   <span className="text-orange-700">{invalidPasswordCount} invalid password</span>
-                  <span className="text-blue-700">{totalCount - completedCount - failedCount - invalidPasswordCount} remaining</span>
+                  <span className="text-red-600">{invalidEmailCount} invalid email</span>
+                  <span className="text-blue-700">{totalCount - completedCount - preVerifiedCount - failedCount - invalidPasswordCount - invalidEmailCount} remaining</span>
                 </div>
               </div>
               
@@ -737,50 +1070,101 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
               <div className="w-full bg-blue-200 rounded-full h-2 mb-3">
                 <div 
                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${totalCount > 0 ? ((completedCount + failedCount + invalidPasswordCount) / totalCount) * 100 : 0}%` }}
+                  style={{ width: `${totalCount > 0 ? ((completedCount + preVerifiedCount + failedCount + invalidPasswordCount + invalidEmailCount) / totalCount) * 100 : 0}%` }}
                 ></div>
               </div>
 
-              {/* Control Buttons */}
+              {/* Status Display */}
               {isRunning && (
                 <div className="flex items-center space-x-3">
-                  <button
-                    onClick={handlePauseResume}
-                    className={`px-3 py-1 rounded text-sm font-medium ${
-                      isPaused 
-                        ? 'bg-green-100 text-green-700 hover:bg-green-200' 
-                        : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-                    }`}
-                  >
+                  <div className="flex items-center space-x-2">
                     {isPaused ? (
                       <>
-                        <Play className="h-3 w-3 inline mr-1" />
-                        Resume
+                        <Clock className="h-4 w-4 text-yellow-600" />
+                        <span className="text-sm text-yellow-600 font-medium">Paused</span>
                       </>
                     ) : (
                       <>
-                        <Pause className="h-3 w-3 inline mr-1" />
-                        Pause
+                        <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                        <span className="text-sm text-blue-600 font-medium">Running</span>
                       </>
                     )}
-                  </button>
-                  <button
-                    onClick={handleStopAutomation}
-                    className="px-3 py-1 rounded text-sm font-medium bg-red-100 text-red-700 hover:bg-red-200"
-                  >
-                    <X className="h-3 w-3 inline mr-1" />
-                    Stop
-                  </button>
-                  {isPaused && (
-                    <span className="text-sm text-yellow-600">Queue paused</span>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
           )}
 
+          {/* Enhanced Manual Verification UI */}
+          {waitingForVerification && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                <h3 className="font-medium text-yellow-900">
+                  {waitingForVerification.token === 'No token' || !waitingForVerification.token || waitingForVerification.token.length !== 6
+                    ? '🔔 Manual Completion Required'
+                    : '📸 Manual Verification Required'}
+                </h3>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="text-sm text-yellow-800">
+                  <strong>Account:</strong> {waitingForVerification.username}<br />
+                  {waitingForVerification.token && waitingForVerification.token !== 'No token' && waitingForVerification.token.length === 6 ? (
+                    <><strong>Verification Token:</strong> <span className="font-mono bg-yellow-100 px-2 py-1 rounded">{waitingForVerification.token}</span></>
+                  ) : (
+                    <span className="text-orange-700"><strong>Status:</strong> No verification token found - automation paused</span>
+                  )}
+                  {waitingForVerification.reason && (
+                    <><br /><strong>Reason:</strong> {waitingForVerification.reason}</>
+                  )}
+                </div>
+                
+                <div className="text-sm text-yellow-700">
+                  {waitingForVerification.token === 'No token' || !waitingForVerification.token || waitingForVerification.token.length !== 6 ? (
+                    <>
+                      🔄 <strong>Automation is paused.</strong> Please check the device screen and manually complete the Instagram login process:
+                      <ul className="list-disc list-inside mt-2 space-y-1 text-xs">
+                        <li>Check if Instagram is asking for a verification code</li>
+                        <li>If so, check email for the verification code and enter it manually</li>
+                        <li>Complete the login process until you see the main Instagram feed</li>
+                        <li>Or mark as invalid if login failed</li>
+                      </ul>
+                    </>
+                  ) : (
+                    'The automation found a verification token and completed setup. Please verify the result on the device:'
+                  )}
+                </div>
+                
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleVerificationAction(true)}
+                    className="flex-1 px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium flex items-center justify-center space-x-2"
+                  >
+                    <CheckCircle className="h-5 w-5" />
+                    <span>✅ Account Setup Complete</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => handleVerificationAction(false)}
+                    className="flex-1 px-4 py-3 bg-red-600 text-white rounded-md hover:bg-red-700 font-medium flex items-center justify-center space-x-2"
+                  >
+                    <X className="h-5 w-5" />
+                    <span>❌ Account Setup Invalid</span>
+                  </button>
+                </div>
+                
+                <div className="text-xs text-yellow-600">
+                  💡 {waitingForVerification.token === 'No token' || !waitingForVerification.token || waitingForVerification.token.length !== 6
+                    ? 'Complete the Instagram setup manually on the device, then click the appropriate button above'
+                    : 'Check if the account successfully shows the main Instagram feed after automation'}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Current Progress */}
-          {progress && currentProcessingId && (
+          {progress && currentProcessingId && !waitingForVerification && (
             <div className="bg-blue-50 rounded-lg p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="font-medium text-blue-900">
@@ -864,6 +1248,68 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
               >
                 Clear Results
               </button>
+            </div>
+          )}
+
+          {/* Verification Configuration */}
+          {selectedAccountIds.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Settings className="h-5 w-5 text-blue-600" />
+                <h3 className="font-medium text-blue-900">Verification Settings</h3>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-sm text-blue-800">Manual Verification After Setup</div>
+                    <div className="text-xs text-blue-600">
+                      Choose whether to require manual verification after successful token entry
+                    </div>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={requireManualVerification}
+                      onChange={(e) => setRequireManualVerification(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {requireManualVerification ? (
+                  <div className="ml-4 space-y-2 text-sm text-blue-700">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span>Screenshot will be captured for manual review</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span>Account marked as "pending verification" until approved</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span>Helps detect shadow-banned accounts</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="ml-4 space-y-2 text-sm text-orange-700">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-orange-600" />
+                      <span>Account will be marked as completed immediately</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-orange-600" />
+                      <span>No screenshot verification will be performed</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-orange-600" />
+                      <span>Shadow-banned accounts may not be detected</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -993,6 +1439,23 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
                         <strong>Reason:</strong> {account.error}
                       </div>
                     )}
+                    {/* Manual completion buttons */}
+                    {account.status === 'manual_completion_required' && (
+                      <div className="flex items-center gap-2 px-3 py-2 bg-yellow-50 rounded">
+                        <button
+                          onClick={() => handleManualAction(account.id, true)}
+                          className="px-3 py-1 bg-green-100 text-green-700 rounded text-xs"
+                        >
+                          Completed
+                        </button>
+                        <button
+                          onClick={() => handleManualAction(account.id, false)}
+                          className="px-3 py-1 bg-red-100 text-red-700 rounded text-xs"
+                        >
+                          Cannot Complete
+                        </button>
+                      </div>
+                    )}
                   </React.Fragment>
                 ))}
               </div>
@@ -1001,13 +1464,50 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end space-x-3 p-6 border-t bg-gray-50">
+        <div className="flex items-center justify-between p-6 border-t bg-gray-50">
+          {/* Automation Controls */}
+          {isRunning && (
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handlePauseResume}
+                className={`px-4 py-2 rounded-md font-medium flex items-center space-x-2 ${
+                  isPaused 
+                    ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                    : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                }`}
+              >
+                {isPaused ? (
+                  <>
+                    <Play className="h-4 w-4" />
+                    <span>Resume Queue</span>
+                  </>
+                ) : (
+                  <>
+                    <Pause className="h-4 w-4" />
+                    <span>Pause Queue</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleStopAutomation}
+                className="px-4 py-2 rounded-md font-medium bg-red-100 text-red-700 hover:bg-red-200 flex items-center space-x-2"
+              >
+                <X className="h-4 w-4" />
+                <span>Stop Queue</span>
+              </button>
+              {isPaused && (
+                <span className="text-sm text-yellow-600 font-medium">Queue Paused</span>
+              )}
+            </div>
+          )}
+          
+          {/* Close and Action Buttons */}
+          <div className="flex items-center space-x-3">
           <button
             onClick={onClose}
-            disabled={isRunning && !isPaused}
-            className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+              className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
           >
-            {isRunning && !isPaused ? 'Running...' : 'Close'}
+              Close
           </button>
           {!isRunning && (
             <>
@@ -1038,6 +1538,7 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
               </button>
             </>
           )}
+          </div>
         </div>
       </div>
     </div>

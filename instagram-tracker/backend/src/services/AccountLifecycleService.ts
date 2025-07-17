@@ -4,10 +4,12 @@ import { PoolClient } from 'pg';
 export enum AccountLifecycleState {
   IMPORTED = 'imported',
   READY = 'ready',
+  READY_FOR_BOT_ASSIGNMENT = 'ready_for_bot_assignment',
   WARMUP = 'warmup',
   ACTIVE = 'active',
   PAUSED = 'paused',
   CLEANUP = 'cleanup',
+  MAINTENANCE = 'maintenance',
   ARCHIVED = 'archived'
 }
 
@@ -57,11 +59,13 @@ export interface BulkStateTransitionResult {
 // Valid state transitions matrix
 const VALID_TRANSITIONS: Record<AccountLifecycleState, AccountLifecycleState[]> = {
   [AccountLifecycleState.IMPORTED]: [AccountLifecycleState.READY, AccountLifecycleState.ARCHIVED],
-  [AccountLifecycleState.READY]: [AccountLifecycleState.WARMUP, AccountLifecycleState.ARCHIVED],
-  [AccountLifecycleState.WARMUP]: [AccountLifecycleState.ACTIVE, AccountLifecycleState.PAUSED, AccountLifecycleState.ARCHIVED],
+  [AccountLifecycleState.READY]: [AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT, AccountLifecycleState.WARMUP, AccountLifecycleState.ARCHIVED],
+  [AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT]: [AccountLifecycleState.WARMUP, AccountLifecycleState.ARCHIVED],
+  [AccountLifecycleState.WARMUP]: [AccountLifecycleState.MAINTENANCE, AccountLifecycleState.PAUSED, AccountLifecycleState.ARCHIVED],
   [AccountLifecycleState.ACTIVE]: [AccountLifecycleState.PAUSED, AccountLifecycleState.CLEANUP, AccountLifecycleState.ARCHIVED],
   [AccountLifecycleState.PAUSED]: [AccountLifecycleState.ACTIVE, AccountLifecycleState.CLEANUP, AccountLifecycleState.ARCHIVED],
   [AccountLifecycleState.CLEANUP]: [AccountLifecycleState.READY, AccountLifecycleState.ARCHIVED],
+  [AccountLifecycleState.MAINTENANCE]: [AccountLifecycleState.PAUSED, AccountLifecycleState.CLEANUP, AccountLifecycleState.ARCHIVED],
   [AccountLifecycleState.ARCHIVED]: [] // Terminal state
 };
 

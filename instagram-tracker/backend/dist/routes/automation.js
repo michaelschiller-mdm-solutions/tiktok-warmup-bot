@@ -43,6 +43,7 @@ const path_1 = __importDefault(require("path"));
 const uuid_1 = require("uuid");
 const ws_1 = require("ws");
 const database_1 = require("../database");
+const AccountLifecycleService_1 = require("../services/AccountLifecycleService");
 const router = express_1.default.Router();
 let wss;
 const activeSessions = new Map();
@@ -82,69 +83,207 @@ function setupWebSocket(server) {
     });
 }
 function processAccount(session, account) {
-    return new Promise((resolve, reject) => {
-        const payloadForScript = {
-            ...account,
-            sessionId: session.sessionId
-        };
-        const automationData = JSON.stringify(payloadForScript);
-        const scriptPath = path_1.default.join(process.cwd(), '../bot/scripts/api/account_setup.js');
-        console.log(`[${session.sessionId}] 🤖 Starting automation for account ${account.accountId}`);
-        const child = (0, child_process_1.spawn)('node', [scriptPath, automationData], {
-            cwd: path_1.default.join(process.cwd(), '../bot'),
-            detached: false,
-            stdio: ['pipe', 'pipe', 'pipe']
-        });
-        session.currentProcess = child;
-        child.stdout.on('data', (data) => {
-            const messageStr = data.toString();
-            messageStr.split('\\n').forEach((line) => {
-                if (line.trim()) {
-                    try {
-                        const message = JSON.parse(line);
-                        const client = sessionClients.get(session.sessionId);
-                        if (client && client.readyState === ws_1.WebSocket.OPEN) {
-                            client.send(JSON.stringify(message));
-                        }
-                    }
-                    catch (error) {
-                        console.log(`[Automation][${account.accountId}][stdout] ${line}`);
-                    }
-                }
-            });
-        });
-        child.stderr.on('data', (data) => {
-            console.error(`[Automation Error][${account.accountId}] ${data.toString()}`);
-        });
-        child.on('close', (code) => {
-            console.log(`[${session.sessionId}] ✅ Process for account ${account.accountId} exited with code ${code}`);
-            session.currentProcess = null;
-            if (code === 0) {
-                session.results.push({ accountId: account.accountId, status: 'completed' });
-            }
-            else {
-                session.results.push({ accountId: account.accountId, status: 'failed', errorCode: code });
+    return new Promise(async (resolve, reject) => {
+        try {
+            console.log(`[${session.sessionId}] 🔍 Running pre-verification for account ${account.accountId} (${account.username})`);
+            const preVerifyResult = await runPreVerification(account);
+            if (preVerifyResult.action === 'mark_invalid') {
+                console.log(`[${session.sessionId}] ❌ Account ${account.username} marked invalid due to email connection failure`);
+                session.results.push({
+                    accountId: account.accountId,
+                    status: 'invalid',
+                    error: preVerifyResult.message,
+                    errorType: 'email_connection_failed'
+                });
                 const client = sessionClients.get(session.sessionId);
-                if (client) {
+                if (client && client.readyState === ws_1.WebSocket.OPEN) {
                     client.send(JSON.stringify({
                         type: 'session_completed',
                         data: {
                             sessionId: session.sessionId,
                             accountId: account.accountId,
-                            status: 'failed',
-                            error: `Process exited with code ${code}`
+                            username: account.username,
+                            status: 'invalid',
+                            error: preVerifyResult.message,
+                            errorType: 'email_connection_failed'
                         }
                     }));
                 }
+                resolve();
+                return;
             }
+            else if (preVerifyResult.action === 'mark_ready') {
+                console.log(`[${session.sessionId}] ✅ Account ${account.username} already has verification code - ready for bot assignment`);
+                await AccountLifecycleService_1.AccountLifecycleService.transitionAccountState({
+                    account_id: account.accountId,
+                    to_state: AccountLifecycleService_1.AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT,
+                    reason: 'Pre-verification found existing token',
+                    changed_by: 'automation_system'
+                });
+                session.results.push({
+                    accountId: account.accountId,
+                    status: 'completed_pre_verified',
+                    message: preVerifyResult.message,
+                    token: preVerifyResult.token
+                });
+                const client = sessionClients.get(session.sessionId);
+                if (client && client.readyState === ws_1.WebSocket.OPEN) {
+                    client.send(JSON.stringify({
+                        type: 'session_completed',
+                        data: {
+                            sessionId: session.sessionId,
+                            accountId: account.accountId,
+                            username: account.username,
+                            status: 'completed_pre_verified',
+                            message: `Pre-verification found existing token: ${preVerifyResult.token}`,
+                            token: preVerifyResult.token
+                        }
+                    }));
+                }
+                resolve();
+                return;
+            }
+            console.log(`[${session.sessionId}] 📱 No existing verification code found for ${account.username} - proceeding with full automation`);
+            const payloadForScript = {
+                ...account,
+                sessionId: session.sessionId
+            };
+            const automationData = JSON.stringify(payloadForScript);
+            const scriptPath = path_1.default.join(process.cwd(), '../bot/scripts/api/account_setup.js');
+            console.log(`[${session.sessionId}] 🤖 Starting full automation for account ${account.accountId}`);
+            const child = (0, child_process_1.spawn)('node', [scriptPath, automationData], {
+                cwd: path_1.default.join(process.cwd(), '../bot'),
+                detached: false,
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+            session.currentProcess = child;
+            child.stdout.on('data', (data) => {
+                const messageStr = data.toString();
+                messageStr.split('\\n').forEach((line) => {
+                    if (line.trim()) {
+                        try {
+                            const message = JSON.parse(line);
+                            const client = sessionClients.get(session.sessionId);
+                            if (client && client.readyState === ws_1.WebSocket.OPEN) {
+                                client.send(JSON.stringify(message));
+                            }
+                        }
+                        catch (error) {
+                            console.log(`[Automation][${account.accountId}][stdout] ${line}`);
+                        }
+                    }
+                });
+            });
+            child.stderr.on('data', (data) => {
+                console.error(`[Automation Error][${account.accountId}] ${data.toString()}`);
+            });
+            child.on('close', (code) => {
+                console.log(`[${session.sessionId}] ✅ Process for account ${account.accountId} exited with code ${code}`);
+                session.currentProcess = null;
+                if (code === 0) {
+                    session.results.push({ accountId: account.accountId, status: 'completed' });
+                }
+                else {
+                    session.results.push({ accountId: account.accountId, status: 'failed', errorCode: code });
+                    const client = sessionClients.get(session.sessionId);
+                    if (client) {
+                        client.send(JSON.stringify({
+                            type: 'session_completed',
+                            data: {
+                                sessionId: session.sessionId,
+                                accountId: account.accountId,
+                                status: 'failed',
+                                error: `Process exited with code ${code}`
+                            }
+                        }));
+                    }
+                }
+                resolve();
+            });
+            child.on('error', (error) => {
+                console.error(`[${session.sessionId}] ❌ Failed to start process for account ${account.accountId}:`, error);
+                session.currentProcess = null;
+                session.results.push({ accountId: account.accountId, status: 'failed', error: error.message });
+                reject(error);
+            });
+        }
+        catch (error) {
+            console.error(`[${session.sessionId}] ❌ Error in pre-verification for account ${account.accountId}:`, error.message);
+            session.results.push({
+                accountId: account.accountId,
+                status: 'failed',
+                error: error.message,
+                errorType: 'pre_verification_error'
+            });
             resolve();
+        }
+    });
+}
+async function runPreVerification(account) {
+    return new Promise((resolve) => {
+        const scriptPath = path_1.default.join(process.cwd(), '../bot/scripts/api/pre_verify_email.js');
+        const accountData = {
+            id: account.accountId,
+            email: account.email,
+            email_password: account.email_password,
+            username: account.username
+        };
+        const childProcess = (0, child_process_1.spawn)('node', [scriptPath, JSON.stringify(accountData)], {
+            cwd: path_1.default.join(process.cwd(), '../bot'),
+            detached: false,
+            stdio: ['pipe', 'pipe', 'pipe']
         });
-        child.on('error', (error) => {
-            console.error(`[${session.sessionId}] ❌ Failed to start process for account ${account.accountId}:`, error);
-            session.currentProcess = null;
-            session.results.push({ accountId: account.accountId, status: 'failed', error: error.message });
-            reject(error);
+        let resultOutput = '';
+        let errorOutput = '';
+        childProcess.stdout.on('data', (data) => {
+            resultOutput += data.toString();
         });
+        childProcess.stderr.on('data', (data) => {
+            errorOutput += data.toString();
+        });
+        childProcess.on('close', (code) => {
+            try {
+                if (code === 0 && resultOutput.trim()) {
+                    const result = JSON.parse(resultOutput.trim());
+                    resolve(result);
+                }
+                else {
+                    resolve({
+                        accountId: account.accountId,
+                        success: false,
+                        message: errorOutput || 'Unknown error occurred',
+                        action: 'none'
+                    });
+                }
+            }
+            catch (parseError) {
+                resolve({
+                    accountId: account.accountId,
+                    success: false,
+                    message: 'Failed to parse verification result',
+                    action: 'none'
+                });
+            }
+        });
+        childProcess.on('error', (error) => {
+            resolve({
+                accountId: account.accountId,
+                success: false,
+                message: error.message,
+                action: 'none'
+            });
+        });
+        setTimeout(() => {
+            if (!childProcess.killed) {
+                childProcess.kill();
+                resolve({
+                    accountId: account.accountId,
+                    success: false,
+                    message: 'Pre-verification timeout',
+                    action: 'none'
+                });
+            }
+        }, 15000);
     });
 }
 async function runSession(session) {
@@ -754,5 +893,261 @@ router.post('/pre-verify-email', async (req, res) => {
         });
     }
 });
+router.post('/assign-content-ready-accounts', async (req, res) => {
+    try {
+        console.log('[Content Assignment] Starting content assignment for ready accounts');
+        const accounts = await AccountLifecycleService_1.AccountLifecycleService.getAccountsByState(AccountLifecycleService_1.AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT, 1000, 0);
+        if (accounts.length === 0) {
+            return res.json({
+                success: true,
+                message: 'No accounts found in ready for bot assignment state',
+                processed: 0
+            });
+        }
+        console.log(`[Content Assignment] Found ${accounts.length} accounts ready for bot assignment`);
+        const results = [];
+        let processed = 0;
+        let failed = 0;
+        for (const account of accounts) {
+            try {
+                console.log(`[Content Assignment] Processing account ${account.id} (${account.username})`);
+                await setAccountPrivate(account.container_number);
+                await assignContentToAccount(account.id, account.model_id);
+                await AccountLifecycleService_1.AccountLifecycleService.transitionAccountState({
+                    account_id: account.id,
+                    to_state: AccountLifecycleService_1.AccountLifecycleState.WARMUP,
+                    reason: 'Content assigned, ready for warmup phases',
+                    changed_by: 'content_assignment_system'
+                });
+                await initializeWarmupPhasesWithContent(account.id);
+                results.push({
+                    accountId: account.id,
+                    username: account.username,
+                    status: 'success',
+                    message: 'Content assigned and warmup initialized'
+                });
+                processed++;
+                console.log(`[Content Assignment] ✅ Successfully processed account ${account.id}`);
+            }
+            catch (error) {
+                console.error(`[Content Assignment] ❌ Failed to process account ${account.id}:`, error.message);
+                results.push({
+                    accountId: account.id,
+                    username: account.username,
+                    status: 'failed',
+                    error: error.message
+                });
+                failed++;
+            }
+        }
+        console.log(`[Content Assignment] Completed: ${processed} successful, ${failed} failed`);
+        res.json({
+            success: true,
+            message: `Content assignment completed: ${processed} successful, ${failed} failed`,
+            processed,
+            failed,
+            results
+        });
+    }
+    catch (error) {
+        console.error('[Content Assignment] Error during bulk content assignment:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to assign content to ready accounts',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+async function setAccountPrivate(containerNumber) {
+    return new Promise((resolve, reject) => {
+        const scriptPath = path_1.default.join(process.cwd(), '../bot/scripts/api/lua_executor.js');
+        const commands = [
+            {
+                script: 'open_settings.lua',
+                description: 'Open container settings'
+            },
+            {
+                script: 'scroll_to_top_container.lua',
+                description: 'Scroll to top of container list'
+            },
+            {
+                script: `select_container_${containerNumber}.lua`,
+                description: `Select container ${containerNumber}`
+            },
+            {
+                script: 'set_account_private.lua',
+                description: 'Set account to private'
+            }
+        ];
+        let currentCommand = 0;
+        function executeNextCommand() {
+            if (currentCommand >= commands.length) {
+                resolve();
+                return;
+            }
+            const command = commands[currentCommand];
+            console.log(`[Set Private] Executing: ${command.description}`);
+            const childProcess = (0, child_process_1.spawn)('node', [scriptPath, command.script], {
+                cwd: path_1.default.join(process.cwd(), '../bot'),
+                detached: false,
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+            let output = '';
+            let errorOutput = '';
+            childProcess.stdout.on('data', (data) => {
+                output += data.toString();
+            });
+            childProcess.stderr.on('data', (data) => {
+                errorOutput += data.toString();
+            });
+            childProcess.on('close', (code) => {
+                if (code === 0) {
+                    console.log(`[Set Private] ✅ ${command.description} completed`);
+                    currentCommand++;
+                    setTimeout(executeNextCommand, 2000);
+                }
+                else {
+                    console.error(`[Set Private] ❌ ${command.description} failed with code ${code}`);
+                    reject(new Error(`Failed to execute ${command.description}: ${errorOutput}`));
+                }
+            });
+            childProcess.on('error', (error) => {
+                reject(new Error(`Failed to start ${command.description}: ${error.message}`));
+            });
+        }
+        executeNextCommand();
+    });
+}
+async function assignContentToAccount(accountId, modelId) {
+    const bundleQuery = `
+    SELECT DISTINCT cb.id as bundle_id, cb.name
+    FROM content_bundles cb
+    JOIN model_bundle_assignments mba ON cb.id = mba.bundle_id
+    WHERE mba.model_id = $1 AND cb.status = 'active'
+  `;
+    const bundleResult = await database_1.db.query(bundleQuery, [modelId]);
+    if (bundleResult.rows.length === 0) {
+        throw new Error(`No content bundles assigned to model ${modelId}`);
+    }
+    console.log(`[Content Assignment] Found ${bundleResult.rows.length} content bundles for model ${modelId}`);
+    const bundleIds = bundleResult.rows.map(row => row.bundle_id);
+    const modelQuery = `SELECT name FROM models WHERE id = $1`;
+    const modelResult = await database_1.db.query(modelQuery, [modelId]);
+    const modelName = modelResult.rows[0]?.name || 'Model';
+    const phaseContentRules = {
+        'bio': { textCategories: ['bio'], required: 'text_only' },
+        'gender': { required: 'none' },
+        'name': { text: modelName, required: 'fixed_text' },
+        'username': { textCategories: ['username'], required: 'text_only' },
+        'first_highlight': {
+            imageCategories: ['highlight'],
+            textCategories: ['me'],
+            required: 'image_and_text'
+        },
+        'new_highlight': {
+            imageCategories: ['highlight'],
+            textCategories: ['highlight_group_name'],
+            required: 'image_and_text'
+        },
+        'post_caption': {
+            imageCategories: ['post'],
+            textCategories: ['post'],
+            required: 'image_and_text'
+        },
+        'post_no_caption': {
+            imageCategories: ['post'],
+            required: 'image_only'
+        },
+        'story_caption': {
+            imageCategories: ['story'],
+            textCategories: ['story'],
+            required: 'image_and_text'
+        },
+        'story_no_caption': {
+            imageCategories: ['story'],
+            required: 'image_only'
+        }
+    };
+    for (const [phase, rules] of Object.entries(phaseContentRules)) {
+        if (rules.required === 'none')
+            continue;
+        console.log(`[Content Assignment] Assigning content for phase: ${phase}`);
+        let imageContentId = null;
+        let textContentId = null;
+        let textContent = null;
+        if (rules.required === 'fixed_text') {
+            textContent = rules.text;
+        }
+        else if (phase === 'first_highlight') {
+            textContent = 'Me';
+        }
+        if (rules.imageCategories && (rules.required === 'image_only' || rules.required === 'image_and_text')) {
+            const imageQuery = `
+        SELECT DISTINCT cc.id
+        FROM central_content cc
+        JOIN bundle_content_assignments bca ON cc.id = bca.content_id
+        WHERE bca.bundle_id = ANY($1)
+          AND cc.status = 'active'
+          AND cc.content_type = 'image'
+          AND cc.categories ?| $2
+        ORDER BY RANDOM()
+        LIMIT 1
+      `;
+            const imageResult = await database_1.db.query(imageQuery, [bundleIds, rules.imageCategories]);
+            if (imageResult.rows.length > 0) {
+                imageContentId = imageResult.rows[0].id;
+            }
+        }
+        if (rules.textCategories && rules.required === 'text_only') {
+            const textQuery = `
+        SELECT DISTINCT ctc.id, ctc.text_content
+        FROM central_text_content ctc
+        JOIN bundle_content_assignments bca ON ctc.id = bca.text_content_id
+        WHERE bca.bundle_id = ANY($1)
+          AND ctc.status = 'active'
+          AND ctc.categories ?| $2
+        ORDER BY RANDOM()
+        LIMIT 1
+      `;
+            const textResult = await database_1.db.query(textQuery, [bundleIds, rules.textCategories]);
+            if (textResult.rows.length > 0) {
+                textContentId = textResult.rows[0].id;
+                textContent = textResult.rows[0].text_content;
+            }
+        }
+        else if (rules.textCategories && rules.required === 'image_and_text' && !textContent) {
+            const textQuery = `
+        SELECT DISTINCT ctc.id, ctc.text_content
+        FROM central_text_content ctc
+        JOIN bundle_content_assignments bca ON ctc.id = bca.text_content_id
+        WHERE bca.bundle_id = ANY($1)
+          AND ctc.status = 'active'
+          AND ctc.categories ?| $2
+        ORDER BY RANDOM()
+        LIMIT 1
+      `;
+            const textResult = await database_1.db.query(textQuery, [bundleIds, rules.textCategories]);
+            if (textResult.rows.length > 0) {
+                textContentId = textResult.rows[0].id;
+                textContent = textResult.rows[0].text_content;
+            }
+        }
+        const updatePhaseQuery = `
+      UPDATE account_warmup_phases 
+      SET 
+        assigned_content_id = $2,
+        assigned_text_id = $3,
+        content_assigned_at = CURRENT_TIMESTAMP
+      WHERE account_id = $1 AND phase = $4
+    `;
+        await database_1.db.query(updatePhaseQuery, [accountId, imageContentId, textContentId, phase]);
+        console.log(`[Content Assignment] ✅ Assigned content for ${phase}: image=${imageContentId}, text=${textContentId}`);
+    }
+}
+async function initializeWarmupPhasesWithContent(accountId) {
+    const initQuery = `SELECT initialize_warmup_phases($1)`;
+    await database_1.db.query(initQuery, [accountId]);
+    console.log(`[Content Assignment] ✅ Warmup phases initialized for account ${accountId}`);
+}
 exports.default = router;
 //# sourceMappingURL=automation.js.map

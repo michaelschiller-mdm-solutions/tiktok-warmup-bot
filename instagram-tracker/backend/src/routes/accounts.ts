@@ -1,11 +1,15 @@
 import express from 'express';
 import { db } from '../database';
 import lifecycleRouter from './accounts/lifecycle';
+import verificationRouter from './accounts/verification';
 
 const router = express.Router();
 
 // Mount lifecycle routes
 router.use('/lifecycle', lifecycleRouter);
+
+// Mount verification routes
+router.use('/verification', verificationRouter);
 
 /**
  * GET /api/accounts/statistics

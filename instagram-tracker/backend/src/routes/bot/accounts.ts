@@ -1131,7 +1131,7 @@ function getPhaseInstructions(phase: WarmupPhase): string {
   const instructions = {
     [WarmupPhase.MANUAL_SETUP]: 'Complete manual account setup. Set up proxy, verify login, and prepare for automated warmup.',
     [WarmupPhase.BIO]: 'Update bio using the assigned text. Keep it natural and avoid spam-like content.',
-    [WarmupPhase.SET_TO_PRIVATE]: 'Set the Instagram account to private in account settings. No content assignment needed.',
+    // SET_TO_PRIVATE removed - accounts are set to private after warmup completion
     [WarmupPhase.GENDER]: 'Update gender to female in account settings. No content assignment needed.',
     [WarmupPhase.NAME]: 'Update display name using the assigned text. Choose a natural-sounding name.',
     [WarmupPhase.USERNAME]: 'Update username. IMPORTANT: Update database after successful change.',

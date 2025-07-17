@@ -6,8 +6,10 @@ import {
   Play, 
   Pause, 
   RefreshCw, 
-  Archive,
-  LucideIcon
+  Archive, 
+  Smartphone,
+  Settings,
+  LucideIcon 
 } from 'lucide-react';
 import { AccountLifecycleState, getStateConfig } from '../../types/lifecycle';
 
@@ -22,10 +24,12 @@ interface StateIndicatorProps {
 const STATE_ICONS: Record<AccountLifecycleState, LucideIcon> = {
   [AccountLifecycleState.IMPORTED]: Upload,
   [AccountLifecycleState.READY]: CheckCircle,
+  [AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT]: Smartphone,
   [AccountLifecycleState.WARMUP]: Clock,
   [AccountLifecycleState.ACTIVE]: Play,
   [AccountLifecycleState.PAUSED]: Pause,
   [AccountLifecycleState.CLEANUP]: RefreshCw,
+  [AccountLifecycleState.MAINTENANCE]: Settings,
   [AccountLifecycleState.ARCHIVED]: Archive,
 };
 

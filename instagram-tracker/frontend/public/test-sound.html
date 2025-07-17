@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sound Notification Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #3B82F6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+        }
+        button:hover {
+            background: #2563EB;
+        }
+        .alert {
+            background: #FEF3C7;
+            border: 1px solid #F59E0B;
+            color: #92400E;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🔊 Sound Notification Test</h1>
+        <p>Test the sound notification that plays when manual verification is required during automation.</p>
+        
+        <div class="alert">
+            <strong>Note:</strong> Some browsers require user interaction before playing audio. Click the test button below to verify the sound works.
+        </div>
+        
+        <button onclick="testSound()">🔔 Test Verification Sound</button>
+        <button onclick="testAllSounds()">🎵 Test All Available Sounds</button>
+        
+        <div id="status" style="margin-top: 20px; padding: 10px; border-radius: 6px;"></div>
+        
+        <h3>Available Sound Files:</h3>
+        <ul>
+            <li>open-inbox.mp3 (Used for verification notifications)</li>
+            <li>open-profile.mp3</li>
+            <li>like-post.mp3</li>
+            <li>save-post.mp3</li>
+            <li>open-comments.mp3</li>
+            <li>open-shop.mp3</li>
+            <li>swipe-next.mp3</li>
+            <li>swipe-previous.mp3</li>
+        </ul>
+    </div>
+
+    <script>
+        let audio = null;
+        
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.style.backgroundColor = type === 'success' ? '#D1FAE5' : type === 'error' ? '#FEE2E2' : '#DBEAFE';
+            statusDiv.style.color = type === 'success' ? '#065F46' : type === 'error' ? '#991B1B' : '#1E40AF';
+        }
+        
+        function testSound() {
+            try {
+                showStatus('🔊 Playing verification notification sound...', 'info');
+                
+                if (audio) {
+                    audio.pause();
+                    audio.currentTime = 0;
+                }
+                
+                audio = new Audio('/voice-actions/open-inbox.mp3');
+                audio.volume = 0.7;
+                
+                audio.onended = () => {
+                    showStatus('✅ Verification sound test completed successfully!', 'success');
+                };
+                
+                audio.onerror = () => {
+                    showStatus('❌ Failed to play sound. Check if voice-actions folder is accessible.', 'error');
+                };
+                
+                audio.play().catch(error => {
+                    showStatus(`❌ Audio play failed: ${error.message}`, 'error');
+                });
+                
+            } catch (error) {
+                showStatus(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+        
+        function testAllSounds() {
+            const sounds = [
+                'open-inbox.mp3',
+                'open-profile.mp3', 
+                'like-post.mp3',
+                'save-post.mp3',
+                'open-comments.mp3',
+                'open-shop.mp3',
+                'swipe-next.mp3',
+                'swipe-previous.mp3'
+            ];
+            
+            let currentIndex = 0;
+            
+            function playNext() {
+                if (currentIndex >= sounds.length) {
+                    showStatus('✅ All sound tests completed!', 'success');
+                    return;
+                }
+                
+                const soundFile = sounds[currentIndex];
+                showStatus(`🔊 Playing: ${soundFile} (${currentIndex + 1}/${sounds.length})`, 'info');
+                
+                if (audio) {
+                    audio.pause();
+                }
+                
+                audio = new Audio(`/voice-actions/${soundFile}`);
+                audio.volume = 0.5;
+                
+                audio.onended = () => {
+                    currentIndex++;
+                    setTimeout(playNext, 500); // Small delay between sounds
+                };
+                
+                audio.onerror = () => {
+                    showStatus(`❌ Failed to play ${soundFile}`, 'error');
+                    currentIndex++;
+                    setTimeout(playNext, 500);
+                };
+                
+                audio.play().catch(error => {
+                    showStatus(`❌ Failed to play ${soundFile}: ${error.message}`, 'error');
+                    currentIndex++;
+                    setTimeout(playNext, 500);
+                });
+            }
+            
+            playNext();
+        }
+        
+        // Test browser audio capability on load
+        window.addEventListener('load', () => {
+            showStatus('🎵 Sound test ready. Click a button to test audio notifications.', 'info');
+        });
+    </script>
+</body>
+</html> 

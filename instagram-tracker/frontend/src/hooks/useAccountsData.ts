@@ -58,11 +58,11 @@ export const useAccountsData = ({
         };
       
       case 'warmup':
-        // Show accounts in warm-up pipeline for this model (imported, ready, and warmup)
+        // Show accounts in warm-up pipeline for this model (imported, ready, ready_for_bot_assignment, and warmup)
         return {
           ...baseFilters,
           model_id: modelId,
-          lifecycle_state: ['imported', 'ready', 'warmup'], // Accounts in warmup pipeline
+          lifecycle_state: ['imported', 'ready', 'ready_for_bot_assignment', 'warmup'], // Accounts in warmup pipeline
         };
       
       case 'proxy':

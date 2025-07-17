@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, Play, Pause, RotateCcw, TrendingUp, Clock, Eye, ChevronRight, User, Hash, Image, FileText, CheckCircle, X, Settings, AlertCircle, Mail, Users } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Activity, Play, Pause, RotateCcw, TrendingUp, Clock, Eye, ChevronRight, User, Hash, Image, FileText, CheckCircle, X, Settings, AlertCircle, Mail, Users, Smartphone } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { DataGrid } from '../DataGrid';
 import { DataGridColumn } from '../../types/dataGrid';
@@ -16,6 +16,8 @@ import {
   WarmupAccountWithPhases,
   ReadyAccount
 } from '../../types/warmup';
+import { AccountLifecycleState } from '../../types/lifecycle';
+import VerificationSection from './VerificationSection';
 
 interface WarmupPipelineTabProps {
   modelId: number;
@@ -30,14 +32,6 @@ const WARMUP_PHASES = [
     icon: FileText,
     color: 'blue',
     contentTypes: ['bio']
-  },
-  { 
-    id: WarmupPhase.SET_TO_PRIVATE, 
-    name: 'Set to Private', 
-    description: 'Set account to private',
-    icon: User,
-    color: 'gray',
-    contentTypes: []
   },
   { 
     id: WarmupPhase.GENDER, 
@@ -142,6 +136,10 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
   const [selectAllMode, setSelectAllMode] = useState(false);
   const [batchActionLoading, setBatchActionLoading] = useState(false);
 
+  // Add after the existing state declarations (around line 40-50)
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(600);
+
   const { 
     accounts, 
     loading: accountsLoading, 
@@ -182,7 +180,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         const status = statusMap[account.id];
         
         // First, check if account is invalid (archived accounts only)
-        if (account.lifecycle_state === 'archived') {
+        if (account.lifecycle_state === AccountLifecycleState.ARCHIVED) {
           phaseGroups.invalid.push({
             ...account,
             phases: status?.phases || [],
@@ -193,8 +191,43 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
           return;
         }
 
-        // ALL other accounts go to manual setup phase (Phase 0)
-        // This includes: imported, ready, warmup, cleanup, and any other states
+        // Check if account is ready for bot assignment (has verification code)
+        if (account.lifecycle_state === AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT || account.lifecycle_state === AccountLifecycleState.READY) {
+          phaseGroups.ready_for_assignment.push({
+            ...account,
+            phases: status?.phases || [],
+            current_phase: undefined,
+            phase_status: undefined,
+            warmup_progress: status?.progress_percent || 0
+          });
+          return;
+        }
+
+        // Check if account is in warmup (has started warmup process)
+        if (account.lifecycle_state === AccountLifecycleState.WARMUP) {
+          const currentPhase = status?.current_phase;
+          if (currentPhase && phaseGroups[currentPhase]) {
+            phaseGroups[currentPhase].push({
+              ...account,
+              phases: status?.phases || [],
+              current_phase: currentPhase,
+              phase_status: status?.phase_status,
+              warmup_progress: status?.progress_percent || 0
+            });
+          } else {
+            // If no specific phase, put in first warmup phase
+            phaseGroups[WARMUP_PHASES[0].id].push({
+              ...account,
+              phases: status?.phases || [],
+              current_phase: WARMUP_PHASES[0].id,
+              phase_status: WarmupPhaseStatus.PENDING,
+              warmup_progress: status?.progress_percent || 0
+            });
+          }
+          return;
+        }
+
+        // All other accounts go to manual setup phase (imported, ready, cleanup, etc.)
         phaseGroups.manual_setup.push({
           ...account,
           phases: status?.phases || [],
@@ -984,6 +1017,106 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         );
         break;
 
+      case 'ready_for_assignment':
+        // Ready for bot assignment shows email and content assignment status
+        phaseSpecificColumns.push(
+          {
+            id: 'email',
+            field: 'email',
+            header: 'Email',
+            width: 220,
+            minWidth: 180,
+            resizable: true,
+            sortable: false,
+            filterable: false,
+            type: 'text',
+            align: 'left',
+            visible: true,
+            order: 3,
+            frozen: false,
+            editable: false,
+            required: false,
+            render: (value, row) => {
+              const email = row.account_details?.email || row.email || 'Not set';
+              return (
+                <span className="text-xs text-gray-700 font-mono">{email}</span>
+              );
+            }
+          },
+          {
+            id: 'verification_status',
+            field: 'lifecycle_state',
+            header: 'Verification Status',
+            width: 160,
+            minWidth: 140,
+            resizable: true,
+            sortable: false,
+            filterable: false,
+            type: 'text',
+            align: 'left',
+            visible: true,
+            order: 4,
+            frozen: false,
+            editable: false,
+            required: false,
+            render: (value) => (
+              <span className="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-800">
+                ✓ Has Verification Code
+              </span>
+            )
+          },
+          {
+            id: 'assignment_actions',
+            field: 'id',
+            header: 'Actions',
+            width: 180,
+            minWidth: 160,
+            resizable: false,
+            sortable: false,
+            filterable: false,
+            type: 'custom',
+            align: 'center',
+            visible: true,
+            order: 5,
+            frozen: false,
+            editable: false,
+            required: false,
+            render: (value, row) => (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={async () => {
+                    try {
+                      // Call the content assignment API
+                                             const response = await fetch(`/api/automation/assign-content-ready-accounts`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ accountIds: [row.id] })
+                      });
+                      
+                      if (response.ok) {
+                        toast.success(`Content assigned to ${row.username}`);
+                        // Refresh the data to update the UI
+                        fetchWarmupData();
+                      } else {
+                        const error = await response.json();
+                        toast.error(`Failed to assign content: ${error.message}`);
+                      }
+                    } catch (error) {
+                      toast.error('Failed to assign content');
+                    }
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded transition-colors"
+                  title="Assign warmup content to this account"
+                >
+                  <CheckCircle className="h-3 w-3" />
+                  Assign Content
+                </button>
+              </div>
+            )
+          }
+        );
+        break;
+
       case WarmupPhase.USERNAME:
         // Username phase needs to show current vs new username
         phaseSpecificColumns.push({
@@ -1240,6 +1373,36 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
     }
   };
 
+  // Add useEffect to calculate container height
+  useEffect(() => {
+    const calculateHeight = () => {
+      if (containerRef.current) {
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const availableHeight = window.innerHeight - containerRect.top - 50; // 50px for padding
+        setContainerHeight(Math.max(400, availableHeight));
+      }
+    };
+
+    calculateHeight();
+    
+    const handleResize = () => {
+      calculateHeight();
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [showPhaseDetails]);
+
+  // Calculate dynamic height for DataGrid
+  const calculateGridHeight = (accountsCount: number) => {
+    const headerHeight = 120; // Space for section header and buttons
+    const minHeight = 200;
+    const maxHeight = containerHeight - headerHeight;
+    const rowHeight = 50;
+    const calculatedHeight = Math.min(maxHeight, Math.max(minHeight, accountsCount * rowHeight + 100));
+    return calculatedHeight;
+  };
+
   if (accountsLoading && accounts.length === 0) {
     return (
       <div className="p-8">
@@ -1274,9 +1437,9 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
   const invalidAccounts = phaseAccounts.invalid?.length || 0;
 
   return (
-    <div className="p-6 h-full flex flex-col">
+    <div ref={containerRef} className="p-3 h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-medium text-gray-900">10-Phase Warmup Pipeline</h3>
           <p className="text-sm text-gray-500">
@@ -1314,7 +1477,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
 
       {/* Settings Panel */}
       {showSettings && (
-        <div className="bg-white rounded-lg shadow-lg border mb-6">
+        <div className="bg-white rounded-lg shadow-lg border mb-4">
           <div className="p-4 border-b border-gray-200">
             <h4 className="text-lg font-medium text-gray-900">Warmup Configuration</h4>
             <p className="text-sm text-gray-500">Configure cooldown settings and iPhone selection</p>
@@ -1449,7 +1612,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       )}
 
       {/* Enhanced Warmup Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
@@ -1491,7 +1654,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       </div>
 
       {/* Search Filter */}
-      <div className="flex items-center gap-4 mb-4">
+      <div className="flex items-center gap-3 mb-3">
         <div className="flex-1 relative">
           <input
             type="text"
@@ -1516,11 +1679,11 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       </div>
 
       {/* Main Content Area - Wall of Tables Layout */}
-      <div className={`${showPhaseDetails ? 'flex-1' : 'w-full'} space-y-6 overflow-y-auto`}>
+      <div className="flex-1 space-y-4 overflow-y-auto">
         
         {/* Invalid/Banned Accounts Section */}
         {phaseAccounts.invalid && phaseAccounts.invalid.length > 0 && (
-          <div className="bg-white rounded-lg shadow border-l-4 border-red-500">
+          <div className="bg-white rounded-lg shadow border-l-4 border-red-500 flex flex-col">
             <div className="p-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
@@ -1540,22 +1703,143 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
                 </div>
               </div>
             </div>
-            <DataGrid
-              data={phaseAccounts.invalid}
-              columns={getPhaseColumns('invalid')}
-              loading={loading}
-              error={error}
-              height={600}
-              virtualScrolling={false}
-              multiSelect={true}
-              rowSelection={true}
-              keyboardNavigation={true}
-            />
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <DataGrid
+                data={phaseAccounts.invalid}
+                columns={getPhaseColumns('invalid')}
+                loading={loading}
+                error={error}
+                height={calculateGridHeight(phaseAccounts.invalid.length)}
+                virtualScrolling={true}
+                multiSelect={true}
+                rowSelection={true}
+                keyboardNavigation={true}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Verification Section - Accounts requiring manual verification */}
+        <VerificationSection 
+          modelId={modelId} 
+          onVerificationComplete={() => {
+            fetchWarmupData(); // Refresh data after verification
+          }}
+        />
+
+        {/* Ready for Bot Assignment Phase */}
+        {phaseAccounts.ready_for_assignment && phaseAccounts.ready_for_assignment.length > 0 && (
+          <div className="bg-white rounded-lg shadow border-l-4 border-indigo-500 flex flex-col">
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <Smartphone className="h-4 w-4 text-indigo-600" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900">Ready for Bot Assignment</h4>
+                  <p className="text-sm text-gray-500">Accounts with verification codes ready for content assignment</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Fields: Username, Container, Email, Assignment Button
+                  </p>
+                </div>
+                <div className="ml-auto">
+                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                    {phaseAccounts.ready_for_assignment.length} accounts
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            {/* Batch Actions for Ready for Assignment */}
+            <div className="p-4 border-b border-gray-200 bg-indigo-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={selectedAccounts.size > 0 && phaseAccounts.ready_for_assignment.every(account => selectedAccounts.has(account.id))}
+                      onChange={(e) => handleSelectAll(phaseAccounts.ready_for_assignment, e.target.checked)}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    Select All ({phaseAccounts.ready_for_assignment.length})
+                  </label>
+                  {selectedAccounts.size > 0 && (
+                    <span className="text-sm text-gray-600">
+                      {selectedAccounts.size} account{selectedAccounts.size === 1 ? '' : 's'} selected
+                    </span>
+                  )}
+                </div>
+                
+                {selectedAccounts.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          setBatchActionLoading(true);
+                          const selectedReadyAccounts = Array.from(selectedAccounts).filter(id => 
+                            phaseAccounts.ready_for_assignment.some(acc => acc.id === id)
+                          );
+                          
+                          const response = await fetch('/api/automation/assign-content-ready-accounts', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ accountIds: selectedReadyAccounts })
+                          });
+                          
+                          if (response.ok) {
+                            const result = await response.json();
+                            toast.success(`Content assigned to ${selectedReadyAccounts.length} accounts`);
+                            setSelectedAccounts(new Set()); // Clear selection
+                            fetchWarmupData(); // Refresh data
+                          } else {
+                            const error = await response.json();
+                            toast.error(`Failed to assign content: ${error.message}`);
+                          }
+                        } catch (error) {
+                          toast.error('Failed to assign content to selected accounts');
+                        } finally {
+                          setBatchActionLoading(false);
+                        }
+                      }}
+                      disabled={batchActionLoading}
+                      className="flex items-center gap-1 px-3 py-2 text-sm bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded transition-colors disabled:opacity-50"
+                      title={`Assign content to ${selectedAccounts.size} selected accounts`}
+                    >
+                      {batchActionLoading ? (
+                        <>
+                          <div className="w-4 h-4 border border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                          Assigning...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4" />
+                          Assign Content ({selectedAccounts.size})
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <DataGrid
+                data={phaseAccounts.ready_for_assignment}
+                columns={getPhaseColumns('ready_for_assignment')}
+                loading={loading}
+                error={error}
+                height={calculateGridHeight(phaseAccounts.ready_for_assignment.length)}
+                virtualScrolling={true}
+                multiSelect={true}
+                rowSelection={true}
+                keyboardNavigation={true}
+              />
+            </div>
           </div>
         )}
 
         {/* Manual Setup Phase */}
-        <div className="bg-white rounded-lg shadow">
+        <div className="bg-white rounded-lg shadow flex flex-col">
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
@@ -1642,19 +1926,21 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
           )}
           
           {phaseAccounts.manual_setup && phaseAccounts.manual_setup.length > 0 ? (
-            <DataGrid
-              data={phaseAccounts.manual_setup}
-              columns={getPhaseColumns('manual_setup')}
-              loading={loading}
-              error={error}
-              height={600}
-              virtualScrolling={false}
-              multiSelect={true}
-              rowSelection={true}
-              keyboardNavigation={true}
-            />
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <DataGrid
+                data={phaseAccounts.manual_setup}
+                columns={getPhaseColumns('manual_setup')}
+                loading={loading}
+                error={error}
+                height={calculateGridHeight(phaseAccounts.manual_setup.length)}
+                virtualScrolling={true}
+                multiSelect={true}
+                rowSelection={true}
+                keyboardNavigation={true}
+              />
+            </div>
           ) : (
-            <div className="p-8 text-center text-gray-500">
+            <div className="flex-1 p-8 text-center text-gray-500">
               No accounts in manual setup phase
             </div>
           )}

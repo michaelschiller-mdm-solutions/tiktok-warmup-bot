@@ -46,17 +46,17 @@ class LuaScriptExecutor {
             
             exec(plinkCommand, (error, stdout, stderr) => {
                 if (error) {
-                    console.log(`❌ SSH Error: ${error.message}`);
+                    console.log(` SSH Error: ${error.message}`);
                     reject(error);
                     return;
                 }
                 
                 if (stderr && !stderr.includes('Keyboard-interactive')) {
-                    console.log(`⚠️ SSH stderr: ${stderr}`);
+                    console.log(` SSH stderr: ${stderr}`);
                 }
                 
                 const output = stdout.trim();
-                console.log(`✅ SSH Output: ${output || '(no output)'}`);
+                console.log(` SSH Output: ${output || '(no output)'}`);
                 resolve(output);
             });
         });
@@ -85,7 +85,7 @@ class LuaScriptExecutor {
                     });
                 }
             } catch (error) {
-                console.error(`❌ Error reading ${dirName} directory:`, error.message);
+                console.error(` Error reading ${dirName} directory:`, error.message);
             }
         });
         
@@ -99,7 +99,7 @@ class LuaScriptExecutor {
         const scripts = this.getAvailableScripts();
         
         if (scripts.length === 0) {
-            console.log('❌ No Lua scripts found');
+            console.log(' No Lua scripts found');
             return;
         }
 
@@ -137,7 +137,7 @@ class LuaScriptExecutor {
             const result = await this.executeSSH(checkCommand);
             return result.includes('EXISTS');
         } catch (error) {
-            console.log(`⚠️ Could not check if script exists: ${error.message}`);
+            console.log(` Could not check if script exists: ${error.message}`);
             return false;
         }
     }
@@ -152,44 +152,44 @@ class LuaScriptExecutor {
             const targetScript = scripts.find(script => script.filename === scriptName);
             
             if (!targetScript) {
-                console.error(`❌ Script not found locally: ${scriptName}`);
-                console.log('\n📝 Available scripts:');
+                console.error(` Script not found locally: ${scriptName}`);
+                console.log('\n Available scripts:');
                 this.displayAvailableScripts();
                 return false;
             }
 
-            console.log(`📂 Found locally in: ${targetScript.directory}`);
-            console.log(`🚀 Executing Lua script: ${scriptName}`);
+            console.log(` Found locally in: ${targetScript.directory}`);
+            console.log(` Executing Lua script: ${scriptName}`);
 
             // Check if script exists on iPhone
             const remotePath = `${this.remoteScriptPath}/${scriptName}`;
-            console.log(`📱 Remote path: ${remotePath}`);
+            console.log(` Remote path: ${remotePath}`);
 
             const scriptExists = await this.checkScriptExists(scriptName);
             if (!scriptExists) {
-                console.error(`❌ Script not found on iPhone: ${remotePath}`);
-                console.log('💡 Make sure the script is uploaded to the iPhone first');
+                console.error(` Script not found on iPhone: ${remotePath}`);
+                console.log(' Make sure the script is uploaded to the iPhone first');
                 return false;
             }
 
-            console.log('✅ Script found on iPhone');
+            console.log(' Script found on iPhone');
 
             // Method 1: Try direct lua execution
-            console.log('🔧 Method 1: Direct lua interpreter execution...');
+            console.log(' Direct lua interpreter execution...');
             try {
                 const luaCommand = `cd "${this.remoteScriptPath}" && lua "${scriptName}"`;
                 const result = await this.executeSSH(luaCommand);
                 
-                console.log('✅ Script executed successfully with lua interpreter');
-                console.log('📝 Script output:', result || '(no output)');
+                console.log(' Script executed successfully with lua interpreter');
+                console.log(' Script output:', result || '(no output)');
                 return true;
                 
             } catch (error) {
-                console.log('⚠️ Direct lua execution failed, trying alternative method...');
+                console.log(' Direct lua execution failed, trying alternative method...');
             }
 
             // Method 2: Try making script executable and running directly
-            console.log('🔧 Method 2: Making script executable...');
+            console.log(' Making script executable...');
             try {
                 // Make script executable
                 await this.executeSSH(`chmod +x "${remotePath}"`);
@@ -198,32 +198,32 @@ class LuaScriptExecutor {
                 const directCommand = `cd "${this.remoteScriptPath}" && "./${scriptName}"`;
                 const result = await this.executeSSH(directCommand);
                 
-                console.log('✅ Script executed successfully as executable');
-                console.log('📝 Script output:', result || '(no output)');
+                console.log(' Script executed successfully as executable');
+                console.log(' Script output:', result || '(no output)');
                 return true;
                 
             } catch (error) {
-                console.log('⚠️ Executable method failed');
+                console.log(' Executable method failed');
             }
 
             // Method 3: Try with full path
-            console.log('🔧 Method 3: Full path execution...');
+            console.log(' Full path execution...');
             try {
                 const fullPathCommand = `lua "${remotePath}"`;
                 const result = await this.executeSSH(fullPathCommand);
                 
-                console.log('✅ Script executed successfully with full path');
-                console.log('📝 Script output:', result || '(no output)');
+                console.log(' Script executed successfully with full path');
+                console.log(' Script output:', result || '(no output)');
                 return true;
                 
             } catch (error) {
-                console.log('❌ All execution methods failed');
-                console.error('💥 Final error:', error.message);
+                console.log(' All execution methods failed');
+                console.error(' Final error:', error.message);
                 return false;
             }
 
         } catch (error) {
-            console.error('💥 Lua script execution error:', error.message);
+            console.error(' Lua script execution error:', error.message);
             return false;
         }
     }
@@ -232,15 +232,15 @@ class LuaScriptExecutor {
      * Test SSH connectivity
      */
     async testConnection() {
-        console.log('🔍 Testing SSH connection to iPhone...');
+        console.log(' Testing SSH connection to iPhone...');
         
         try {
             const result = await this.executeSSH('echo "SSH Connection Test"');
-            console.log('✅ SSH connection successful');
+            console.log(' SSH connection successful');
             return true;
         } catch (error) {
-            console.error('❌ SSH connection failed:', error.message);
-            console.log('\n🔧 Troubleshooting:');
+            console.error(' SSH connection failed:', error.message);
+            console.log('\n Troubleshooting:');
             console.log('1. Check iPhone IP address');
             console.log('2. Ensure SSH is enabled on iPhone');
             console.log('3. Verify credentials are correct');
@@ -253,19 +253,19 @@ class LuaScriptExecutor {
      * List scripts on iPhone
      */
     async listRemoteScripts() {
-        console.log('📱 Checking scripts on iPhone...');
+        console.log(' Checking scripts on iPhone...');
         
         try {
             const listCommand = `ls -la "${this.remoteScriptPath}/"`;
             const result = await this.executeSSH(listCommand);
             
-            console.log('📁 Scripts on iPhone:');
+            console.log(' Scripts on iPhone:');
             console.log('=====================');
             console.log(result);
             
             return true;
         } catch (error) {
-            console.error('❌ Could not list remote scripts:', error.message);
+            console.error(' Could not list remote scripts:', error.message);
             return false;
         }
     }
@@ -307,20 +307,20 @@ async function main() {
         default:
             // Execute the specified script
             if (command.endsWith('.lua') || command.endsWith('.xxt')) {
-                console.log('🔧 Direct Lua Script Execution');
+                console.log(' Direct Lua Script Execution');
                 console.log('==============================');
                 
                 const success = await executor.executeLuaScript(command);
                 
                 if (success) {
-                    console.log('\n🎉 Lua script execution completed!');
-                    console.log('📱 Check your iPhone for the results');
+                    console.log('\n Lua script execution completed!');
+                    console.log(' Check your iPhone for the results');
                 } else {
-                    console.log('\n💥 Lua script execution failed');
+                    console.log('\n Lua script execution failed');
                     process.exit(1);
                 }
             } else {
-                console.log('❌ Invalid script name. Must end with .lua or .xxt');
+                console.log(' Invalid script name. Must end with .lua or .xxt');
                 executor.displayAvailableScripts();
                 process.exit(1);
             }

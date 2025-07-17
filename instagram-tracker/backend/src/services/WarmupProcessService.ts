@@ -314,9 +314,7 @@ export class WarmupProcessService {
           textId = bioResult.rows.length > 0 ? bioResult.rows[0].id : null;
           break;
 
-        case WarmupPhase.SET_TO_PRIVATE:
-          // No content assignment needed for SET_TO_PRIVATE phase
-          break;
+        // SET_TO_PRIVATE removed - accounts are set to private after warmup completion
 
         case WarmupPhase.NAME:
           // Assign name text content
@@ -729,6 +727,26 @@ export class WarmupProcessService {
       const isComplete = await this.isWarmupComplete(accountId);
       
       if (isComplete) {
+        // Get account container for private setting
+        const accountResult = await db.query(
+          'SELECT container_number FROM accounts WHERE id = $1',
+          [accountId]
+        );
+        
+        if (accountResult.rows.length > 0 && accountResult.rows[0].container_number) {
+          const containerNumber = accountResult.rows[0].container_number;
+          
+          try {
+            // Set account to private AFTER all warmup phases are complete
+            console.log(`[WarmupProcess] Setting account ${accountId} to private after warmup completion`);
+            await this.setAccountPrivate(containerNumber);
+            console.log(`[WarmupProcess] ✅ Account ${accountId} set to private successfully`);
+          } catch (privateError) {
+            console.warn(`[WarmupProcess] ⚠️ Failed to set account ${accountId} to private:`, privateError.message);
+            // Don't fail the warmup completion for private setting errors
+          }
+        }
+        
         // Move account to active state and release container constraint
         await db.query(`
           UPDATE accounts 
@@ -1082,22 +1100,6 @@ export class WarmupProcessService {
           text_categories: ['bio']
         };
 
-      case WarmupPhase.SET_TO_PRIVATE:
-        return {
-          phase: 'set_to_private',
-          description: 'Set account to private',
-          api_scripts: [
-            baseScripts.ios16_photo_cleaner,
-            baseScripts.lua_executor
-          ],
-          lua_scripts: [
-            containerScript,
-            'instagram-tracker/bot/scripts/iphone_lua/set_account_private.lua'
-          ],
-          requires_content: false,
-          requires_text: false
-        };
-
       case WarmupPhase.GENDER:
         return {
           phase: 'gender',
@@ -1307,5 +1309,84 @@ export class WarmupProcessService {
       console.error(`Error checking phase dependencies for ${phase}:`, error);
       return false;
     }
+  }
+
+  /**
+   * Set account to private using bot automation. This is called after warmup completion.
+   */
+  async setAccountPrivate(containerNumber: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const path = require('path');
+      const { spawn } = require('child_process');
+      
+      const scriptPath = path.join(process.cwd(), '../bot/scripts/api/lua_executor.js');
+      
+      // Commands to execute: switch to container and set to private
+      const commands = [
+        {
+          script: 'open_settings.lua',
+          description: 'Open container settings'
+        },
+        {
+          script: 'scroll_to_top_container.lua', 
+          description: 'Scroll to top of container list'
+        },
+        {
+          script: `select_container_${containerNumber}.lua`,
+          description: `Select container ${containerNumber}`
+        },
+        {
+          script: 'set_account_private.lua',
+          description: 'Set account to private'
+        }
+      ];
+
+      // Execute commands in sequence
+      let currentCommand = 0;
+      
+      function executeNextCommand() {
+        if (currentCommand >= commands.length) {
+          resolve();
+          return;
+        }
+        
+        const command = commands[currentCommand];
+        console.log(`[WarmupProcess] Executing: ${command.description}`);
+        
+        const childProcess = spawn('node', [scriptPath, command.script], {
+          cwd: path.join(process.cwd(), '../bot'),
+          detached: false,
+          stdio: ['pipe', 'pipe', 'pipe']
+        });
+
+        let output = '';
+        let errorOutput = '';
+
+        childProcess.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+
+        childProcess.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        childProcess.on('close', (code) => {
+          if (code === 0) {
+            console.log(`[WarmupProcess] ✅ ${command.description} completed`);
+            currentCommand++;
+            setTimeout(executeNextCommand, 2000); // 2 second delay between commands
+          } else {
+            console.error(`[WarmupProcess] ❌ ${command.description} failed with code ${code}`);
+            reject(new Error(`Failed to execute ${command.description}: ${errorOutput}`));
+          }
+        });
+
+        childProcess.on('error', (error) => {
+          reject(new Error(`Failed to start ${command.description}: ${error.message}`));
+        });
+      }
+      
+      executeNextCommand();
+    });
   }
 } 

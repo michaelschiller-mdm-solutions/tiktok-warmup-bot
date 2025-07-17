@@ -1,6 +1,12 @@
 /**
  * Automation Configuration
  * Centralized configuration for timing, retries, and automation behavior
+ * 
+ * Recent improvements for script conflict handling:
+ * - Increased clipboard operation retries from 3 to 8
+ * - Enhanced retry delays for script conflicts (up to 30 seconds)
+ * - Better error classification and handling
+ * - Improved timing for critical operations
  */
 
 const AutomationConfig = {
@@ -53,10 +59,10 @@ const AutomationConfig = {
 
     // Email verification
     emailVerification: {
-        maxTokenRetries: 3,         // Maximum token fetch attempts
-        baseWaitTime: 10000,        // Base wait time between token attempts (ms)
-        retryMultiplier: 5000,      // Additional wait time per retry (ms)
-        tokenTimeout: 60000,        // Token fetch timeout (ms)
+        maxTokenRetries: 2,         // Maximum token fetch attempts (keep at 2 as requested)
+        baseWaitTime: 5000,         // Reduced from 10s to 5s - Base wait time between token attempts (ms)
+        retryMultiplier: 3000,      // Reduced from 5s to 3s - Additional wait time per retry (ms)
+        tokenTimeout: 30000,        // Reduced from 60s to 30s - Token fetch timeout (ms)
     },
 
     // Error handling
@@ -92,12 +98,12 @@ const AutomationConfig = {
             maxRetries: 5,
         },
         
-        // Critical clipboard operations
+        // Critical clipboard operations - increased retries for script conflicts
         clipboard: {
-            preExecutionDelay: 500,
-            postExecutionDelay: 1000,
-            timeout: 15000,
-            maxRetries: 3,
+            preExecutionDelay: 1000,  // Increased delay before execution
+            postExecutionDelay: 2000, // Increased delay after execution
+            timeout: 20000,           // Increased timeout
+            maxRetries: 8,            // Increased from 3 to 8 retries
         },
     },
 
@@ -138,9 +144,14 @@ AutomationConfig.calculateRetryDelay = function(error, attempt) {
     
     // Different delays for different error types
     if (error.message.includes('currently running another script')) {
-        return Math.min(baseRetryDelay * attempt * 1.5, maxRetryDelay);
+        // Much longer delays for script conflicts - wait for script to complete
+        const scriptConflictDelay = Math.min(baseRetryDelay * attempt * 3, 30000); // Up to 30 seconds
+        return scriptConflictDelay;
     } else if (error.message.includes('timeout') || error.message.includes('ECONNREFUSED')) {
         return Math.min(baseRetryDelay * attempt * 2, maxRetryDelay);
+    } else if (error.message.includes('Failed to select script') || error.message.includes('Failed to launch script')) {
+        // Device busy or script loading issues - moderate delay
+        return Math.min(baseRetryDelay * attempt * 1.5, 20000);
     } else {
         return Math.min(baseRetryDelay * attempt, maxRetryDelay);
     }

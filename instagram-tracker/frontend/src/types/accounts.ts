@@ -1,6 +1,8 @@
 // Account data types for the Instagram Tracker application
 // Includes proxy management, cost tracking, and analytics features
 
+import { AccountLifecycleState } from './lifecycle';
+
 export interface Account {
   id: number;
   model_id: number;
@@ -23,7 +25,7 @@ export interface Account {
   updated_at: string;
   
   // Lifecycle management
-  lifecycle_state: 'imported' | 'ready' | 'warmup' | 'active' | 'paused' | 'cleanup' | 'archived';
+  lifecycle_state: AccountLifecycleState;
   state_changed_at: string;
   state_changed_by?: string;
   state_notes?: string;

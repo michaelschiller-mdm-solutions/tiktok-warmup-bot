@@ -6,19 +6,23 @@ var AccountLifecycleState;
 (function (AccountLifecycleState) {
     AccountLifecycleState["IMPORTED"] = "imported";
     AccountLifecycleState["READY"] = "ready";
+    AccountLifecycleState["READY_FOR_BOT_ASSIGNMENT"] = "ready_for_bot_assignment";
     AccountLifecycleState["WARMUP"] = "warmup";
     AccountLifecycleState["ACTIVE"] = "active";
     AccountLifecycleState["PAUSED"] = "paused";
     AccountLifecycleState["CLEANUP"] = "cleanup";
+    AccountLifecycleState["MAINTENANCE"] = "maintenance";
     AccountLifecycleState["ARCHIVED"] = "archived";
 })(AccountLifecycleState || (exports.AccountLifecycleState = AccountLifecycleState = {}));
 const VALID_TRANSITIONS = {
     [AccountLifecycleState.IMPORTED]: [AccountLifecycleState.READY, AccountLifecycleState.ARCHIVED],
-    [AccountLifecycleState.READY]: [AccountLifecycleState.WARMUP, AccountLifecycleState.ARCHIVED],
-    [AccountLifecycleState.WARMUP]: [AccountLifecycleState.ACTIVE, AccountLifecycleState.PAUSED, AccountLifecycleState.ARCHIVED],
+    [AccountLifecycleState.READY]: [AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT, AccountLifecycleState.WARMUP, AccountLifecycleState.ARCHIVED],
+    [AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT]: [AccountLifecycleState.WARMUP, AccountLifecycleState.ARCHIVED],
+    [AccountLifecycleState.WARMUP]: [AccountLifecycleState.MAINTENANCE, AccountLifecycleState.PAUSED, AccountLifecycleState.ARCHIVED],
     [AccountLifecycleState.ACTIVE]: [AccountLifecycleState.PAUSED, AccountLifecycleState.CLEANUP, AccountLifecycleState.ARCHIVED],
     [AccountLifecycleState.PAUSED]: [AccountLifecycleState.ACTIVE, AccountLifecycleState.CLEANUP, AccountLifecycleState.ARCHIVED],
     [AccountLifecycleState.CLEANUP]: [AccountLifecycleState.READY, AccountLifecycleState.ARCHIVED],
+    [AccountLifecycleState.MAINTENANCE]: [AccountLifecycleState.PAUSED, AccountLifecycleState.CLEANUP, AccountLifecycleState.ARCHIVED],
     [AccountLifecycleState.ARCHIVED]: []
 };
 class AccountLifecycleService {

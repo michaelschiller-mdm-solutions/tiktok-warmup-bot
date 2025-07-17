@@ -46,7 +46,7 @@ async function preVerifyEmail() {
         process.exit(1);
     }
 
-    console.log(`[PreVerifyEmail] 🔍 Starting pre-verification for account ${id} (${email})`);
+    console.error(`[PreVerifyEmail] 🔍 Starting pre-verification for account ${id} (${email})`);
 
     const result = {
         accountId: id,
@@ -63,7 +63,7 @@ async function preVerifyEmail() {
 
         if (!verificationResult.success) {
             // Email connection failed - mark account as invalid
-            console.log(`[PreVerifyEmail] ❌ Email connection failed for ${email}: ${verificationResult.error}`);
+            console.error(`[PreVerifyEmail] ❌ Email connection failed for ${email}: ${verificationResult.error}`);
             
             // Update account status to invalid
             const updateResult = await updateAccountStatus(id, 'mark_invalid', `Email connection failed: ${verificationResult.error}`);
@@ -78,7 +78,7 @@ async function preVerifyEmail() {
             
         } else if (verificationResult.token) {
             // Verification code found - mark account as ready for warmup
-            console.log(`[PreVerifyEmail] ✅ Found verification token for ${email}: ${verificationResult.token}`);
+            console.error(`[PreVerifyEmail] ✅ Found verification token for ${email}: ${verificationResult.token}`);
             
             // Update account status to ready for warmup
             const updateResult = await updateAccountStatus(id, 'mark_ready', `Pre-verification found existing token: ${verificationResult.token}`);
@@ -94,7 +94,7 @@ async function preVerifyEmail() {
             
         } else {
             // No verification code found - proceed with normal automation
-            console.log(`[PreVerifyEmail] 📭 No existing verification token found for ${email}`);
+            console.error(`[PreVerifyEmail] 📭 No existing verification token found for ${email}`);
             
             result.success = true;
             result.action = 'none';
@@ -129,16 +129,42 @@ async function updateAccountStatus(accountId, action, reason) {
         let endpoint, body;
         
         if (action === 'mark_ready') {
-            endpoint = `http://localhost:3001/api/accounts/lifecycle/${accountId}/complete-setup`;
+            // Two-step transition: imported -> ready -> ready_for_bot_assignment
+            // Step 1: Transition to ready state first
+            const readyEndpoint = `http://localhost:3001/api/accounts/lifecycle/${accountId}/transition`;
+            const readyBody = {
+                to_state: 'ready',
+                reason: reason,
+                notes: 'Pre-verification found verification token',
+                force: true  // Bypass validation requirements
+            };
+            
+            const readyResponse = await fetch(readyEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(readyBody)
+            });
+            
+            if (!readyResponse.ok) {
+                const readyError = await readyResponse.json().catch(() => ({ error: 'Unknown error' }));
+                console.error(`[PreVerifyEmail] ❌ Failed to transition to ready state:`, readyError);
+                return { success: false, error: `Failed to transition to ready: ${readyError.error}` };
+            }
+            
+            console.error(`[PreVerifyEmail] ✅ Account ${accountId} transitioned to ready state`);
+            
+            // Step 2: Transition to ready_for_bot_assignment
+            endpoint = `http://localhost:3001/api/accounts/lifecycle/${accountId}/transition`;
             body = {
-                changed_by: 'pre_verification_automation',
-                notes: reason
+                to_state: 'ready_for_bot_assignment',
+                reason: 'Account has verification code and is ready for content assignment',
+                notes: 'Transitioned from pre-verification with existing token',
+                force: true  // Bypass validation requirements
             };
         } else if (action === 'mark_invalid') {
-            endpoint = `http://localhost:3001/api/accounts/lifecycle/${accountId}/mark-invalid`;
+            endpoint = `http://localhost:3001/api/accounts/lifecycle/${accountId}/invalidate`;
             body = {
-                reason: reason,
-                changed_by: 'pre_verification_automation'
+                reason: reason
             };
         } else {
             return { success: false, error: 'Invalid action specified' };
@@ -153,7 +179,7 @@ async function updateAccountStatus(accountId, action, reason) {
         });
 
         if (response.ok) {
-            console.log(`[PreVerifyEmail] ✅ Account ${accountId} status updated successfully (${action})`);
+            console.error(`[PreVerifyEmail] ✅ Account ${accountId} status updated successfully (${action})`);
             return { success: true };
         } else {
             const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));

@@ -193,6 +193,9 @@ const CentralAccountsPage: React.FC = () => {
   const [showAccountAssignmentModal, setShowAccountAssignmentModal] = useState(false);
   const [selectedAccountForAssignment, setSelectedAccountForAssignment] = useState<{ id: number; username: string } | null>(null);
 
+  // Content Assignment for Ready for Bot Assignment state
+  const [isAssigningContent, setIsAssigningContent] = useState(false);
+
   // Import handlers
   const handleImportClick = () => {
     if (models.length === 0) {
@@ -471,6 +474,41 @@ const CentralAccountsPage: React.FC = () => {
     setSelectedAccountForAssignment(null);
   };
 
+  // Handle content assignment for accounts in READY_FOR_BOT_ASSIGNMENT state
+  const handleContentAssignment = async () => {
+    setIsAssigningContent(true);
+    try {
+      const response = await fetch('/api/automation/assign-content-ready-accounts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(`Content assigned to ${data.processed} accounts successfully!`);
+        
+        // Show detailed results if there were failures
+        if (data.failed > 0) {
+          toast(`${data.failed} accounts failed assignment. Check console for details.`, { icon: '⚠️' });
+          console.error('Content assignment failures:', data.results.filter((r: any) => r.status === 'failed'));
+        }
+        
+        // Reload data to reflect lifecycle state changes
+        loadAccountsAndModels();
+      } else {
+        toast.error(`Content assignment failed: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('Error during content assignment:', error);
+      toast.error('Failed to assign content to accounts');
+    } finally {
+      setIsAssigningContent(false);
+    }
+  };
+
   // Get available options for filters
   const uniqueLifecycleStates = Array.from(new Set(accounts.map(a => a.lifecycle_state))).filter(Boolean);
   const uniqueStatuses = Array.from(new Set(accounts.map(a => a.status))).filter(Boolean);
@@ -644,9 +682,11 @@ const CentralAccountsPage: React.FC = () => {
           value === 'warmup' ? 'bg-yellow-100 text-yellow-800' :
           value === 'imported' ? 'bg-blue-100 text-blue-800' :
           value === 'ready' ? 'bg-purple-100 text-purple-800' :
+          value === 'ready_for_bot_assignment' ? 'bg-indigo-100 text-indigo-800' :
+          value === 'maintenance' ? 'bg-emerald-100 text-emerald-800' :
           'bg-gray-100 text-gray-800'
         }`}>
-          {value}
+          {value === 'ready_for_bot_assignment' ? 'Ready for Bot' : value}
         </span>
       )
     },
@@ -1060,6 +1100,48 @@ const CentralAccountsPage: React.FC = () => {
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Lifecycle State Actions */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-600 rounded-lg">
+                <Zap className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Lifecycle Actions</h3>
+                <p className="text-sm text-gray-600">
+                  Actions for accounts in specific lifecycle states
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap gap-4">
+              {(statistics?.by_lifecycle_state?.find(s => s.state === 'ready_for_bot_assignment')?.count || 0) > 0 && (
+                <button
+                  onClick={handleContentAssignment}
+                  disabled={isAssigningContent}
+                  className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl hover:from-indigo-600 hover:to-purple-700 text-sm font-semibold shadow-lg transition-all duration-200 transform hover:scale-105"
+                >
+                  <Zap className="w-5 h-5" />
+                  {isAssigningContent ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Assigning Content...
+                    </>
+                  ) : (
+                    <>
+                      Assign Content to Ready Accounts
+                      <span className="ml-2 px-2 py-1 bg-white/20 rounded-full text-xs">
+                        {statistics?.by_lifecycle_state?.find(s => s.state === 'ready_for_bot_assignment')?.count || 0}
+                      </span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>

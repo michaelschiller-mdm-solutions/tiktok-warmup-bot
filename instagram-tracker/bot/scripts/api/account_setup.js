@@ -22,10 +22,31 @@ async function runAccountSetup(setupConfig) {
         
         const result = await accountSetup.run(setupConfig);
         
-        if (result) {
+        if (result && result.success) {
             console.log(`[AccountSetup] ✅ Account ${setupConfig.username} setup completed successfully`);
             
-            // Report success to external systems if needed
+            // Check if manual verification is required (screenshot verification)
+            if (result.requiresManualVerification) {
+                console.log(`[AccountSetup] 📸 Account ${setupConfig.username} requires manual verification via screenshot`);
+                
+                // Report account completion with verification requirement
+                progressReporter.reportAccountStatusChange(
+                    setupConfig.username, 
+                    setupConfig.email, 
+                    'pending_verification', 
+                    'Setup completed - manual verification required'
+                );
+                
+                return { 
+                    success: true, 
+                    username: setupConfig.username,
+                    requiresManualVerification: true,
+                    screenshotCaptured: result.screenshotCaptured,
+                    token: result.token || null,
+                    message: 'Account setup completed successfully - manual verification required'
+                };
+            } else {
+                // Normal completion without verification requirement
             progressReporter.reportAccountStatusChange(
                 setupConfig.username, 
                 setupConfig.email, 
@@ -33,7 +54,14 @@ async function runAccountSetup(setupConfig) {
                 'Setup completed successfully'
             );
             
-            return { success: true, username: setupConfig.username };
+                return { 
+                    success: true, 
+                    username: setupConfig.username,
+                    requiresManualVerification: false,
+                    token: result.token || null,
+                    message: 'Account setup completed successfully'
+                };
+            }
         }
         
     } catch (error) {
