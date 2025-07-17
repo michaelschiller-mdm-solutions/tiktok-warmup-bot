@@ -105,7 +105,7 @@ This is handled automatically by the `AutomationBridge.selectContainer(container
 
 ---
 
-## Phase Upload Post with Caption
+## Phase Upload Post no caption and no likes
 (accepted Categories Image: post, any)
 (accepted Categories Text: post, any)
 
@@ -117,11 +117,11 @@ This is handled automatically by the `AutomationBridge.selectContainer(container
 
 **Execution Order:**
 1. **Container Selection**: Use `AutomationBridge.selectContainer(assignedContainerNumber)`
-2. **Post Upload**: `instagram-tracker\bot\scripts\iphone_lua\upload_post_newest_media_clipboard_caption.lua`
+2. **Post Upload**: `instagram-tracker\bot\scripts\iphone_lua\Upload_post_no_caption_disable_likes.lua`
 
 ---
-
-## Phase Upload Post No Caption
+##ACCOUNT NAME MUST BE CHANGED BEFORE
+## Phase Upload First Post connect to threads and No Caption disable likes
 (accepted Categories Image: post, any)
 
 **Required Scripts:**
@@ -131,7 +131,7 @@ This is handled automatically by the `AutomationBridge.selectContainer(container
 
 **Execution Order:**
 1. **Container Selection**: Use `AutomationBridge.selectContainer(assignedContainerNumber)`
-2. **Post Upload**: `instagram-tracker\bot\scripts\iphone_lua\upload_post_newest_media_no_caption.lua`
+2. **Post Upload**: `instagram-tracker\bot\scripts\iphone_lua\instagram_first_post_set_nolikes_connect_to_threads_no_caption.lua`
 
 ---
 

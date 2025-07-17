@@ -654,5 +654,105 @@ router.post('/resume/:sessionId', async (req, res) => {
         });
     }
 });
+router.post('/pre-verify-email', async (req, res) => {
+    try {
+        const { accounts } = req.body;
+        if (!Array.isArray(accounts) || accounts.length === 0) {
+            return res.status(400).json({ error: 'Request body must contain a non-empty array of accounts.' });
+        }
+        for (const acc of accounts) {
+            if (!acc.id || !acc.email || !acc.email_password) {
+                return res.status(400).json({
+                    error: `Missing required fields for account. Required: id, email, email_password.`,
+                    account: acc
+                });
+            }
+        }
+        const scriptPath = path_1.default.join(process.cwd(), '../bot/scripts/api/pre_verify_email.js');
+        console.log(`[API] Starting pre-verification for ${accounts.length} accounts`);
+        const verificationPromises = accounts.map(account => {
+            return new Promise((resolve) => {
+                const childProcess = (0, child_process_1.spawn)('node', [scriptPath, JSON.stringify(account)], {
+                    cwd: path_1.default.join(process.cwd(), '../bot'),
+                    detached: false,
+                    stdio: ['pipe', 'pipe', 'pipe']
+                });
+                let resultOutput = '';
+                let errorOutput = '';
+                childProcess.stdout.on('data', (data) => {
+                    resultOutput += data.toString();
+                });
+                childProcess.stderr.on('data', (data) => {
+                    errorOutput += data.toString();
+                });
+                childProcess.on('close', (code) => {
+                    try {
+                        if (code === 0 && resultOutput.trim()) {
+                            const result = JSON.parse(resultOutput.trim());
+                            resolve(result);
+                        }
+                        else {
+                            resolve({
+                                accountId: account.id,
+                                success: false,
+                                error: errorOutput || 'Unknown error occurred',
+                                action: 'none'
+                            });
+                        }
+                    }
+                    catch (parseError) {
+                        resolve({
+                            accountId: account.id,
+                            success: false,
+                            error: 'Failed to parse verification result',
+                            action: 'none'
+                        });
+                    }
+                });
+                childProcess.on('error', (error) => {
+                    resolve({
+                        accountId: account.id,
+                        success: false,
+                        error: error.message,
+                        action: 'none'
+                    });
+                });
+                setTimeout(() => {
+                    if (!childProcess.killed) {
+                        childProcess.kill();
+                        resolve({
+                            accountId: account.id,
+                            success: false,
+                            error: 'Verification timeout',
+                            action: 'none'
+                        });
+                    }
+                }, 30000);
+            });
+        });
+        const results = await Promise.all(verificationPromises);
+        const summary = {
+            total: accounts.length,
+            verified: results.filter(r => r.action === 'mark_ready').length,
+            invalid: results.filter(r => r.action === 'mark_invalid').length,
+            unchanged: results.filter(r => r.action === 'none').length,
+            errors: results.filter(r => !r.success).length
+        };
+        console.log(`[API] Pre-verification completed:`, summary);
+        res.json({
+            success: true,
+            message: `Pre-verification completed for ${accounts.length} accounts`,
+            summary,
+            results
+        });
+    }
+    catch (error) {
+        console.error('Error during pre-verification:', error);
+        res.status(500).json({
+            error: 'Failed to perform pre-verification',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
 exports.default = router;
 //# sourceMappingURL=automation.js.map

@@ -9,7 +9,7 @@ class PoolAssignmentService {
         this.campaignPoolService = new CampaignPoolService_1.CampaignPoolService();
         this.sprintAssignmentService = new SprintAssignmentService_1.SprintAssignmentService();
     }
-    async assignPoolToAccounts(poolId, options) {
+    async assignPoolToAccounts(poolId, accountIds, options) {
         await database_1.db.query('BEGIN');
         try {
             const poolQuery = `
@@ -48,7 +48,11 @@ class PoolAssignmentService {
         let totalAccountsAssigned = 0;
         for (const poolAssignment of request.pool_assignments) {
             try {
-                const result = await this.assignPoolToAccounts(poolAssignment.pool_id, poolAssignment.options);
+                const result = await this.assignPoolToAccounts(poolAssignment.pool_id, poolAssignment.account_ids, {
+                    strategy: request.assignment_strategy,
+                    start_date: request.start_date,
+                    priority: request.priority
+                });
                 results.push(result);
                 successfulPools++;
                 totalAccountsAssigned += result.total_accounts_assigned;
@@ -57,16 +61,22 @@ class PoolAssignmentService {
                 failedPools++;
                 overallWarnings.push({
                     type: 'compatibility',
-                    message: `Failed to assign pool ${poolAssignment.pool_id}: ${error instanceof Error ? error.message : 'Unknown error'}`
+                    message: `Failed to assign pool ${poolAssignment.pool_id}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                    severity: 'high'
                 });
             }
         }
         return {
             successful_pools: successfulPools,
             failed_pools: failedPools,
-            total_accounts_assigned: totalAccountsAssigned,
-            assignment_results: results,
-            overall_warnings: overallWarnings
+            failed_assignments: failedPools,
+            assignment_details: results,
+            summary: {
+                total_pools: request.pool_assignments.length,
+                total_accounts: request.pool_assignments.reduce((sum, p) => sum + p.account_ids.length, 0),
+                success_rate: results.length / request.pool_assignments.length,
+                warnings: overallWarnings
+            }
         };
     }
     async previewAssignment(poolId, options) {
@@ -83,18 +93,20 @@ class PoolAssignmentService {
         }
         const pool = poolResult.rows[0];
         const targetAccounts = await this.getTargetAccounts(poolId, options);
-        const assignmentPreviews = await this.executeAssignmentStrategy(pool, targetAccounts, options);
+        const assignmentPreviews = targetAccounts.map(account => ({
+            account_id: account.id,
+            pool_id: poolId,
+            status: 'scheduled',
+            progress_percentage: 0,
+            current_content_index: 0,
+            id: 0,
+            assignment_date: new Date().toISOString(),
+            created_at: new Date().toISOString()
+        }));
         const potentialConflicts = await this.analyzeAssignmentConflicts(assignmentPreviews);
         return {
             eligible_accounts: targetAccounts.length,
-            assignment_preview: assignmentPreviews.map(a => ({
-                account_id: a.account_id,
-                pool_id: a.pool_id,
-                sprint_ids: a.sprint_ids,
-                assignment_date: new Date(),
-                start_date: a.start_date,
-                strategy_used: a.strategy_used
-            })),
+            assignment_preview: assignmentPreviews,
             potential_conflicts: potentialConflicts
         };
     }
@@ -174,7 +186,7 @@ class PoolAssignmentService {
                     account_id: assignment.account_id,
                     pool_id: assignment.pool_id,
                     sprint_ids: assignment.sprint_ids,
-                    assignment_date: new Date(),
+                    assignment_date: new Date().toISOString(),
                     start_date: assignment.start_date,
                     strategy_used: assignment.strategy_used
                 });
@@ -221,7 +233,8 @@ class PoolAssignmentService {
         if (result.rows.length > 0) {
             warnings.push({
                 type: 'timing',
-                message: `${result.rows.length} accounts are currently in cooldown period`,
+                message: `Pool schedule conflicts with ${result.rows.length} existing assignments`,
+                severity: 'medium',
                 affected_accounts: result.rows.map(r => r.account_id)
             });
         }
@@ -242,7 +255,8 @@ class PoolAssignmentService {
                 if (compatibility.seasonal_issues.length > 0) {
                     warnings.push({
                         type: 'compatibility',
-                        message: `Pool ${poolId} has seasonal restrictions for current month (${currentMonth})`
+                        message: `Pool ${poolId} has seasonal restrictions for current month (${currentMonth})`,
+                        severity: 'low'
                     });
                 }
             }

@@ -314,6 +314,10 @@ export class WarmupProcessService {
           textId = bioResult.rows.length > 0 ? bioResult.rows[0].id : null;
           break;
 
+        case WarmupPhase.SET_TO_PRIVATE:
+          // No content assignment needed for SET_TO_PRIVATE phase
+          break;
+
         case WarmupPhase.NAME:
           // Assign name text content
           const nameResult = await db.query(`
@@ -327,117 +331,173 @@ export class WarmupProcessService {
 
         case WarmupPhase.FIRST_HIGHLIGHT:
         case WarmupPhase.NEW_HIGHLIGHT:
-          // Assign highlight image and highlight group name
-          const highlightImageResult = await db.query(`
-            SELECT id FROM central_content 
-            WHERE categories @> '["highlight"]'::jsonb 
-            AND status = 'active'
-            ORDER BY RANDOM() LIMIT 1
-          `);
-          contentId = highlightImageResult.rows.length > 0 ? highlightImageResult.rows[0].id : null;
+          // For highlights, get bundle assigned to model and use bundle name as text
+          try {
+            // Check if model has bundle assignments
+            const bundleResult = await db.query(`
+              SELECT cb.id, cb.name 
+              FROM model_bundle_assignments mba
+              JOIN content_bundles cb ON mba.bundle_id = cb.id
+              JOIN bundle_content_assignments bca ON cb.id = bca.bundle_id
+              JOIN central_content cc ON bca.content_id = cc.id
+              WHERE mba.model_id = $1 
+                AND cc.categories @> '["highlight"]'::jsonb 
+                AND cc.status = 'active'
+                AND mba.assignment_type IN ('active', 'auto')
+                AND cb.status = 'active'
+              ORDER BY RANDOM() 
+              LIMIT 1
+            `, [modelId]);
 
-          const highlightNameResult = await db.query(`
-            SELECT id FROM central_text_content 
-            WHERE categories @> ($1)::jsonb 
-            AND status = 'active'
-            ORDER BY RANDOM() LIMIT 1
-          `, [phase === WarmupPhase.FIRST_HIGHLIGHT ? '["highlight_group_category_name"]' : '["highlight_group_name"]']);
-          textId = highlightNameResult.rows.length > 0 ? highlightNameResult.rows[0].id : null;
+            if (bundleResult.rows.length > 0) {
+              const bundle = bundleResult.rows[0];
+              
+              // Get content from this bundle
+              const bundleContentResult = await db.query(`
+                SELECT cc.id 
+                FROM bundle_content_assignments bca
+                JOIN central_content cc ON bca.content_id = cc.id
+                WHERE bca.bundle_id = $1 
+                  AND cc.categories @> '["highlight"]'::jsonb 
+                  AND cc.status = 'active'
+                ORDER BY RANDOM() 
+                LIMIT 1
+              `, [bundle.id]);
+
+              if (bundleContentResult.rows.length > 0) {
+                contentId = bundleContentResult.rows[0].id;
+                
+                // Create text content entry with bundle name for this phase
+                const textResult = await db.query(`
+                  INSERT INTO central_text_content (
+                    text_content, 
+                    categories, 
+                    template_name, 
+                    status
+                  ) VALUES ($1, $2, $3, $4)
+                  RETURNING id
+                `, [
+                  bundle.name, 
+                  JSON.stringify(['highlight_group_name', 'bundle_derived']), 
+                  `Bundle: ${bundle.name}`, 
+                  'active'
+                ]);
+                
+                textId = textResult.rows[0].id;
+              }
+            }
+
+            // Fallback to regular content if no bundle found
+            if (!contentId) {
+              const fallbackResult = await db.query(`
+                SELECT id FROM central_content 
+                WHERE categories @> '["highlight"]'::jsonb 
+                AND status = 'active'
+                ORDER BY RANDOM() LIMIT 1
+              `);
+              contentId = fallbackResult.rows.length > 0 ? fallbackResult.rows[0].id : null;
+            }
+          } catch (bundleError) {
+            console.warn('Bundle assignment failed for highlight, using fallback:', bundleError);
+            
+            // Fallback to regular content assignment
+            const fallbackResult = await db.query(`
+              SELECT id FROM central_content 
+              WHERE categories @> '["highlight"]'::jsonb 
+              AND status = 'active'
+              ORDER BY RANDOM() LIMIT 1
+            `);
+            contentId = fallbackResult.rows.length > 0 ? fallbackResult.rows[0].id : null;
+          }
           break;
 
         case WarmupPhase.POST_CAPTION:
-          // Assign post image and caption
-          const postImageResult = await db.query(`
+          // Assign post content (image required, text optional)
+          const postContentResult = await db.query(`
             SELECT id FROM central_content 
             WHERE categories @> '["post"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-          contentId = postImageResult.rows.length > 0 ? postImageResult.rows[0].id : null;
-
-          const postCaptionResult = await db.query(`
+          contentId = postContentResult.rows.length > 0 ? postContentResult.rows[0].id : null;
+          
+          // Try to get text content (optional)
+          const postTextResult = await db.query(`
             SELECT id FROM central_text_content 
             WHERE categories @> '["post"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-          textId = postCaptionResult.rows.length > 0 ? postCaptionResult.rows[0].id : null;
+          textId = postTextResult.rows.length > 0 ? postTextResult.rows[0].id : null;
           break;
 
         case WarmupPhase.POST_NO_CAPTION:
-          // Assign only post image
-          const postNoCapResult = await db.query(`
+          // Assign only post content (no text)
+          const postNoTextResult = await db.query(`
             SELECT id FROM central_content 
             WHERE categories @> '["post"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-          contentId = postNoCapResult.rows.length > 0 ? postNoCapResult.rows[0].id : null;
+          contentId = postNoTextResult.rows.length > 0 ? postNoTextResult.rows[0].id : null;
           break;
 
         case WarmupPhase.STORY_CAPTION:
-          // Assign story image and caption
-          const storyImageResult = await db.query(`
+          // Assign story content (image required, text optional)
+          const storyContentResult = await db.query(`
             SELECT id FROM central_content 
             WHERE categories @> '["story"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-          contentId = storyImageResult.rows.length > 0 ? storyImageResult.rows[0].id : null;
-
-          const storyCaptionResult = await db.query(`
+          contentId = storyContentResult.rows.length > 0 ? storyContentResult.rows[0].id : null;
+          
+          // Try to get text content (optional)
+          const storyTextResult = await db.query(`
             SELECT id FROM central_text_content 
             WHERE categories @> '["story"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-          textId = storyCaptionResult.rows.length > 0 ? storyCaptionResult.rows[0].id : null;
+          textId = storyTextResult.rows.length > 0 ? storyTextResult.rows[0].id : null;
           break;
 
         case WarmupPhase.STORY_NO_CAPTION:
-          // Assign only story image
-          const storyNoCapResult = await db.query(`
+          // Assign only story content (no text)
+          const storyNoTextResult = await db.query(`
             SELECT id FROM central_content 
             WHERE categories @> '["story"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-          contentId = storyNoCapResult.rows.length > 0 ? storyNoCapResult.rows[0].id : null;
-          break;
-
-        case WarmupPhase.USERNAME:
-          // Assign username suggestions text
-          const usernameTextResult = await db.query(`
-            SELECT id FROM central_text_content
-            WHERE categories @> '["username"]'::jsonb
-            AND status = 'active'
-            ORDER BY RANDOM() LIMIT 1
-          `);
-          textId = usernameTextResult.rows.length > 0 ? usernameTextResult.rows[0].id : null;
-          break;
-
-        case WarmupPhase.GENDER:
-          // These phases don't require pre-assigned content
+          contentId = storyNoTextResult.rows.length > 0 ? storyNoTextResult.rows[0].id : null;
           break;
 
         default:
-          // These phases don't require pre-assigned content
-          break;
+          console.log(`No content assignment needed for phase: ${phase}`);
+          return true;
       }
 
       // Update the warmup phase with assigned content
-      await db.query(`
-        UPDATE account_warmup_phases 
-        SET assigned_content_id = $2,
+      if (contentId || textId) {
+        await db.query(`
+          UPDATE account_warmup_phases 
+          SET 
+            assigned_content_id = $2,
             assigned_text_id = $3,
             content_assigned_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-      `, [phaseId, contentId, textId]);
+          WHERE id = $1
+        `, [phaseId, contentId, textId]);
 
-      return true;
+        console.log(`Assigned content to phase ${phase}: content_id=${contentId}, text_id=${textId}`);
+        return true;
+      } else {
+        console.warn(`No content found for phase ${phase}`);
+        return false;
+      }
     } catch (error) {
-      console.error(`Error assigning content to phase ${phaseId}:`, error);
+      console.error(`Error assigning content to phase ${phase}:`, error);
       return false;
     }
   }
@@ -1020,6 +1080,22 @@ export class WarmupProcessService {
           requires_content: false,
           requires_text: true,
           text_categories: ['bio']
+        };
+
+      case WarmupPhase.SET_TO_PRIVATE:
+        return {
+          phase: 'set_to_private',
+          description: 'Set account to private',
+          api_scripts: [
+            baseScripts.ios16_photo_cleaner,
+            baseScripts.lua_executor
+          ],
+          lua_scripts: [
+            containerScript,
+            'instagram-tracker/bot/scripts/iphone_lua/set_account_private.lua'
+          ],
+          requires_content: false,
+          requires_text: false
         };
 
       case WarmupPhase.GENDER:

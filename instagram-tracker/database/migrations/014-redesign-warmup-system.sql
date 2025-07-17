@@ -22,6 +22,7 @@ DROP VIEW IF EXISTS bot_ready_accounts CASCADE;
 -- Define the 10 warmup phases (Phase 0 is manual, Phases 1-9 are bot-automated)
 CREATE TYPE warmup_phase_type AS ENUM (
     'manual_setup',      -- Phase 0: Human setup in container
+    'set_to_private',    -- Phase 0.5: Set account to private
     'bio',               -- Phase 1: Change bio text
     'gender',            -- Phase 2: Change gender to female
     'name',              -- Phase 3: Change display name
@@ -174,6 +175,7 @@ BEGIN
     -- Create phase records for all 10 phases
     FOREACH phase_name IN ARRAY ARRAY[
         'manual_setup'::warmup_phase_type,
+        'set_to_private'::warmup_phase_type,
         'bio'::warmup_phase_type,
         'gender'::warmup_phase_type,
         'name'::warmup_phase_type,
@@ -202,6 +204,7 @@ BEGIN
             phase_name,
             CASE 
                 WHEN phase_name = 'manual_setup' THEN 'available'::warmup_phase_status
+                WHEN phase_name = 'bio' THEN 'available'::warmup_phase_status
                 ELSE 'pending'::warmup_phase_status
             END,
             retry_limit

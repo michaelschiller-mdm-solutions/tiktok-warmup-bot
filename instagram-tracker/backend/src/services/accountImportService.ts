@@ -159,31 +159,29 @@ export class AccountImportService {
               await client.query('SELECT initialize_warmup_phases($1)', [account.id]);
               console.log(`✓ Warmup phases initialized for ${account.username}`);
 
-              // Step 2: Assign proxy automatically
-              const proxyResult = await this.proxyService.assignProxyToAccount(account.id);
-              if (proxyResult.success) {
-                console.log(`✓ Proxy assigned to ${account.username}: ${proxyResult.message}`);
-                
-                // Step 3: Transition to 'ready' state after proxy assignment
-                await AccountLifecycleService.transitionAccountState({
-                  account_id: account.id,
-                  to_state: 'ready' as any,
-                  changed_by: 'system',
-                  reason: 'Proxy assigned and account ready for warmup'
-                });
-                console.log(`✓ Account ${account.username} transitioned to 'ready' state`);
-
-                // Step 4: Initialize content assignment for warmup phases
-                try {
-                  await this.initializeContentAssignments(account.id, modelId);
-                  console.log(`✓ Content assignments initialized for ${account.username}`);
-                } catch (contentError) {
-                  console.warn(`⚠ Content assignment failed for ${account.username}:`, contentError);
-                  // Continue without content assignment - can be done later
+              // Step 2: Try to assign proxy automatically (optional for now)
+              try {
+                const proxyResult = await this.proxyService.assignProxyToAccount(account.id);
+                if (proxyResult.success) {
+                  console.log(`✓ Proxy assigned to ${account.username}: ${proxyResult.message}`);
+                } else {
+                  console.warn(`⚠ Proxy assignment failed for ${account.username}: ${proxyResult.message}`);
                 }
-              } else {
-                console.warn(`⚠ Proxy assignment failed for ${account.username}: ${proxyResult.message}`);
-                // Account stays in 'imported' state until proxy is available
+              } catch (proxyError: any) {
+                console.warn(`⚠ Proxy assignment failed for ${account.username}: ${proxyError.message}`);
+                // Continue without proxy - can be assigned later manually
+              }
+              
+              // Step 3: Account is ready for manual setup regardless of proxy assignment
+              // Keep account in 'imported' state so it shows up in Phase 0: Manual Setup
+
+              // Step 4: Initialize content assignment for warmup phases (optional)
+              try {
+                await this.initializeContentAssignments(account.id, modelId);
+                console.log(`✓ Content assignments initialized for ${account.username}`);
+              } catch (contentError) {
+                console.warn(`⚠ Content assignment failed for ${account.username}:`, contentError);
+                // Continue without content assignment - can be done later
               }
 
             } catch (processingError) {

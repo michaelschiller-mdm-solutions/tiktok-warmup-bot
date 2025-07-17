@@ -400,6 +400,18 @@ class ApiClient {
     return response.data.data;
   }
 
+  async getBatchWarmupStatus(accountIds?: number[], modelId?: number): Promise<Record<number, any>> {
+    const params = new URLSearchParams();
+    if (accountIds && accountIds.length > 0) {
+      params.append('account_ids', accountIds.join(','));
+    } else if (modelId) {
+      params.append('model_id', modelId.toString());
+    }
+    
+    const response = await this.client.get(`/accounts/warmup/batch-status?${params}`);
+    return response.data.data || {};
+  }
+
   async getReadyAccountsForWarmup(modelId?: number, limit: number = 50): Promise<any[]> {
     const params = new URLSearchParams({ limit: limit.toString() });
     if (modelId) params.append('model_id', modelId.toString());
@@ -686,6 +698,22 @@ class ApiClient {
   async getInvalidAccounts(): Promise<any> {
     const response = await this.client.get('/accounts/invalid');
     return response.data;
+  }
+
+  async checkContentReadiness(accountId: number): Promise<any> {
+    const response = await this.client.get(`/accounts/${accountId}/content-readiness`);
+    return response.data.data; // Return the full data object with phase details
+  }
+
+  async getReadyForWarmupAccounts(modelId?: number, limit: number = 50): Promise<any> {
+    const params = new URLSearchParams();
+    if (modelId) {
+      params.append('model_id', modelId.toString());
+    }
+    params.append('limit', limit.toString());
+    
+    const response = await this.client.get(`/accounts/warmup/ready?${params}`);
+    return response.data.data;
   }
 
 }

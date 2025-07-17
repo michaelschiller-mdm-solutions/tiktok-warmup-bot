@@ -50,6 +50,7 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId, mo
   const [loading, setLoading] = useState(true);
   const [bundleLoading, setBundleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [contentIssues, setContentIssues] = useState<any>(null);
   
   // Search and filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -66,7 +67,31 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId, mo
     loadModelContent();
     loadAvailableBundles();
     loadAssignedBundles();
+    checkContentReadiness();
   }, [modelId]);
+
+  const checkContentReadiness = async () => {
+    try {
+      // Get accounts in warmup for this model to check content readiness
+      const response = await fetch(`/api/accounts?model_id=${modelId}&lifecycle_state=warmup,ready&limit=1`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.data.length > 0) {
+          // Check content readiness for the first account (they all share the same model content)
+          const accountId = data.data[0].id;
+          const readinessResponse = await fetch(`/api/accounts/${accountId}/content-readiness`);
+          if (readinessResponse.ok) {
+            const readinessData = await readinessResponse.json();
+            if (readinessData.success && !readinessData.data.is_ready) {
+              setContentIssues(readinessData.data);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check content readiness:', error);
+    }
+  };
 
   const loadModelContent = async () => {
     try {
@@ -240,6 +265,7 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId, mo
     loadModelContent();
     loadAvailableBundles();
     loadAssignedBundles();
+    checkContentReadiness();
   };
 
   // Filter content based on search and filters
@@ -273,9 +299,26 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId, mo
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-lg font-medium text-gray-900">Content Management: {modelName}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-medium text-gray-900">Content Management: {modelName}</h3>
+            {contentIssues && (
+              <div className="flex items-center gap-1">
+                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-1 rounded">
+                  {contentIssues.missing_content_phases?.length || 0} Content Issues
+                </span>
+              </div>
+            )}
+          </div>
           <p className="text-sm text-gray-500">
             Manage model content and assign content bundles
+            {contentIssues && (
+              <span className="text-red-600 ml-2">
+                • Missing content for warmup phases
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -303,6 +346,106 @@ const ContentManagementTab: React.FC<ContentManagementTabProps> = ({ modelId, mo
           </button>
         </div>
       </div>
+
+      {/* Content Issues Warning */}
+      {contentIssues && contentIssues.missing_content_phases && contentIssues.missing_content_phases.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800 mb-2">
+                🚨 Missing Content in Model (Need to Upload):
+              </h3>
+              <div className="space-y-3">
+                {contentIssues.missing_content_phases.map((phase: any, index: number) => (
+                  <div key={index} className="text-sm text-red-700 border-l-2 border-red-300 pl-3">
+                    <div className="font-medium text-red-800 capitalize">{phase.phase_display_name || phase.phase.replace(/[_-]/g, ' ')}</div>
+                    
+                    {/* Show specific missing categories */}
+                    {phase.missing_categories && phase.missing_categories.length > 0 ? (
+                      <div className="mt-1 space-y-1">
+                        {phase.missing_categories.map((cat: any, idx: number) => (
+                          <div key={idx} className="text-xs flex items-center gap-2">
+                            <span className="text-red-600 font-medium">Missing:</span>
+                            <span className="px-2 py-0.5 bg-red-200 text-red-900 rounded text-xs font-medium">
+                              {cat.display_name} ({cat.type === 'text' ? 'Text' : 'Image'})
+                            </span>
+                          </div>
+                        ))}
+                        {phase.issue_type === 'missing_from_model' && (
+                          <div className="text-xs">
+                            <span className="px-2 py-1 bg-red-200 text-red-900 rounded font-medium">
+                              📁 Need to Upload
+                            </span>
+                          </div>
+                        )}
+                        {phase.issue_type === 'not_assigned_to_account' && (
+                          <div className="text-xs">
+                            <span className="px-2 py-1 bg-orange-200 text-orange-900 rounded font-medium">
+                              🔗 Need to Assign
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      // Fallback to generic content types
+                      <div className="mt-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-red-600 text-xs">needs:</span>
+                          {phase.missing_text && (
+                            <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-medium">
+                              Text Content
+                            </span>
+                          )}
+                          {phase.missing_image && (
+                            <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-medium">
+                              Image Content
+                            </span>
+                          )}
+                          {phase.issue_type === 'missing_from_model' && (
+                            <span className="px-2 py-1 bg-red-200 text-red-900 rounded text-xs font-medium">
+                              📁 Need to Upload
+                            </span>
+                          )}
+                          {phase.issue_type === 'not_assigned_to_account' && (
+                            <span className="px-2 py-1 bg-orange-200 text-orange-900 rounded text-xs font-medium">
+                              🔗 Need to Assign
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="bg-red-100 px-3 py-2 rounded-md text-sm font-medium text-red-800 hover:bg-red-200"
+                >
+                  Upload Missing Content
+                </button>
+                <button
+                  onClick={() => setActiveTab('available_bundles')}
+                  className="bg-purple-100 px-3 py-2 rounded-md text-sm font-medium text-purple-800 hover:bg-purple-200"
+                >
+                  Browse Content Bundles
+                </button>
+                <button
+                  onClick={checkContentReadiness}
+                  className="bg-gray-100 px-3 py-2 rounded-md text-sm font-medium text-gray-800 hover:bg-gray-200"
+                >
+                  Recheck Issues
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-lg">

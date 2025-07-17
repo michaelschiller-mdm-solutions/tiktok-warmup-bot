@@ -5,7 +5,6 @@ const usernameValidator_1 = require("../utils/usernameValidator");
 const ProxyAssignmentService_1 = require("./ProxyAssignmentService");
 const ContentAssignmentService_1 = require("./ContentAssignmentService");
 const WarmupProcessService_1 = require("./WarmupProcessService");
-const AccountLifecycleService_1 = require("./AccountLifecycleService");
 class AccountImportService {
     constructor(db) {
         this.db = db;
@@ -92,26 +91,24 @@ class AccountImportService {
                         try {
                             await client.query('SELECT initialize_warmup_phases($1)', [account.id]);
                             console.log(`✓ Warmup phases initialized for ${account.username}`);
-                            const proxyResult = await this.proxyService.assignProxyToAccount(account.id);
-                            if (proxyResult.success) {
-                                console.log(`✓ Proxy assigned to ${account.username}: ${proxyResult.message}`);
-                                await AccountLifecycleService_1.AccountLifecycleService.transitionAccountState({
-                                    account_id: account.id,
-                                    to_state: 'ready',
-                                    changed_by: 'system',
-                                    reason: 'Proxy assigned and account ready for warmup'
-                                });
-                                console.log(`✓ Account ${account.username} transitioned to 'ready' state`);
-                                try {
-                                    await this.initializeContentAssignments(account.id, modelId);
-                                    console.log(`✓ Content assignments initialized for ${account.username}`);
+                            try {
+                                const proxyResult = await this.proxyService.assignProxyToAccount(account.id);
+                                if (proxyResult.success) {
+                                    console.log(`✓ Proxy assigned to ${account.username}: ${proxyResult.message}`);
                                 }
-                                catch (contentError) {
-                                    console.warn(`⚠ Content assignment failed for ${account.username}:`, contentError);
+                                else {
+                                    console.warn(`⚠ Proxy assignment failed for ${account.username}: ${proxyResult.message}`);
                                 }
                             }
-                            else {
-                                console.warn(`⚠ Proxy assignment failed for ${account.username}: ${proxyResult.message}`);
+                            catch (proxyError) {
+                                console.warn(`⚠ Proxy assignment failed for ${account.username}: ${proxyError.message}`);
+                            }
+                            try {
+                                await this.initializeContentAssignments(account.id, modelId);
+                                console.log(`✓ Content assignments initialized for ${account.username}`);
+                            }
+                            catch (contentError) {
+                                console.warn(`⚠ Content assignment failed for ${account.username}:`, contentError);
                             }
                         }
                         catch (processingError) {

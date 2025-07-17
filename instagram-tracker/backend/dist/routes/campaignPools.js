@@ -108,22 +108,7 @@ router.get('/', async (req, res) => {
     `;
         const countResult = await client.query(countQuery);
         const totalCount = parseInt(countResult.rows[0].total);
-        const pools = result.rows.map(row => ({
-            id: row.id,
-            name: row.name,
-            description: row.description,
-            pool_type: row.pool_type,
-            content_format: row.content_format,
-            highlight_caption: row.highlight_caption,
-            content_order: row.content_order,
-            default_delay_hours: row.default_delay_hours,
-            max_items_per_batch: row.max_items_per_batch,
-            auto_add_to_highlights: row.auto_add_to_highlights,
-            target_highlight_groups: row.target_highlight_groups || [],
-            blocked_by_sprint_types: row.blocked_by_sprint_types || [],
-            created_at: row.created_at,
-            updated_at: row.updated_at
-        }));
+        const pools = result.rows.map(row => campaignPoolService.transformPoolRow(row));
         const response = {
             pools,
             total_count: totalCount,
@@ -272,8 +257,8 @@ router.delete('/:id', async (req, res) => {
 router.get('/:id/content', async (req, res) => {
     const client = req.app.locals.db;
     const poolId = parseInt(req.params.id);
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = parseInt(req.query.offset) || 0;
+    const contentLimit = parseInt(req.query.limit) || 50;
+    const contentOffset = parseInt(req.query.offset) || 0;
     try {
         const poolQuery = 'SELECT name, pool_type, content_format FROM campaign_pools WHERE id = $1';
         const poolResult = await client.query(poolQuery, [poolId]);
@@ -287,34 +272,17 @@ router.get('/:id/content', async (req, res) => {
       ORDER BY content_order ASC, created_at ASC
       LIMIT $2 OFFSET $3
     `;
-        const contentResult = await client.query(contentQuery, [poolId, limit, offset]);
+        const contentResult = await client.query(contentQuery, [poolId, contentLimit, contentOffset]);
         const countResult = await client.query('SELECT COUNT(*) as total FROM campaign_pool_content WHERE pool_id = $1', [poolId]);
-        const totalCount = parseInt(countResult.rows[0].total);
-        const contentItems = contentResult.rows.map(row => ({
-            id: row.id,
-            pool_id: row.pool_id,
-            file_path: row.file_path,
-            file_name: row.file_name,
-            caption: row.caption,
-            content_order: row.content_order,
-            custom_delay_hours: row.custom_delay_hours,
-            content_type: row.content_type,
-            post_group_id: row.post_group_id,
-            batch_number: row.batch_number,
-            add_to_highlights: row.add_to_highlights,
-            story_only: row.story_only,
-            created_at: row.created_at
-        }));
-        const response = {
+        const totalContentCount = parseInt(countResult.rows[0].total);
+        const contentItems = contentResult.rows;
+        res.json({
             content_items: contentItems,
-            total_count: totalCount,
-            pool_info: {
-                name: poolInfo.name,
-                pool_type: poolInfo.pool_type,
-                content_format: poolInfo.content_format
-            }
-        };
-        res.json(response);
+            pool_info: poolResult.rows.length > 0 ? campaignPoolService.transformPoolRow(poolResult.rows[0]) : null,
+            total_count: totalContentCount,
+            has_next: (contentOffset + contentLimit) < totalContentCount,
+            has_previous: contentOffset > 0
+        });
     }
     catch (error) {
         console.error('Error fetching pool content:', error);

@@ -1,5 +1,6 @@
 import express from 'express';
 import { AccountLifecycleService, AccountLifecycleState } from '../../services/AccountLifecycleService';
+import { WarmupProcessService } from '../../services/WarmupProcessService';
 
 const router = express.Router();
 
@@ -398,7 +399,9 @@ router.post('/:accountId/complete-setup', async (req: any, res: any) => {
       });
     }
 
-    const result = await AccountLifecycleService.completeManualSetup(
+    // Use WarmupProcessService for manual setup completion
+    const warmupService = new WarmupProcessService();
+    const result = await warmupService.completeManualSetup(
       parseInt(accountId),
       changed_by
     );

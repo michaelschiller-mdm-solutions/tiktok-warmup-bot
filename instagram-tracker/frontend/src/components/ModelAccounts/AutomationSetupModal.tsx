@@ -99,16 +99,19 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
   const [progress, setProgress] = useState<ProgressData | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [showAccountSelector, setShowAccountSelector] = useState(false);
+  const [isPreVerifying, setIsPreVerifying] = useState(false);
+  const [preVerificationResults, setPreVerificationResults] = useState<any>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const steps = [
-    { id: 1, name: 'Selecting Container', description: 'Navigate to and select the specified container' },
-    { id: 2, name: 'Entering Username', description: 'Open Instagram and paste username/email' },
-    { id: 3, name: 'Entering Password & Login', description: 'Enter password and submit login form' },
-    { id: 4, name: 'Fetching Verification Token', description: 'Poll email for Instagram verification code' },
-    { id: 5, name: 'Entering Token & Skipping Onboarding', description: 'Enter verification code and skip onboarding' }
+    { id: 1, name: 'Pre-Email Check', description: 'Check if verification codes already exist in email' },
+    { id: 2, name: 'Selecting Container', description: 'Navigate to and select the specified container' },
+    { id: 3, name: 'Entering Username', description: 'Open Instagram and paste username/email' },
+    { id: 4, name: 'Entering Password & Login', description: 'Enter password and submit login form' },
+    { id: 5, name: 'Fetching Verification Token', description: 'Poll email for Instagram verification code' },
+    { id: 6, name: 'Entering Token & Skipping Onboarding', description: 'Enter verification code and skip onboarding' }
   ];
 
   useEffect(() => {
@@ -473,6 +476,79 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
     );
   };
 
+  // Handle pre-verification email check
+  const handlePreVerification = async () => {
+    if (selectedAccountIds.length === 0) {
+      toast.error('Please select at least one account.');
+      return;
+    }
+
+    const accountsToVerify = availableAccounts
+      .filter(acc => selectedAccountIds.includes(acc.id))
+      .map(acc => ({
+        id: acc.id,
+        email: acc.email,
+        email_password: acc.email_password,
+        username: acc.username
+      }))
+      .filter(acc => acc.email && acc.email_password); // Only accounts with email credentials
+
+    if (accountsToVerify.length === 0) {
+      toast.error('Selected accounts must have email and email_password set.');
+      return;
+    }
+
+    setIsPreVerifying(true);
+    setPreVerificationResults(null);
+
+    try {
+      const response = await fetch('/api/automation/pre-verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accounts: accountsToVerify }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to perform pre-verification');
+      }
+
+      const result = await response.json();
+      setPreVerificationResults(result);
+
+      // Show results
+      const { summary } = result;
+      if (summary.verified > 0) {
+        toast.success(`✅ ${summary.verified} accounts verified and moved to warmup!`);
+      }
+      if (summary.invalid > 0) {
+        toast.error(`❌ ${summary.invalid} accounts marked invalid due to email issues.`);
+      }
+      if (summary.unchanged > 0) {
+        toast(`📭 ${summary.unchanged} accounts unchanged - no verification codes found.`);
+      }
+
+      // Update selected accounts to exclude those that were processed
+      const processedAccountIds = result.results
+        .filter((r: any) => r.action !== 'none')
+        .map((r: any) => r.accountId);
+      
+      setSelectedAccountIds(prev => prev.filter(id => !processedAccountIds.includes(id)));
+
+      // Refresh data to reflect changes
+      if (summary.verified > 0 || summary.invalid > 0) {
+        // Optional: refresh the parent component data
+        // This would need to be passed as a prop if needed
+      }
+
+    } catch (error: any) {
+      console.error('Failed to perform pre-verification:', error);
+      toast.error(error.message);
+    } finally {
+      setIsPreVerifying(false);
+    }
+  };
+
   // useEffect for checking session on mount
   useEffect(() => {
     if (isOpen) {
@@ -732,7 +808,7 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
               </div>
 
               {/* Steps List */}
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-6 gap-2">
                 {steps.map((step) => (
                   <div key={step.id} className={`text-center text-xs ${
                     step.id < progress.currentStep ? 'text-green-700' :
@@ -757,6 +833,37 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
                   <strong>Error:</strong> {progress.error}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Pre-verification Results */}
+          {preVerificationResults && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="font-medium text-blue-900 mb-2">📧 Email Pre-Verification Results</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{preVerificationResults.summary.verified}</div>
+                  <div className="text-gray-600">Verified & Ready</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{preVerificationResults.summary.invalid}</div>
+                  <div className="text-gray-600">Marked Invalid</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-600">{preVerificationResults.summary.unchanged}</div>
+                  <div className="text-gray-600">No Code Found</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-yellow-600">{preVerificationResults.summary.errors}</div>
+                  <div className="text-gray-600">Errors</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setPreVerificationResults(null)}
+                className="mt-3 text-xs text-blue-600 hover:text-blue-800 underline"
+              >
+                Clear Results
+              </button>
             </div>
           )}
 
@@ -903,14 +1010,33 @@ const AutomationSetupModal: React.FC<AutomationSetupModalProps> = ({
             {isRunning && !isPaused ? 'Running...' : 'Close'}
           </button>
           {!isRunning && (
-            <button
-              onClick={handleStartAutomation}
-              disabled={selectedAccountIds.length === 0}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-            >
-              <Play className="h-4 w-4" />
-              <span>Start Queue ({selectedAccountIds.length} accounts)</span>
-            </button>
+            <>
+              <button
+                onClick={handlePreVerification}
+                disabled={selectedAccountIds.length === 0 || isPreVerifying}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                {isPreVerifying ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="h-4 w-4" />
+                )}
+                <span>
+                  {isPreVerifying 
+                    ? 'Checking Emails...' 
+                    : `Pre-Verify Emails (${selectedAccountIds.length})`
+                  }
+                </span>
+              </button>
+              <button
+                onClick={handleStartAutomation}
+                disabled={selectedAccountIds.length === 0}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                <Play className="h-4 w-4" />
+                <span>Start Queue ({selectedAccountIds.length} accounts)</span>
+              </button>
+            </>
           )}
         </div>
       </div>

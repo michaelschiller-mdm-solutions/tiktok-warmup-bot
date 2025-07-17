@@ -183,27 +183,23 @@ const WarmupPhaseTracker: React.FC<WarmupPhaseTrackerProps> = ({
   return (
     <div className={`${compact ? 'p-4' : 'p-6'} bg-white rounded-lg shadow`}>
       {showTitle && (
-        <div className="mb-6">
-          <h3 className="text-lg font-medium text-gray-900">10-Phase Warmup Progress</h3>
-          <p className="text-sm text-gray-500">
-            {warmupStatus.username} • {warmupStatus.completed_phases} of {warmupStatus.total_phases} phases completed
-          </p>
-          
-          {/* Progress Bar */}
-          <div className="mt-3">
-            <div className="flex justify-between text-sm text-gray-600 mb-1">
-              <span>Progress</span>
-              <span>{warmupStatus.progress_percent}%</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${warmupStatus.progress_percent}%` }}
-              ></div>
-            </div>
-          </div>
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-lg font-bold">Warmup Progress</h3>
+          <span className="text-sm font-medium text-gray-600">{warmupStatus.username}</span>
         </div>
       )}
+      
+      <div className="flex items-center mb-4">
+        <div className="w-full bg-gray-200 rounded-full h-2.5">
+          <div 
+            className="bg-blue-600 h-2.5 rounded-full" 
+            style={{ width: `${warmupStatus.progress_percent}%` }}
+          ></div>
+        </div>
+        <span className="text-sm font-medium ml-3 whitespace-nowrap">
+          {warmupStatus.completed_phases} / {warmupStatus.total_phases} ({warmupStatus.progress_percent}%)
+        </span>
+      </div>
 
       {/* Phase Pipeline */}
       <div className="space-y-3">

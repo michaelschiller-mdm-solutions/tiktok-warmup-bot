@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Play, Pause, RotateCcw, TrendingUp, Clock, Eye, ChevronRight, User, Hash, Image, FileText, CheckCircle, X, Settings, AlertCircle, Mail } from 'lucide-react';
+import { Activity, Play, Pause, RotateCcw, TrendingUp, Clock, Eye, ChevronRight, User, Hash, Image, FileText, CheckCircle, X, Settings, AlertCircle, Mail, Users } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { DataGrid } from '../DataGrid';
 import { DataGridColumn } from '../../types/dataGrid';
@@ -30,6 +30,14 @@ const WARMUP_PHASES = [
     icon: FileText,
     color: 'blue',
     contentTypes: ['bio']
+  },
+  { 
+    id: WarmupPhase.SET_TO_PRIVATE, 
+    name: 'Set to Private', 
+    description: 'Set account to private',
+    icon: User,
+    color: 'gray',
+    contentTypes: []
   },
   { 
     id: WarmupPhase.GENDER, 
@@ -113,7 +121,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [showPhaseDetails, setShowPhaseDetails] = useState(false);
   const [phaseAccounts, setPhaseAccounts] = useState<Record<string, WarmupAccountWithPhases[]>>({});
-  const [warmupStatuses, setWarmupStatuses] = useState<Record<number, WarmupStatusSummary>>({});
+  const [warmupStatuses, setWarmupStatuses] = useState<Record<number, any>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [completingManualSetup, setCompletingManualSetup] = useState<Record<number, boolean>>({});
@@ -127,6 +135,12 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
   const [availableIphones, setAvailableIphones] = useState<any[]>([]);
   const [selectedIphoneId, setSelectedIphoneId] = useState<number | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(false);
+  const [contentReadiness, setContentReadiness] = useState<Record<number, any>>({});
+  
+  // Batch selection state
+  const [selectedAccounts, setSelectedAccounts] = useState<Set<number>>(new Set());
+  const [selectAllMode, setSelectAllMode] = useState(false);
+  const [batchActionLoading, setBatchActionLoading] = useState(false);
 
   const { 
     accounts, 
@@ -136,39 +150,24 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
     filteredCount, 
     refreshData,
     updateFilters
-  } = useAccountsData({
+  } = useAccountsData({ 
     modelId,
     activeTab: 'warmup'
   });
 
+  const phases = [...WARMUP_PHASES];
+
   // Fetch warmup data for accounts
   const fetchWarmupData = async () => {
     if (accounts.length === 0) return;
-    
+
     try {
       setLoading(true);
       setError(null);
       
-      // Get warmup status for each account
-      const statusPromises = accounts.map(async (account) => {
-        try {
-          const status = await apiClient.getWarmupStatus(account.id);
-          return { accountId: account.id, status };
-        } catch (err) {
-          console.warn(`Failed to get warmup status for account ${account.id}:`, err);
-          return { accountId: account.id, status: null };
-        }
-      });
-
-      const statusResults = await Promise.all(statusPromises);
-      const statusMap: Record<number, WarmupStatusSummary> = {};
-      
-      statusResults.forEach(({ accountId, status }) => {
-        if (status) {
-          statusMap[accountId] = status;
-        }
-      });
-
+      // Get warmup status for all accounts in one batch call (major performance improvement)
+      const accountIds = accounts.map(account => account.id);
+      const statusMap = await apiClient.getBatchWarmupStatus(accountIds);
       setWarmupStatuses(statusMap);
 
       // Group accounts by their current warmup phase
@@ -182,9 +181,8 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       accounts.forEach(account => {
         const status = statusMap[account.id];
         
-        // First, check if account is invalid (banned, suspended, or has critical issues)
-        if (account.lifecycle_state === 'archived' || account.lifecycle_state === 'cleanup' ||
-            account.status === 'banned' || account.status === 'suspended') {
+        // First, check if account is invalid (archived accounts only)
+        if (account.lifecycle_state === 'archived') {
           phaseGroups.invalid.push({
             ...account,
             phases: status?.phases || [],
@@ -195,73 +193,22 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
           return;
         }
 
-        // Manual setup phase - accounts in imported state
-        if (account.lifecycle_state === 'imported' || 
-            (!account.email || !account.password || !account.email_password)) {
-          phaseGroups.manual_setup.push({
-            ...account,
-            phases: status?.phases || [],
-            current_phase: undefined,
-            phase_status: undefined,
-            warmup_progress: 0
-          });
-          return;
-        }
-
-        // Ready for assignment - accounts in ready state
-        if (account.lifecycle_state === 'ready') {
-          phaseGroups.ready_for_assignment.push({
-            ...account,
-            phases: status?.phases || [],
-            current_phase: undefined,
-            phase_status: undefined,
-            warmup_progress: 0
-          });
-          return;
-        }
-
-        // Active warmup phases - accounts in warmup state
-        if (account.lifecycle_state === 'warmup' && status?.phases) {
-          // Find the current active phase
-          const activePhase = status.phases.find(p => 
-            p.status === 'available' || p.status === 'in_progress'
-          );
-          
-          if (activePhase && phaseGroups[activePhase.phase]) {
-            phaseGroups[activePhase.phase].push({
-              ...account,
-              phases: status.phases,
-              current_phase: activePhase.phase as any,
-              phase_status: activePhase.status as any,
-              warmup_progress: status.progress_percent || 0
-            });
-          } else {
-            // No active phase found, put in ready for assignment
-            phaseGroups.ready_for_assignment.push({
-              ...account,
-              phases: status.phases,
-              current_phase: undefined,
-              phase_status: undefined,
-              warmup_progress: status.progress_percent || 0
-            });
-          }
-          return;
-        }
-
-        // Default case - put in ready for assignment
-        phaseGroups.ready_for_assignment.push({
+        // ALL other accounts go to manual setup phase (Phase 0)
+        // This includes: imported, ready, warmup, cleanup, and any other states
+        phaseGroups.manual_setup.push({
           ...account,
           phases: status?.phases || [],
           current_phase: undefined,
           phase_status: undefined,
-          warmup_progress: 0
+          warmup_progress: status?.progress_percent || 0
         });
       });
       
       setPhaseAccounts(phaseGroups);
+
     } catch (err: any) {
-      console.error('Error fetching warmup data:', err);
-      setError(err.message || 'Failed to load warmup data');
+      console.error('Failed to fetch warmup data:', err);
+      setError(err.message || 'Failed to fetch warmup data');
     } finally {
       setLoading(false);
     }
@@ -475,10 +422,129 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
     }
   };
 
+  // Batch selection handlers
+  const handleSelectAccount = (accountId: number, selected: boolean) => {
+    setSelectedAccounts(prev => {
+      const newSet = new Set(prev);
+      if (selected) {
+        newSet.add(accountId);
+      } else {
+        newSet.delete(accountId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = (accounts: WarmupAccountWithPhases[], selected: boolean) => {
+    setSelectedAccounts(prev => {
+      const newSet = new Set(prev);
+      accounts.forEach(account => {
+        if (selected) {
+          newSet.add(account.id);
+        } else {
+          newSet.delete(account.id);
+        }
+      });
+      return newSet;
+    });
+  };
+
+  // Batch actions
+  const handleBatchCompleteManualSetup = async () => {
+    const selectedAccountIds = Array.from(selectedAccounts);
+    if (selectedAccountIds.length === 0) {
+      toast.error('No accounts selected');
+      return;
+    }
+
+    setBatchActionLoading(true);
+    try {
+      const promises = selectedAccountIds.map(id => 
+        apiClient.completeManualSetup(id, 'frontend-user')
+      );
+      const results = await Promise.all(promises);
+      
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.length - successCount;
+      
+      if (successCount > 0) {
+        toast.success(`${successCount} accounts completed successfully`);
+      }
+      if (failureCount > 0) {
+        toast.error(`${failureCount} accounts failed to complete`);
+      }
+      
+      setSelectedAccounts(new Set());
+      fetchWarmupData();
+    } catch (error) {
+      toast.error('Batch operation failed');
+    } finally {
+      setBatchActionLoading(false);
+    }
+  };
+
+  const handleBatchMarkInvalid = async () => {
+    const selectedAccountIds = Array.from(selectedAccounts);
+    if (selectedAccountIds.length === 0) {
+      toast.error('No accounts selected');
+      return;
+    }
+
+    setBatchActionLoading(true);
+    try {
+      const promises = selectedAccountIds.map(id => 
+        apiClient.markAccountInvalid(id, 'Batch invalidation from manual setup')
+      );
+      const results = await Promise.all(promises);
+      
+      const successCount = results.filter(r => r.success).length;
+      const failureCount = results.length - successCount;
+      
+      if (successCount > 0) {
+        toast.success(`${successCount} accounts marked invalid successfully`);
+      }
+      if (failureCount > 0) {
+        toast.error(`${failureCount} accounts failed to mark invalid`);
+      }
+      
+      setSelectedAccounts(new Set());
+      fetchWarmupData();
+    } catch (error) {
+      toast.error('Batch operation failed');
+    } finally {
+      setBatchActionLoading(false);
+    }
+  };
+
   // Define columns for account display in each phase
   const getPhaseColumns = (phaseId?: string): DataGridColumn<WarmupAccountWithPhases>[] => {
     // Base columns that are always visible
     const baseColumns: DataGridColumn<WarmupAccountWithPhases>[] = [
+      {
+        id: 'select',
+        field: 'id',
+        header: '', // Will be replaced with select all checkbox
+        width: 50,
+        minWidth: 50,
+        resizable: false,
+        sortable: false,
+        filterable: false,
+        type: 'custom',
+        align: 'center',
+        visible: true,
+        order: 0,
+        frozen: true,
+        editable: false,
+        required: false,
+        render: (value, row) => (
+          <input
+            type="checkbox"
+            checked={selectedAccounts.has(row.id)}
+            onChange={(e) => handleSelectAccount(row.id, e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+        )
+      },
       {
         id: 'container_number',
         field: 'container_number',
@@ -548,6 +614,43 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
             )}
           </div>
         )
+      },
+      {
+        id: 'next_available',
+        field: 'next_available_at',
+        header: 'Next Phase In',
+        width: 120,
+        minWidth: 100,
+        resizable: true,
+        sortable: true,
+        filterable: false,
+        type: 'custom',
+        align: 'center',
+        visible: true,
+        order: 11,
+        frozen: false,
+        editable: false,
+        required: false,
+        render: (value, row) => {
+          if (!value) return <span className="text-gray-400">—</span>;
+          
+          const nextTime = new Date(value);
+          const now = new Date();
+          const diffMs = nextTime.getTime() - now.getTime();
+          
+          if (diffMs <= 0) {
+            return <span className="text-green-600 font-medium">Ready</span>;
+          }
+          
+          const hours = Math.floor(diffMs / (1000 * 60 * 60));
+          const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+          
+          if (hours > 0) {
+            return <span className="text-orange-600">{hours}h {minutes}m</span>;
+          } else {
+            return <span className="text-yellow-600">{minutes}m</span>;
+          }
+        }
       }
     ];
 
@@ -973,7 +1076,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         break;
     }
 
-    // Always add proxy status and actions columns at the end
+    // Always add proxy status, progress, and actions columns at the end
     const endColumns: DataGridColumn<WarmupAccountWithPhases>[] = [
       {
         id: 'proxy_status',
@@ -1012,6 +1115,43 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         }
       },
       {
+        id: 'warmup_progress',
+        field: 'id',
+        header: 'Progress',
+        width: 180,
+        minWidth: 150,
+        resizable: true,
+        sortable: false,
+        filterable: false,
+        type: 'custom',
+        align: 'left',
+        visible: true,
+        order: 9,
+        frozen: false,
+        editable: false,
+        required: false,
+        render: (value, row) => {
+          const status = warmupStatuses[row.id];
+          if (!status || status.total_phases === 0) {
+            return <span className="text-xs text-gray-400">Not started</span>;
+          }
+          
+          return (
+            <div className="flex items-center gap-2 w-full" title={`${status.completed_phases} of ${status.total_phases} phases completed`}>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${status.progress_percent || 0}%` }}
+                ></div>
+              </div>
+              <span className="text-xs font-medium text-gray-600">
+                {status.completed_phases}/{status.total_phases}
+              </span>
+            </div>
+          );
+        }
+      },
+      {
         id: 'actions',
         field: 'id',
         header: 'Actions',
@@ -1023,7 +1163,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         type: 'custom',
         align: 'center',
         visible: true,
-        order: 9,
+        order: 10,
         frozen: false,
         editable: false,
         required: false,
@@ -1309,14 +1449,15 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       )}
 
       {/* Enhanced Warmup Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Manual Setup</p>
+              <p className="text-sm font-medium text-gray-600">Phase 0: Manual Setup</p>
               <p className="text-2xl font-bold text-blue-600">
                 {phaseAccounts.manual_setup?.length || 0}
               </p>
+              <p className="text-xs text-gray-500 mt-1">All non-archived accounts</p>
             </div>
             <User className="h-8 w-8 text-blue-600" />
           </div>
@@ -1325,10 +1466,11 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Invalid/Banned</p>
+              <p className="text-sm font-medium text-gray-600">Archived Accounts</p>
               <p className="text-2xl font-bold text-red-600">
                 {phaseAccounts.invalid?.length || 0}
               </p>
+              <p className="text-xs text-gray-500 mt-1">Invalidated accounts</p>
             </div>
             <AlertCircle className="h-8 w-8 text-red-600" />
           </div>
@@ -1337,36 +1479,13 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-600">Ready for Bot</p>
-              <p className="text-2xl font-bold text-green-600">
-                {phaseAccounts.ready_for_assignment?.length || 0}
+              <p className="text-sm font-medium text-gray-600">Total Accounts</p>
+              <p className="text-2xl font-bold text-gray-600">
+                {totalCount}
               </p>
+              <p className="text-xs text-gray-500 mt-1">All accounts combined</p>
             </div>
-            <Activity className="h-8 w-8 text-green-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">In Progress</p>
-              <p className="text-2xl font-bold text-yellow-600">
-                {activeWarmupAccounts}
-              </p>
-            </div>
-            <Clock className="h-8 w-8 text-yellow-600" />
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">Completed</p>
-              <p className="text-2xl font-bold text-purple-600">
-                {accounts.filter(a => a.lifecycle_state === 'active').length}
-              </p>
-            </div>
-            <TrendingUp className="h-8 w-8 text-purple-600" />
+            <Users className="h-8 w-8 text-gray-600" />
           </div>
         </div>
       </div>
@@ -1389,8 +1508,8 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         >
           <option value="all">All Phases</option>
           <option value="manual_setup">Manual Setup</option>
-          <option value="ready_for_assignment">Ready for Bot</option>
-          {WARMUP_PHASES.map(phase => (
+          <option value="invalid">Archived Accounts</option>
+          {phases.map(phase => (
             <option key={phase.id} value={phase.id}>{phase.name}</option>
           ))}
         </select>
@@ -1408,10 +1527,10 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
                   <AlertCircle className="h-4 w-4 text-red-600" />
                 </div>
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900">Invalid/Banned Accounts</h4>
-                  <p className="text-sm text-gray-500">Accounts that need immediate attention</p>
+                  <h4 className="text-lg font-medium text-gray-900">Archived Accounts</h4>
+                  <p className="text-sm text-gray-500">Accounts that have been marked as invalid</p>
                   <p className="text-xs text-gray-400 mt-1">
-                    Fields: Username, Container, Status, Account Issues, Recovery Actions
+                    Fields: Username, Container, Status, Archived Date, Reason
                   </p>
                 </div>
                 <div className="ml-auto">
@@ -1456,6 +1575,72 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
               </div>
             </div>
           </div>
+          
+          {/* Batch Actions for Manual Setup */}
+          {phaseAccounts.manual_setup && phaseAccounts.manual_setup.length > 0 && (
+            <div className="p-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={selectedAccounts.size > 0 && phaseAccounts.manual_setup.every(account => selectedAccounts.has(account.id))}
+                      onChange={(e) => handleSelectAll(phaseAccounts.manual_setup, e.target.checked)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    Select All ({phaseAccounts.manual_setup.length})
+                  </label>
+                  {selectedAccounts.size > 0 && (
+                    <span className="text-sm text-gray-600">
+                      {selectedAccounts.size} account{selectedAccounts.size === 1 ? '' : 's'} selected
+                    </span>
+                  )}
+                </div>
+                
+                {selectedAccounts.size > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleBatchCompleteManualSetup}
+                      disabled={batchActionLoading}
+                      className="flex items-center gap-1 px-3 py-2 text-sm bg-green-50 hover:bg-green-100 text-green-700 rounded transition-colors disabled:opacity-50"
+                      title={`Complete manual setup for ${selectedAccounts.size} selected accounts`}
+                    >
+                      {batchActionLoading ? (
+                        <>
+                          <div className="w-4 h-4 border border-green-600 border-t-transparent rounded-full animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="h-4 w-4" />
+                          Complete ({selectedAccounts.size})
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleBatchMarkInvalid}
+                      disabled={batchActionLoading}
+                      className="flex items-center gap-1 px-3 py-2 text-sm bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors disabled:opacity-50"
+                      title={`Mark ${selectedAccounts.size} selected accounts as invalid`}
+                    >
+                      {batchActionLoading ? (
+                        <>
+                          <div className="w-4 h-4 border border-red-600 border-t-transparent rounded-full animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <>
+                          <X className="h-4 w-4" />
+                          Mark Invalid ({selectedAccounts.size})
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
           {phaseAccounts.manual_setup && phaseAccounts.manual_setup.length > 0 ? (
             <DataGrid
               data={phaseAccounts.manual_setup}
@@ -1475,109 +1660,199 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
           )}
         </div>
 
-        {/* Ready for Assignment Phase */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                <Activity className="h-4 w-4 text-green-600" />
-              </div>
-              <div>
-                <h4 className="text-lg font-medium text-gray-900">Ready for Bot Assignment</h4>
-                <p className="text-sm text-gray-500">Accounts ready for random phase assignment</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Fields: Username, Container, Proxy Status, Last Action
-                </p>
-              </div>
-              <div className="ml-auto">
-                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  {phaseAccounts.ready_for_assignment?.length || 0} accounts
-                </span>
+
+
+        {/* Content Readiness Warning - Show once above all phases */}
+        {(() => {
+          // Aggregate missing content across all accounts with enhanced details
+          const allMissingContent = new Map<string, { 
+            text: boolean; 
+            image: boolean; 
+            requirement: string; 
+            issue_type: string;
+            model_name: string;
+          }>();
+          
+          Object.values(contentReadiness).forEach(readiness => {
+            if (!readiness?.is_ready && readiness?.missing_content_phases) {
+              readiness.missing_content_phases.forEach((phase: any) => {
+                const existing = allMissingContent.get(phase.phase) || { 
+                  text: false, 
+                  image: false, 
+                  requirement: phase.content_requirement,
+                  issue_type: phase.issue_type,
+                  model_name: readiness.model_name || 'Unknown Model'
+                };
+                allMissingContent.set(phase.phase, {
+                  text: existing.text || phase.missing_text,
+                  image: existing.image || phase.missing_image,
+                  requirement: phase.content_requirement,
+                  issue_type: phase.issue_type,
+                  model_name: readiness.model_name || 'Unknown Model'
+                });
+              });
+            }
+          });
+
+          if (allMissingContent.size === 0) return null;
+
+          const missingFromModel = Array.from(allMissingContent.entries()).filter(([_, data]) => data.issue_type === 'missing_from_model');
+          const notAssignedToAccount = Array.from(allMissingContent.entries()).filter(([_, data]) => data.issue_type === 'not_assigned_to_account');
+
+          return (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">
+                    Content Issues for Warmup Phases
+                  </h3>
+                  
+                  {/* Missing from model */}
+                  {missingFromModel.length > 0 && (
+                    <div className="mt-3">
+                      <h4 className="text-sm font-medium text-red-700 mb-2">
+                        🚨 Missing Content in Model (Need to Upload):
+                      </h4>
+                      <div className="space-y-2">
+                        {missingFromModel.map(([phase, data]) => {
+                          // Get the readiness data for this phase to access missing_categories
+                          const readinessData = Object.values(contentReadiness).find(r => 
+                            r?.missing_content_phases?.some((p: any) => p.phase === phase)
+                          );
+                          const phaseData = readinessData?.missing_content_phases?.find((p: any) => p.phase === phase);
+                          
+                          return (
+                            <div key={phase} className="text-sm text-red-700 border-l-2 border-red-300 pl-3">
+                              <div className="font-medium text-red-800 capitalize">{phase.replace(/[_-]/g, ' ')}</div>
+                              
+                              {/* Show specific missing categories if available */}
+                              {phaseData?.missing_categories && phaseData.missing_categories.length > 0 ? (
+                                <div className="mt-1 space-y-1">
+                                  {phaseData.missing_categories.map((cat: any, idx: number) => (
+                                    <div key={idx} className="text-xs flex items-center gap-2">
+                                      <span className="text-red-600 font-medium">Missing:</span>
+                                      <span className="px-2 py-0.5 bg-red-200 text-red-900 rounded text-xs font-medium">
+                                        {cat.display_name} ({cat.type === 'text' ? 'Text' : 'Image'})
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                // Fallback to generic content types
+                                <div className="mt-1">
+                                  <span className="text-red-600 text-xs">needs:</span>
+                                  <div className="flex gap-1 mt-1">
+                                    {data.text && (
+                                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-medium">
+                                        Text Content
+                                      </span>
+                                    )}
+                                    {data.image && (
+                                      <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs font-medium">
+                                        Image Content
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Not assigned to account */}
+                  {notAssignedToAccount.length > 0 && (
+                    <div className="mt-3">
+                      <h4 className="text-sm font-medium text-orange-700 mb-2">
+                        ⚠️ Content Exists but Not Assigned:
+                      </h4>
+                      <div className="space-y-2">
+                        {notAssignedToAccount.map(([phase, data]) => (
+                          <div key={phase} className="text-sm text-orange-700">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium capitalize">{phase.replace(/[_-]/g, ' ')}</span>
+                              <span className="text-orange-600">content available but not assigned</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4">
+                    <div className="flex gap-2">
+                      {missingFromModel.length > 0 && (
+                        <>
+                          <button
+                            onClick={() => window.open('/campaign-pools', '_blank')}
+                            className="bg-red-100 px-3 py-2 rounded-md text-sm font-medium text-red-800 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                          >
+                            Create Content Bundles
+                          </button>
+                          <button
+                            onClick={() => window.open('/content-registry', '_blank')}
+                            className="bg-red-100 px-3 py-2 rounded-md text-sm font-medium text-red-800 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                          >
+                            Content Registry
+                          </button>
+                        </>
+                      )}
+                      {notAssignedToAccount.length > 0 && (
+                        <button
+                          onClick={async () => {
+                            // Trigger content assignment for all accounts in this model
+                            try {
+                              const modelId = Object.values(contentReadiness)[0]?.model_id;
+                              if (modelId) {
+                                const response = await fetch(`/api/accounts/assign-content-bulk?model_id=${modelId}`, {
+                                  method: 'POST'
+                                });
+                                if (response.ok) {
+                                  window.location.reload(); // Refresh to show updated status
+                                }
+                              }
+                            } catch (error) {
+                              console.error('Failed to assign content:', error);
+                            }
+                          }}
+                          className="bg-orange-100 px-3 py-2 rounded-md text-sm font-medium text-orange-800 hover:bg-orange-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+                        >
+                          Assign Existing Content
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          {phaseAccounts.ready_for_assignment && phaseAccounts.ready_for_assignment.length > 0 ? (
-            <DataGrid
-              data={phaseAccounts.ready_for_assignment}
-              columns={getPhaseColumns('ready_for_assignment')}
-              loading={loading}
-              error={error}
-              height={500}
-              virtualScrolling={false}
-              multiSelect={true}
-              rowSelection={true}
-              keyboardNavigation={true}
-            />
-          ) : (
-            <div className="p-8 text-center text-gray-500">
-              No accounts ready for assignment
-            </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* Bot Phases - Always show all phases with improved visibility */}
-        {WARMUP_PHASES.map((phase) => {
+        {phases.map((phase) => {
           const Icon = phase.icon;
           const phaseAccountsList = phaseAccounts[phase.id] || [];
           
-          // Define field descriptions for each phase
-          const getFieldDescription = (phaseId: WarmupPhase) => {
-            switch (phaseId) {
-              case WarmupPhase.BIO:
-                return 'Fields: Username, Container, Assigned Bio Content, Phase Status, Progress';
-              case WarmupPhase.GENDER:
-                return 'Fields: Username, Container, Phase Status, Last Action Time';
-              case WarmupPhase.NAME:
-                return 'Fields: Username, Container, Assigned Name, Phase Status, Progress';
-              case WarmupPhase.USERNAME:
-                return 'Fields: Username, Container, New Username, Phase Status, Progress';
-              case WarmupPhase.FIRST_HIGHLIGHT:
-              case WarmupPhase.NEW_HIGHLIGHT:
-                return 'Fields: Username, Container, Highlight Group + Images, Phase Status, Progress';
-              case WarmupPhase.POST_CAPTION:
-              case WarmupPhase.STORY_CAPTION:
-                return 'Fields: Username, Container, Caption + Image, Phase Status, Progress';
-              case WarmupPhase.POST_NO_CAPTION:
-              case WarmupPhase.STORY_NO_CAPTION:
-                return 'Fields: Username, Container, Image Only, Phase Status, Progress';
-              default:
-                return 'Fields: Username, Container, Proxy Status, Phase Status';
-            }
-          };
-          
           return (
-            <div key={phase.id} className="bg-white rounded-lg shadow">
-              <div className="p-4 border-b border-gray-200">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full bg-${phase.color}-100 flex items-center justify-center`}>
-                    <Icon className={`h-4 w-4 text-${phase.color}-600`} />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-medium text-gray-900">{phase.name}</h4>
-                    <p className="text-sm text-gray-500">
-                      {phase.description}
-                      {phase.dependency && (
-                        <span className="ml-2 text-xs text-orange-600">
-                          (Requires: {WARMUP_PHASES.find(p => p.id === phase.dependency)?.name})
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {getFieldDescription(phase.id)}
-                    </p>
-                    {phase.contentTypes.length > 0 && (
-                      <p className="text-xs text-blue-600 mt-1">
-                        Content Required: {phase.contentTypes.join(', ')}
-                      </p>
-                    )}
-                  </div>
-                  <div className="ml-auto">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${phase.color}-100 text-${phase.color}-800`}>
+            <div key={phase.id} className="bg-white border rounded-lg overflow-hidden">
+              <div className="bg-gray-50 px-4 py-3 border-b">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-sm font-medium text-gray-900">{phase.name}</h3>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                       {phaseAccountsList.length} accounts
                     </span>
                   </div>
                 </div>
               </div>
+
               {phaseAccountsList.length > 0 ? (
                 <DataGrid
                   data={phaseAccountsList}

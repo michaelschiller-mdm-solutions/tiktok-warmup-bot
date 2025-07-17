@@ -315,7 +315,7 @@ router.put('/:id/assign-model', async (req, res) => {
 });
 router.get('/unassigned', async (req, res) => {
     try {
-        const { page = 1, limit = 50, search, lifecycle_state, status, sort_by = 'created_at', sort_order = 'DESC' } = req.query;
+        const { page = 1, limit = 1000, search, lifecycle_state, status, sort_by = 'created_at', sort_order = 'DESC' } = req.query;
         let whereConditions = ['a.model_id IS NULL'];
         let params = [];
         let paramIndex = 1;
@@ -391,7 +391,7 @@ router.get('/unassigned', async (req, res) => {
 });
 router.get('/', async (req, res) => {
     try {
-        const { model_id, status, lifecycle_state, content_type, niche, proxy_provider, proxy_status, page = 1, limit = 50, sort_by = 'created_at', sort_order = 'desc', search } = req.query;
+        const { model_id, status, lifecycle_state, content_type, niche, proxy_provider, proxy_status, page = 1, limit = 1000, sort_by = 'created_at', sort_order = 'desc', search } = req.query;
         let whereConditions = [];
         let params = [];
         let paramIndex = 1;
@@ -512,7 +512,7 @@ router.get('/', async (req, res) => {
 });
 router.get('/all-fields', async (req, res) => {
     try {
-        const { page = 1, limit = 50, search, model_id, lifecycle_state, status, sort_by = 'created_at', sort_order = 'DESC' } = req.query;
+        const { page = 1, limit = 1000, search, model_id, lifecycle_state, status, sort_by = 'created_at', sort_order = 'DESC' } = req.query;
         let whereConditions = [];
         let params = [];
         let paramIndex = 1;
@@ -633,6 +633,71 @@ router.get('/all-fields', async (req, res) => {
             success: false,
             error: 'Internal Server Error',
             message: 'Failed to fetch accounts'
+        });
+    }
+});
+router.get('/invalid', async (req, res) => {
+    try {
+        const query = `
+      SELECT 
+        a.id,
+        a.username,
+        a.email,
+        a.status,
+        a.lifecycle_state,
+        a.order_number,
+        a.import_source,
+        a.import_batch_id,
+        a.imported_at,
+        a.state_changed_at,
+        a.state_changed_by,
+        a.state_notes,
+        m.name as model_name
+      FROM accounts a
+      LEFT JOIN models m ON a.model_id = m.id
+      WHERE 
+        a.lifecycle_state = 'archived' 
+        OR a.lifecycle_state = 'cleanup'
+        OR a.status IN ('banned', 'suspended')
+      ORDER BY 
+        a.order_number ASC NULLS LAST,
+        a.imported_at DESC NULLS LAST,
+        a.created_at DESC
+    `;
+        const result = await database_1.db.query(query);
+        const groupedAccounts = {};
+        const ungroupedAccounts = [];
+        result.rows.forEach(account => {
+            if (account.order_number) {
+                if (!groupedAccounts[account.order_number]) {
+                    groupedAccounts[account.order_number] = [];
+                }
+                groupedAccounts[account.order_number].push(account);
+            }
+            else {
+                ungroupedAccounts.push(account);
+            }
+        });
+        res.json({
+            success: true,
+            data: {
+                grouped_by_order: groupedAccounts,
+                ungrouped: ungroupedAccounts,
+                total_count: result.rows.length,
+                order_summary: Object.keys(groupedAccounts).map(orderNum => ({
+                    order_number: orderNum,
+                    account_count: groupedAccounts[orderNum].length,
+                    accounts: groupedAccounts[orderNum].map(acc => acc.username)
+                }))
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error fetching invalid accounts:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch invalid accounts',
+            message: error.message
         });
     }
 });
@@ -1309,7 +1374,7 @@ router.post('/:id/complete-manual-setup', async (req, res) => {
 });
 router.get('/warmup/ready', async (req, res) => {
     try {
-        const { model_id, limit = 50 } = req.query;
+        const { model_id, limit = 1000 } = req.query;
         const { WarmupProcessService } = await Promise.resolve().then(() => __importStar(require('../services/WarmupProcessService')));
         const warmupService = new WarmupProcessService();
         const accounts = await warmupService.getReadyAccounts(model_id ? parseInt(model_id) : undefined, parseInt(limit));
@@ -1444,68 +1509,561 @@ router.post('/:id/assign-sprint', async (req, res) => {
         });
     }
 });
-router.get('/invalid', async (req, res) => {
+router.get('/:id/content-readiness', async (req, res) => {
     try {
-        const query = `
-      SELECT 
-        a.id,
-        a.username,
-        a.email,
-        a.status,
-        a.lifecycle_state,
-        a.order_number,
-        a.import_source,
-        a.import_batch_id,
-        a.imported_at,
-        a.state_changed_at,
-        a.state_changed_by,
-        a.state_notes,
-        m.name as model_name
-      FROM accounts a
-      LEFT JOIN models m ON a.model_id = m.id
-      WHERE 
-        a.lifecycle_state = 'archived' 
-        OR a.lifecycle_state = 'cleanup'
-        OR a.status IN ('banned', 'suspended')
-      ORDER BY 
-        a.order_number ASC NULLS LAST,
-        a.imported_at DESC NULLS LAST,
-        a.created_at DESC
-    `;
-        const result = await database_1.db.query(query);
-        const groupedAccounts = {};
-        const ungroupedAccounts = [];
-        result.rows.forEach(account => {
-            if (account.order_number) {
-                if (!groupedAccounts[account.order_number]) {
-                    groupedAccounts[account.order_number] = [];
-                }
-                groupedAccounts[account.order_number].push(account);
-            }
-            else {
-                ungroupedAccounts.push(account);
-            }
-        });
+        const accountId = parseInt(req.params.id);
+        if (isNaN(accountId)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid account ID'
+            });
+        }
+        const readinessResult = await database_1.db.query('SELECT is_content_assignment_complete($1) as is_ready', [accountId]);
+        const isContentReady = readinessResult.rows[0]?.is_ready || false;
+        const bundleResult = await database_1.db.query(`
+      SELECT EXISTS(
+        SELECT 1 FROM model_bundle_assignments mba 
+        JOIN accounts a ON a.model_id = mba.model_id
+      WHERE a.id = $1
+          AND mba.assignment_type IN ('active', 'auto')
+      ) as has_bundles
+    `, [accountId]);
+        const hasBundles = bundleResult.rows[0]?.has_bundles || false;
+        const accountResult = await database_1.db.query(`
+      SELECT id, username, model_id, lifecycle_state, container_number
+      FROM accounts 
+      WHERE id = $1
+    `, [accountId]);
+        if (accountResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Account not found'
+            });
+        }
+        const account = accountResult.rows[0];
+        let readinessStatus = 'ready';
+        let readinessMessage = 'Account is ready for warmup assignment';
+        if (!isContentReady) {
+            readinessStatus = 'missing_content';
+            readinessMessage = 'Content assignment incomplete - some warmup phases lack assigned content';
+        }
+        else if (!hasBundles) {
+            readinessStatus = 'no_bundles';
+            readinessMessage = 'No content bundles assigned to model - assign bundles first';
+        }
+        else if (!account.container_number) {
+            readinessStatus = 'no_container';
+            readinessMessage = 'No iPhone container assigned to account';
+        }
         res.json({
             success: true,
             data: {
-                grouped_by_order: groupedAccounts,
-                ungrouped: ungroupedAccounts,
-                total_count: result.rows.length,
-                order_summary: Object.keys(groupedAccounts).map(orderNum => ({
-                    order_number: orderNum,
-                    account_count: groupedAccounts[orderNum].length,
-                    accounts: groupedAccounts[orderNum].map(acc => acc.username)
-                }))
+                account_id: accountId,
+                is_ready: readinessStatus === 'ready',
+                content_assignment_complete: isContentReady,
+                has_content_bundles: hasBundles,
+                has_container: !!account.container_number,
+                readiness_status: readinessStatus,
+                readiness_message: readinessMessage,
+                account: {
+                    id: account.id,
+                    username: account.username,
+                    model_id: account.model_id,
+                    lifecycle_state: account.lifecycle_state,
+                    container_number: account.container_number
+                }
             }
         });
     }
     catch (error) {
-        console.error('Error fetching invalid accounts:', error);
+        console.error('Error checking account content readiness:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to fetch invalid accounts',
+            error: 'Internal Server Error',
+            message: error instanceof Error ? error.message : 'Failed to check content readiness'
+        });
+    }
+});
+router.post('/:id/complete-set-private', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const accountId = parseInt(id);
+        if (isNaN(accountId)) {
+            return res.status(400).json({ success: false, error: 'Invalid account ID' });
+        }
+        const accountResult = await database_1.db.query(`
+      SELECT id, username, lifecycle_state FROM accounts WHERE id = $1
+    `, [accountId]);
+        if (accountResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Account not found' });
+        }
+        const account = accountResult.rows[0];
+        const result = await database_1.db.query(`
+      INSERT INTO account_warmup_phases (
+        account_id, 
+        phase, 
+        status, 
+        started_at, 
+        completed_at, 
+        created_at, 
+        updated_at
+      )
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT (account_id, phase) DO UPDATE SET 
+        status = $3,
+        completed_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING id, status, completed_at
+    `, [accountId, 'set_to_private', 'completed']);
+        await database_1.db.query(`
+      UPDATE accounts 
+      SET lifecycle_state = 'ready',
+          state_changed_at = CURRENT_TIMESTAMP,
+          state_changed_by = 'system'
+      WHERE id = $1
+    `, [accountId]);
+        const phaseRecord = result.rows[0];
+        res.json({
+            success: true,
+            data: {
+                account_id: accountId,
+                username: account.username,
+                phase: 'set_to_private',
+                status: 'completed',
+                completed_at: phaseRecord.completed_at,
+                lifecycle_state: 'ready',
+                message: 'Account set_to_private phase completed successfully. Account is now eligible for warmup pipeline assignment.',
+                next_step: 'Account can now be assigned to warmup pipeline if content bundles are available'
+            }
+        });
+    }
+    catch (error) {
+        console.error('Set private completion error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: 'Failed to complete set_to_private phase'
+        });
+    }
+});
+router.post('/assign-content-bulk', async (req, res) => {
+    try {
+        const { model_id } = req.query;
+        if (!model_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'Model ID is required'
+            });
+        }
+        const accountsQuery = `
+      SELECT DISTINCT a.id, a.username
+      FROM accounts a
+      JOIN account_warmup_phases awp ON a.id = awp.account_id
+      WHERE a.model_id = $1 
+        AND a.lifecycle_state IN ('warmup', 'ready')
+        AND (
+          (awp.phase IN ('bio', 'username') AND awp.assigned_text_id IS NULL) OR
+          (awp.phase IN ('first_highlight', 'new_highlight', 'post_caption', 'story_caption') 
+           AND (awp.assigned_content_id IS NULL OR awp.assigned_text_id IS NULL)) OR
+          (awp.phase IN ('post_no_caption', 'story_no_caption') AND awp.assigned_content_id IS NULL)
+        )
+    `;
+        const accountsResult = await database_1.db.query(accountsQuery, [parseInt(model_id)]);
+        let successCount = 0;
+        let errorCount = 0;
+        const results = [];
+        for (const account of accountsResult.rows) {
+            try {
+                await database_1.db.query('SELECT assign_content_to_all_phases($1)', [account.id]);
+                successCount++;
+                results.push({
+                    account_id: account.id,
+                    username: account.username,
+                    success: true,
+                    message: 'Content assigned successfully'
+                });
+            }
+            catch (error) {
+                errorCount++;
+                results.push({
+                    account_id: account.id,
+                    username: account.username,
+                    success: false,
+                    error: error.message
+                });
+            }
+        }
+        res.json({
+            success: true,
+            data: {
+                total_accounts: accountsResult.rows.length,
+                success_count: successCount,
+                error_count: errorCount,
+                results: results
+            },
+            message: `Content assignment completed. ${successCount} successful, ${errorCount} failed.`
+        });
+    }
+    catch (error) {
+        console.error('Error in bulk content assignment:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to assign content in bulk',
             message: error.message
+        });
+    }
+});
+router.get('/debug-model-content/:modelId', async (req, res) => {
+    try {
+        const { modelId } = req.params;
+        try {
+            await database_1.db.query('SELECT 1 FROM model_bundle_assignments LIMIT 1');
+        }
+        catch (bundleError) {
+            return res.json({
+                success: true,
+                data: {
+                    model: { id: modelId, name: 'Unknown' },
+                    assigned_bundles: [],
+                    available_content: [],
+                    available_categories: [],
+                    summary: {
+                        total_bundles: 0,
+                        total_content_items: 0,
+                        image_content: 0,
+                        text_content: 0
+                    },
+                    message: 'Content bundle system not yet set up. Bundle tables missing.'
+                }
+            });
+        }
+        const modelResult = await database_1.db.query('SELECT id, name FROM models WHERE id = $1', [modelId]);
+        if (modelResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Model not found' });
+        }
+        const bundlesResult = await database_1.db.query(`
+      SELECT 
+        cb.id,
+        cb.name,
+        cb.description,
+        cb.bundle_type,
+        cb.categories as bundle_categories,
+        mba.assignment_type,
+        mba.assigned_at
+      FROM model_bundle_assignments mba
+      JOIN content_bundles cb ON mba.bundle_id = cb.id
+      WHERE mba.model_id = $1
+      ORDER BY mba.assigned_at DESC
+    `, [modelId]);
+        const contentResult = await database_1.db.query(`
+      SELECT DISTINCT
+        cc.id as content_id,
+        cc.filename,
+        cc.original_name,
+        cc.content_type,
+        cc.categories as content_categories,
+        cc.status,
+        'image' as content_type_display
+      FROM model_bundle_assignments mba
+      JOIN bundle_content_assignments bca ON mba.bundle_id = bca.bundle_id
+      JOIN central_content cc ON bca.content_id = cc.id
+      WHERE mba.model_id = $1 AND mba.assignment_type IN ('active', 'auto')
+      
+      UNION ALL
+      
+      SELECT DISTINCT
+        ctc.id as content_id,
+        ctc.template_name as filename,
+        ctc.text_content as original_name,
+        'text' as content_type,
+        ctc.categories as content_categories,
+        ctc.status,
+        'text' as content_type_display
+      FROM model_bundle_assignments mba
+      JOIN bundle_content_assignments bca ON mba.bundle_id = bca.bundle_id
+      JOIN central_text_content ctc ON bca.text_content_id = ctc.id
+      WHERE mba.model_id = $1 AND mba.assignment_type IN ('active', 'auto')
+      
+      ORDER BY content_type_display, content_categories
+    `, [modelId]);
+        const categoriesResult = await database_1.db.query(`
+      SELECT DISTINCT
+        category
+      FROM (
+        SELECT DISTINCT jsonb_array_elements_text(cc.categories) as category
+        FROM model_bundle_assignments mba
+        JOIN bundle_content_assignments bca ON mba.bundle_id = bca.bundle_id
+        JOIN central_content cc ON bca.content_id = cc.id
+        WHERE mba.model_id = $1 AND mba.assignment_type IN ('active', 'auto')
+        
+        UNION ALL
+        
+        SELECT DISTINCT jsonb_array_elements_text(ctc.categories) as category
+        FROM model_bundle_assignments mba
+        JOIN bundle_content_assignments bca ON mba.bundle_id = bca.bundle_id
+        JOIN central_text_content ctc ON bca.text_content_id = ctc.id
+        WHERE mba.model_id = $1 AND mba.assignment_type IN ('active', 'auto')
+      ) categories
+      ORDER BY category
+    `, [modelId]);
+        res.json({
+            success: true,
+            data: {
+                model: modelResult.rows[0],
+                assigned_bundles: bundlesResult.rows,
+                available_content: contentResult.rows,
+                available_categories: categoriesResult.rows.map(r => r.category),
+                summary: {
+                    total_bundles: bundlesResult.rows.length,
+                    total_content_items: contentResult.rows.length,
+                    image_content: contentResult.rows.filter(c => c.content_type !== 'text').length,
+                    text_content: contentResult.rows.filter(c => c.content_type === 'text').length
+                }
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error debugging model content:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to debug model content',
+            message: error.message
+        });
+    }
+});
+router.post('/:id/assign-to-warmup', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const accountId = parseInt(id);
+        if (isNaN(accountId)) {
+            return res.status(400).json({ success: false, error: 'Invalid account ID' });
+        }
+        const accountResult = await database_1.db.query(`
+      SELECT a.*, m.name as model_name 
+      FROM accounts a 
+      JOIN models m ON a.model_id = m.id 
+      WHERE a.id = $1
+    `, [accountId]);
+        if (accountResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Account not found' });
+        }
+        const account = accountResult.rows[0];
+        const setPrivateCheck = await database_1.db.query(`
+      SELECT status, completed_at 
+      FROM account_warmup_phases 
+      WHERE account_id = $1 AND phase = 'set_to_private'
+    `, [accountId]);
+        if (setPrivateCheck.rows.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Prerequisites Not Met',
+                message: 'Account must complete "set_to_private" phase before warmup pipeline assignment',
+                required_action: 'Complete set_to_private phase first'
+            });
+        }
+        const setPrivatePhase = setPrivateCheck.rows[0];
+        if (setPrivatePhase.status !== 'completed' || !setPrivatePhase.completed_at) {
+            return res.status(400).json({
+                success: false,
+                error: 'Prerequisites Not Met',
+                message: 'Account must complete "set_to_private" phase before warmup pipeline assignment',
+                current_status: setPrivatePhase.status,
+                required_action: 'Complete set_to_private phase first'
+            });
+        }
+        if (account.lifecycle_state === 'warmup') {
+            return res.status(400).json({
+                success: false,
+                error: 'Already Assigned',
+                message: 'Account is already assigned to warmup pipeline',
+                current_state: 'warmup'
+            });
+        }
+        const warmupPhases = [
+            { phase: 'manual_setup', phase_order: 1 },
+            { phase: 'bio', phase_order: 2 },
+            { phase: 'gender', phase_order: 3 },
+            { phase: 'name', phase_order: 4 },
+            { phase: 'username', phase_order: 5 },
+            { phase: 'first_highlight', phase_order: 6 },
+            { phase: 'post_caption', phase_order: 7 },
+            { phase: 'post_no_caption', phase_order: 8 },
+            { phase: 'story_caption', phase_order: 9 },
+            { phase: 'story_no_caption', phase_order: 10 }
+        ];
+        let createdPhases = 0;
+        const createdPhasesList = [];
+        for (const phaseConfig of warmupPhases) {
+            try {
+                const insertResult = await database_1.db.query(`
+          INSERT INTO account_warmup_phases (
+            account_id, 
+            phase, 
+            phase_order,
+            status, 
+            created_at, 
+            updated_at
+          )
+          VALUES ($1, $2, $3, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          ON CONFLICT (account_id, phase) DO UPDATE SET 
+            status = 'pending',
+            phase_order = $3,
+            updated_at = CURRENT_TIMESTAMP
+          RETURNING id, phase, status
+        `, [accountId, phaseConfig.phase, phaseConfig.phase_order]);
+                if (insertResult.rows.length > 0) {
+                    createdPhases++;
+                    createdPhasesList.push({
+                        phase: phaseConfig.phase,
+                        status: 'pending',
+                        phase_order: phaseConfig.phase_order
+                    });
+                }
+            }
+            catch (phaseError) {
+                console.error(`Error creating phase ${phaseConfig.phase}:`, phaseError);
+            }
+        }
+        const updateResult = await database_1.db.query(`
+      UPDATE accounts 
+      SET lifecycle_state = 'warmup',
+          state_changed_at = CURRENT_TIMESTAMP,
+          state_changed_by = 'system'
+      WHERE id = $1
+      RETURNING lifecycle_state, state_changed_at
+    `, [accountId]);
+        const allPhasesResult = await database_1.db.query(`
+      SELECT phase, status, phase_order, created_at
+      FROM account_warmup_phases 
+      WHERE account_id = $1 
+      ORDER BY phase_order, phase
+    `, [accountId]);
+        const allPhases = allPhasesResult.rows;
+        const completedPhases = allPhases.filter(p => p.status === 'completed');
+        const pendingPhases = allPhases.filter(p => p.status === 'pending');
+        res.json({
+            success: true,
+            data: {
+                account_id: accountId,
+                model_name: account.model_name,
+                lifecycle_state: 'warmup',
+                set_private_completed_at: setPrivatePhase.completed_at,
+                state_changed_at: updateResult.rows[0].state_changed_at,
+                total_phases: allPhases.length,
+                completed_phases: completedPhases.length,
+                pending_phases: pendingPhases.length,
+                created_new_phases: createdPhases,
+                phases: allPhases.map(p => ({
+                    phase: p.phase,
+                    status: p.status,
+                    phase_order: p.phase_order,
+                    created_at: p.created_at
+                })),
+                message: `Account successfully assigned to warmup pipeline. ${completedPhases.length} phases completed, ${pendingPhases.length} phases pending.`,
+                note: 'Warmup phases created successfully. Content can be assigned manually as needed.'
+            }
+        });
+    }
+    catch (error) {
+        console.error('Warmup assignment error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: 'Failed to assign account to warmup pipeline',
+            details: error.message
+        });
+    }
+});
+router.get('/warmup/batch-status', async (req, res) => {
+    try {
+        const { account_ids, model_id } = req.query;
+        let accountIds = [];
+        if (account_ids) {
+            accountIds = account_ids.split(',').map((id) => parseInt(id.trim())).filter((id) => !isNaN(id));
+        }
+        else if (model_id) {
+            const modelAccountsResult = await database_1.db.query('SELECT id FROM accounts WHERE model_id = $1', [parseInt(model_id)]);
+            accountIds = modelAccountsResult.rows.map(row => row.id);
+        }
+        else {
+            return res.status(400).json({
+                success: false,
+                error: 'Bad Request',
+                message: 'Either account_ids or model_id parameter is required'
+            });
+        }
+        if (accountIds.length === 0) {
+            return res.json({
+                success: true,
+                data: {}
+            });
+        }
+        const phasesResult = await database_1.db.query(`
+      SELECT 
+        awp.account_id,
+        awp.phase,
+        awp.status,
+        awp.started_at,
+        awp.completed_at,
+        awp.error_message,
+        awp.error_details,
+        awp.failure_category,
+        awp.retry_count
+      FROM account_warmup_phases awp
+      WHERE awp.account_id = ANY($1)
+      ORDER BY awp.account_id, awp.phase
+    `, [accountIds]);
+        const accountStatuses = {};
+        accountIds.forEach(accountId => {
+            const accountPhases = phasesResult.rows.filter(row => row.account_id === accountId);
+            const completedPhases = accountPhases.filter(p => p.status === 'completed');
+            const inProgressPhases = accountPhases.filter(p => p.status === 'in_progress');
+            const pendingPhases = accountPhases.filter(p => p.status === 'pending');
+            const failedPhases = accountPhases.filter(p => p.status === 'failed');
+            const totalPhases = accountPhases.length;
+            const progressPercent = totalPhases > 0 ? Math.round((completedPhases.length / totalPhases) * 100) : 0;
+            let currentPhase = null;
+            if (inProgressPhases.length > 0) {
+                currentPhase = inProgressPhases[0].phase;
+            }
+            else if (pendingPhases.length > 0) {
+                currentPhase = pendingPhases[0].phase;
+            }
+            accountStatuses[accountId] = {
+                account_id: accountId,
+                phases: accountPhases.map(p => ({
+                    phase: p.phase,
+                    status: p.status,
+                    started_at: p.started_at,
+                    completed_at: p.completed_at,
+                    error_message: p.error_message,
+                    error_details: p.error_details,
+                    failure_category: p.failure_category,
+                    retry_count: p.retry_count
+                })),
+                current_phase: currentPhase,
+                phase_status: inProgressPhases.length > 0 ? 'in_progress' :
+                    pendingPhases.length > 0 ? 'pending' :
+                        failedPhases.length > 0 ? 'failed' : 'completed',
+                progress_percent: progressPercent,
+                total_phases: totalPhases,
+                completed_phases: completedPhases.length,
+                pending_phases: pendingPhases.length,
+                failed_phases: failedPhases.length
+            };
+        });
+        res.json({
+            success: true,
+            data: accountStatuses
+        });
+    }
+    catch (error) {
+        console.error('Error fetching batch warmup status:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal Server Error',
+            message: 'Failed to fetch warmup status for accounts',
+            details: error.message
         });
     }
 });

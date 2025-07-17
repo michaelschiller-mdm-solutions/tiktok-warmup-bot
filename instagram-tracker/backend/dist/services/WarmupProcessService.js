@@ -242,6 +242,8 @@ class WarmupProcessService {
           `);
                     textId = bioResult.rows.length > 0 ? bioResult.rows[0].id : null;
                     break;
+                case warmupProcess_1.WarmupPhase.SET_TO_PRIVATE:
+                    break;
                 case warmupProcess_1.WarmupPhase.NAME:
                     const nameResult = await database_1.db.query(`
             SELECT id FROM central_text_content 
@@ -253,97 +255,147 @@ class WarmupProcessService {
                     break;
                 case warmupProcess_1.WarmupPhase.FIRST_HIGHLIGHT:
                 case warmupProcess_1.WarmupPhase.NEW_HIGHLIGHT:
-                    const highlightImageResult = await database_1.db.query(`
-            SELECT id FROM central_content 
-            WHERE categories @> '["highlight"]'::jsonb 
-            AND status = 'active'
-            ORDER BY RANDOM() LIMIT 1
-          `);
-                    contentId = highlightImageResult.rows.length > 0 ? highlightImageResult.rows[0].id : null;
-                    const highlightNameResult = await database_1.db.query(`
-            SELECT id FROM central_text_content 
-            WHERE categories @> ($1)::jsonb 
-            AND status = 'active'
-            ORDER BY RANDOM() LIMIT 1
-          `, [phase === warmupProcess_1.WarmupPhase.FIRST_HIGHLIGHT ? '["highlight_group_category_name"]' : '["highlight_group_name"]']);
-                    textId = highlightNameResult.rows.length > 0 ? highlightNameResult.rows[0].id : null;
+                    try {
+                        const bundleResult = await database_1.db.query(`
+              SELECT cb.id, cb.name 
+              FROM model_bundle_assignments mba
+              JOIN content_bundles cb ON mba.bundle_id = cb.id
+              JOIN bundle_content_assignments bca ON cb.id = bca.bundle_id
+              JOIN central_content cc ON bca.content_id = cc.id
+              WHERE mba.model_id = $1 
+                AND cc.categories @> '["highlight"]'::jsonb 
+                AND cc.status = 'active'
+                AND mba.assignment_type IN ('active', 'auto')
+                AND cb.status = 'active'
+              ORDER BY RANDOM() 
+              LIMIT 1
+            `, [modelId]);
+                        if (bundleResult.rows.length > 0) {
+                            const bundle = bundleResult.rows[0];
+                            const bundleContentResult = await database_1.db.query(`
+                SELECT cc.id 
+                FROM bundle_content_assignments bca
+                JOIN central_content cc ON bca.content_id = cc.id
+                WHERE bca.bundle_id = $1 
+                  AND cc.categories @> '["highlight"]'::jsonb 
+                  AND cc.status = 'active'
+                ORDER BY RANDOM() 
+                LIMIT 1
+              `, [bundle.id]);
+                            if (bundleContentResult.rows.length > 0) {
+                                contentId = bundleContentResult.rows[0].id;
+                                const textResult = await database_1.db.query(`
+                  INSERT INTO central_text_content (
+                    text_content, 
+                    categories, 
+                    template_name, 
+                    status
+                  ) VALUES ($1, $2, $3, $4)
+                  RETURNING id
+                `, [
+                                    bundle.name,
+                                    JSON.stringify(['highlight_group_name', 'bundle_derived']),
+                                    `Bundle: ${bundle.name}`,
+                                    'active'
+                                ]);
+                                textId = textResult.rows[0].id;
+                            }
+                        }
+                        if (!contentId) {
+                            const fallbackResult = await database_1.db.query(`
+                SELECT id FROM central_content 
+                WHERE categories @> '["highlight"]'::jsonb 
+                AND status = 'active'
+                ORDER BY RANDOM() LIMIT 1
+              `);
+                            contentId = fallbackResult.rows.length > 0 ? fallbackResult.rows[0].id : null;
+                        }
+                    }
+                    catch (bundleError) {
+                        console.warn('Bundle assignment failed for highlight, using fallback:', bundleError);
+                        const fallbackResult = await database_1.db.query(`
+              SELECT id FROM central_content 
+              WHERE categories @> '["highlight"]'::jsonb 
+              AND status = 'active'
+              ORDER BY RANDOM() LIMIT 1
+            `);
+                        contentId = fallbackResult.rows.length > 0 ? fallbackResult.rows[0].id : null;
+                    }
                     break;
                 case warmupProcess_1.WarmupPhase.POST_CAPTION:
-                    const postImageResult = await database_1.db.query(`
+                    const postContentResult = await database_1.db.query(`
             SELECT id FROM central_content 
             WHERE categories @> '["post"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    contentId = postImageResult.rows.length > 0 ? postImageResult.rows[0].id : null;
-                    const postCaptionResult = await database_1.db.query(`
+                    contentId = postContentResult.rows.length > 0 ? postContentResult.rows[0].id : null;
+                    const postTextResult = await database_1.db.query(`
             SELECT id FROM central_text_content 
             WHERE categories @> '["post"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    textId = postCaptionResult.rows.length > 0 ? postCaptionResult.rows[0].id : null;
+                    textId = postTextResult.rows.length > 0 ? postTextResult.rows[0].id : null;
                     break;
                 case warmupProcess_1.WarmupPhase.POST_NO_CAPTION:
-                    const postNoCapResult = await database_1.db.query(`
+                    const postNoTextResult = await database_1.db.query(`
             SELECT id FROM central_content 
             WHERE categories @> '["post"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    contentId = postNoCapResult.rows.length > 0 ? postNoCapResult.rows[0].id : null;
+                    contentId = postNoTextResult.rows.length > 0 ? postNoTextResult.rows[0].id : null;
                     break;
                 case warmupProcess_1.WarmupPhase.STORY_CAPTION:
-                    const storyImageResult = await database_1.db.query(`
+                    const storyContentResult = await database_1.db.query(`
             SELECT id FROM central_content 
             WHERE categories @> '["story"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    contentId = storyImageResult.rows.length > 0 ? storyImageResult.rows[0].id : null;
-                    const storyCaptionResult = await database_1.db.query(`
+                    contentId = storyContentResult.rows.length > 0 ? storyContentResult.rows[0].id : null;
+                    const storyTextResult = await database_1.db.query(`
             SELECT id FROM central_text_content 
             WHERE categories @> '["story"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    textId = storyCaptionResult.rows.length > 0 ? storyCaptionResult.rows[0].id : null;
+                    textId = storyTextResult.rows.length > 0 ? storyTextResult.rows[0].id : null;
                     break;
                 case warmupProcess_1.WarmupPhase.STORY_NO_CAPTION:
-                    const storyNoCapResult = await database_1.db.query(`
+                    const storyNoTextResult = await database_1.db.query(`
             SELECT id FROM central_content 
             WHERE categories @> '["story"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    contentId = storyNoCapResult.rows.length > 0 ? storyNoCapResult.rows[0].id : null;
-                    break;
-                case warmupProcess_1.WarmupPhase.USERNAME:
-                    const usernameTextResult = await database_1.db.query(`
-            SELECT id FROM central_text_content
-            WHERE categories @> '["username"]'::jsonb
-            AND status = 'active'
-            ORDER BY RANDOM() LIMIT 1
-          `);
-                    textId = usernameTextResult.rows.length > 0 ? usernameTextResult.rows[0].id : null;
-                    break;
-                case warmupProcess_1.WarmupPhase.GENDER:
+                    contentId = storyNoTextResult.rows.length > 0 ? storyNoTextResult.rows[0].id : null;
                     break;
                 default:
-                    break;
+                    console.log(`No content assignment needed for phase: ${phase}`);
+                    return true;
             }
-            await database_1.db.query(`
-        UPDATE account_warmup_phases 
-        SET assigned_content_id = $2,
+            if (contentId || textId) {
+                await database_1.db.query(`
+          UPDATE account_warmup_phases 
+          SET 
+            assigned_content_id = $2,
             assigned_text_id = $3,
             content_assigned_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-      `, [phaseId, contentId, textId]);
-            return true;
+          WHERE id = $1
+        `, [phaseId, contentId, textId]);
+                console.log(`Assigned content to phase ${phase}: content_id=${contentId}, text_id=${textId}`);
+                return true;
+            }
+            else {
+                console.warn(`No content found for phase ${phase}`);
+                return false;
+            }
         }
         catch (error) {
-            console.error(`Error assigning content to phase ${phaseId}:`, error);
+            console.error(`Error assigning content to phase ${phase}:`, error);
             return false;
         }
     }
@@ -835,6 +887,21 @@ class WarmupProcessService {
                     requires_content: false,
                     requires_text: true,
                     text_categories: ['bio']
+                };
+            case warmupProcess_1.WarmupPhase.SET_TO_PRIVATE:
+                return {
+                    phase: 'set_to_private',
+                    description: 'Set account to private',
+                    api_scripts: [
+                        baseScripts.ios16_photo_cleaner,
+                        baseScripts.lua_executor
+                    ],
+                    lua_scripts: [
+                        containerScript,
+                        'instagram-tracker/bot/scripts/iphone_lua/set_account_private.lua'
+                    ],
+                    requires_content: false,
+                    requires_text: false
                 };
             case warmupProcess_1.WarmupPhase.GENDER:
                 return {

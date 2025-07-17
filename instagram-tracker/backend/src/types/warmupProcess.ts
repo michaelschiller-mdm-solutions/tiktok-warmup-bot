@@ -1,5 +1,6 @@
 export enum WarmupPhase {
   MANUAL_SETUP = 'manual_setup',
+  SET_TO_PRIVATE = 'set_to_private',
   BIO = 'bio',
   GENDER = 'gender',
   NAME = 'name',

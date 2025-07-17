@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const AccountLifecycleService_1 = require("../../services/AccountLifecycleService");
+const WarmupProcessService_1 = require("../../services/WarmupProcessService");
 const router = express_1.default.Router();
 router.get('/summary', async (req, res) => {
     try {
@@ -321,7 +322,8 @@ router.post('/:accountId/complete-setup', async (req, res) => {
                 message: 'Valid account ID is required'
             });
         }
-        const result = await AccountLifecycleService_1.AccountLifecycleService.completeManualSetup(parseInt(accountId), changed_by);
+        const warmupService = new WarmupProcessService_1.WarmupProcessService();
+        const result = await warmupService.completeManualSetup(parseInt(accountId), changed_by);
         if (result.success) {
             res.json({
                 success: true,
