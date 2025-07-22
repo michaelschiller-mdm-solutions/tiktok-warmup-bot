@@ -10,15 +10,15 @@ This policy provides a single, authoritative, and machine-readable source of tru
 
 > Rationale: Defines who is involved in the process and what their roles are.
 
-- *User*: The individual responsible for defining requirements, prioritising work, approving changes, and ultimately accountable for all code modifications.
-- *AI_Agent*: The delegate responsible for executing the User's instructions precisely as defined by PBIs and tasks.
+- _User_: The individual responsible for defining requirements, prioritising work, approving changes, and ultimately accountable for all code modifications.
+- _AI_Agent_: The delegate responsible for executing the User's instructions precisely as defined by PBIs and tasks.
 
 ## 1.2 Architectural Compliance
 
 > Rationale: Ensures all work aligns with architectural standards and references, promoting consistency and quality across the project.
 
-- *Policy Reference*: This document adheres to the AI Coding Agent Policy Document.
-- *Includes*:
+- _Policy Reference_: This document adheres to the AI Coding Agent Policy Document.
+- _Includes_:
   - All tasks must be explicitly defined and agreed upon before implementation.
   - All code changes must be associated with a specific task.
   - All PBIs must be aligned with the PRD when applicable.
@@ -38,25 +38,26 @@ This policy provides a single, authoritative, and machine-readable source of tru
 5. User Responsibility: Responsibility for all code changes remains with the User, regardless of whether the AI Agent performed the implementation.
 6. Prohibition of Unapproved Changes: Any changes outside the explicit scope of an agreed task are EXPRESSLY PROHIBITED.
 7. Task Status Synchronisation: The status of tasks in the tasks index (1-tasks.md) must always match the status in the individual task file. When a task's status changes, both locations must be updated immediately.
-8.  *Controlled File Creation*: The AI_Agent shall not create any files, including standalone documentation files, that are outside the explicitly defined structures for PBIs (see 3.6), tasks (see 4.3), or source code, unless the User has given explicit prior confirmation for the creation of each specific file. This principle is to prevent the generation of unrequested or unmanaged documents.
-9. *External Package Research and Documentation*: For any proposed tasks that involve external packages, to avoid hallucinations, use the web to research the documentation first to ensure it's 100% clear how to use the API of the package. Then for each package, a document should be created <task id>-<package>-guide.md that contains a fresh cache of the information needed to use the API. It should be date-stamped and link to the original docs provided. E.g., if pg-boss is a library to add as part of task 2-1 then a file tasks/2-1-pg-boss-guide.md should be created. This documents foundational assumptions about how to use the package, with example snippets, in the language being used in the project.
-10. *Task Granularity*: Tasks must be defined to be as small as practicable while still representing a cohesive, testable unit of work. Large or complex features should be broken down into multiple smaller tasks.
-11. *Don't Repeat Yourself (DRY)*: Information should be defined in a single location and referenced elsewhere to avoid duplication and reduce the risk of inconsistencies. Specifically:
+8. _Controlled File Creation_: The AI_Agent shall not create any files, including standalone documentation files, that are outside the explicitly defined structures for PBIs (see 3.6), tasks (see 4.3), or source code, unless the User has given explicit prior confirmation for the creation of each specific file. This principle is to prevent the generation of unrequested or unmanaged documents.
+9. _External Package Research and Documentation_: For any proposed tasks that involve external packages, to avoid hallucinations, use the web to research the documentation first to ensure it's 100% clear how to use the API of the package. Then for each package, a document should be created <task id>-<package>-guide.md that contains a fresh cache of the information needed to use the API. It should be date-stamped and link to the original docs provided. E.g., if pg-boss is a library to add as part of task 2-1 then a file tasks/2-1-pg-boss-guide.md should be created. This documents foundational assumptions about how to use the package, with example snippets, in the language being used in the project.
+10. _Task Granularity_: Tasks must be defined to be as small as practicable while still representing a cohesive, testable unit of work. Large or complex features should be broken down into multiple smaller tasks.
+11. _Don't Repeat Yourself (DRY)_: Information should be defined in a single location and referenced elsewhere to avoid duplication and reduce the risk of inconsistencies. Specifically:
     - Task information should be fully detailed in their dedicated task files and only referenced from other documents.
     - PBI documents should reference the task list rather than duplicating task details.
     - The only exception to this rule is for titles or names (e.g., task names in lists).
     - Any documentation that needs to exist in multiple places should be maintained in a single source of truth and referenced elsewhere.
-12. *Use of Constants for Repeated or Special Values: Any value (number, string, etc.) used more than once in generated code—especially "magic numbers" or values with special significance—must* be defined as a named constant.
+12. _Use of Constants for Repeated or Special Values: Any value (number, string, etc.) used more than once in generated code—especially "magic numbers" or values with special significance—must_ be defined as a named constant.
     - Example: Instead of for (let i = 0; i < 10; i++) { ... }, define const numWebsites = 10; and use for (let i = 0; i < numWebsites; i++) { ... }.
     - All subsequent uses must reference the constant, not the literal value.
     - This applies to all code generation, automation, and manual implementation within the project.
-13. *Technical Documentation for APIs and Interfaces*: As part of completing any PBI that creates or modifies APIs, services, or interfaces, technical documentation must be created or updated explaining how to use these components. This documentation should include:
+13. _Technical Documentation for APIs and Interfaces_: As part of completing any PBI that creates or modifies APIs, services, or interfaces, technical documentation must be created or updated explaining how to use these components. This documentation should include:
     - API usage examples and patterns
-    - Interface contracts and expected behaviors  
+    - Interface contracts and expected behaviors
     - Integration guidelines for other developers
     - Configuration options and defaults
     - Error handling and troubleshooting guidance
     - The documentation must be created in the appropriate location (e.g., docs/technical/ or inline code documentation) and linked from the PBI detail document.
+
 ## 2.2 PRD Alignment Check
 
 All PBIs must be checked for alignment with the PRD. Any discrepancies must be raised with the User.
@@ -95,13 +96,14 @@ This section defines rules for Product Backlog Items (PBIs), ensuring clarity, c
 
 > Rationale: Specifies how the backlog is documented and structured, so that all PBIs are tracked and managed in a consistent way.
 
-- *Location Pattern*: docs/delivery/backlog.md
-- *Scope Purpose Description*: The backlog document contains all PBIs for the project, ordered by priority.
-- *Structure*:
+- _Location Pattern_: docs/delivery/backlog.md
+- _Scope Purpose Description_: The backlog document contains all PBIs for the project, ordered by priority.
+- _Structure_:
   > Rationale: Defines the required table format for PBIs, ensuring standardisation and ease of use.
-  - *Table*: | ID | Actor | User Story | Status | Conditions of Satisfaction (CoS) |
+  - _Table_: | ID | Actor | User Story | Status | Conditions of Satisfaction (CoS) |
 
 ## 3.3 Principles
+
 1. The backlog is the single source of truth for all PBIs.
 2. PBIs must be ordered by priority (highest at the top).
 
@@ -110,39 +112,41 @@ This section defines rules for Product Backlog Items (PBIs), ensuring clarity, c
 > Rationale: Describes the allowed status values and transitions for PBIs, ensuring a controlled and auditable workflow.
 
 ### 3.4.1 Status Definitions
-- *status(Proposed)*: PBI has been suggested but not yet approved.
-- *status(Agreed)*: PBI has been approved and is ready for implementation.
-- *status(InProgress)*: PBI is being actively worked on.
-- *status(InReview)*: PBI implementation is complete and awaiting review.
-- *status(Done)*: PBI has been completed and accepted.
-- *status(Rejected)*: PBI has been rejected and requires rework or deprioritization.
+
+- _status(Proposed)_: PBI has been suggested but not yet approved.
+- _status(Agreed)_: PBI has been approved and is ready for implementation.
+- _status(InProgress)_: PBI is being actively worked on.
+- _status(InReview)_: PBI implementation is complete and awaiting review.
+- _status(Done)_: PBI has been completed and accepted.
+- _status(Rejected)_: PBI has been rejected and requires rework or deprioritization.
 
 ### 3.4.2 Event Transitions
-- *event_transition on "create_pbi": set to **Proposed*:
+
+- _event_transition on "create_pbi": set to \*\*Proposed_:
   1. Define clear user story and acceptance criteria.
   2. Ensure PBI has a unique ID and clear title.
   3. Log creation in PBI history.
 
-- *event_transition on "propose_for_backlog" from Proposed to Agreed*:
+- _event_transition on "propose_for_backlog" from Proposed to Agreed_:
   1. Verify PBI aligns with PRD and project goals.
   2. Ensure all required information is complete.
   3. Log approval in PBI history.
   4. Notify stakeholders of new approved PBI.
 
-- *event_transition on "start_implementation" from Agreed to InProgress*:
+- _event_transition on "start_implementation" from Agreed to InProgress_:
   1. Verify no other PBIs are InProgress for the same component.
   2. Create tasks for implementing the PBI.
   3. Assign initial tasks to team members.
   4. Log start of implementation in PBI history.
 
-- *event_transition on "submit_for_review" from InProgress to InReview*:
+- _event_transition on "submit_for_review" from InProgress to InReview_:
   1. Verify all tasks for the PBI are complete.
   2. Ensure all acceptance criteria are met.
   3. Update documentation as needed.
   4. Notify reviewers that PBI is ready for review.
   5. Log submission for review in PBI history.
 
-- *event_transition on "approve" from InReview to Done*:
+- _event_transition on "approve" from InReview to Done_:
   1. Verify all acceptance criteria are met.
   2. Ensure all tests pass.
   3. Update PBI status and completion date.
@@ -150,20 +154,20 @@ This section defines rules for Product Backlog Items (PBIs), ensuring clarity, c
   5. Log approval and completion in PBI history.
   6. Notify stakeholders of PBI completion.
 
-- *event_transition on "reject" from InReview to Rejected*:
+- _event_transition on "reject" from InReview to Rejected_:
   1. Document reasons for rejection.
   2. Identify required changes or rework.
   3. Update PBI with review feedback.
   4. Log rejection in PBI history.
   5. Notify team of required changes.
 
-- *event_transition on "reopen" from Rejected to InProgress*:
+- _event_transition on "reopen" from Rejected to InProgress_:
   1. Address all feedback from rejection.
   2. Update PBI with changes made.
   3. Log reopening in PBI history.
   4. Notify team that work has resumed.
 
-- *event_transition on "deprioritize" from (Agreed, InProgress) to Proposed*:
+- _event_transition on "deprioritize" from (Agreed, InProgress) to Proposed_:
   1. Document reason for deprioritization.
   2. Pause any in-progress work on the PBI.
   3. Update PBI status and priority.
@@ -178,25 +182,25 @@ All status transitions must be logged in the PBI's history with timestamp and us
 
 > Rationale: Specifies how all changes to PBIs are recorded, providing a complete audit trail.
 
-- *Location Description*: PBI change history is maintained in the backlog.md file.
-- *Fields*:
-  - *history_field(Timestamp)*: Date and time of the change (YYYYMMDD-HHMMSS).
-  - *history_field(PBI_ID)*: ID of the PBI that was changed.
-  - *history_field(Event_Type)*: Type of event that occurred.
-  - *history_field(Details)*: Description of the change.
-  - *history_field(User)*: User who made the change.
+- _Location Description_: PBI change history is maintained in the backlog.md file.
+- _Fields_:
+  - _history_field(Timestamp)_: Date and time of the change (YYYYMMDD-HHMMSS).
+  - _history_field(PBI_ID)_: ID of the PBI that was changed.
+  - _history_field(Event_Type)_: Type of event that occurred.
+  - _history_field(Details)_: Description of the change.
+  - _history_field(User)_: User who made the change.
 
 ## 3.6 PBI Detail Documents
 
 > Rationale: Provides a dedicated space for detailed requirements, technical design, and UX considerations for each PBI, ensuring comprehensive documentation and alignment across the team.
 
-- *Location Pattern*: docs/delivery/<PBI-ID>/prd.md
-- *Purpose*: 
+- _Location Pattern_: docs/delivery/<PBI-ID>/prd.md
+- _Purpose_:
   - Serve as a mini-PRD for the PBI
   - Document the problem space and solution approach
   - Provide technical and UX details beyond what's in the backlog
   - Maintain a single source of truth for all PBI-related information
-- *Required Sections*:
+- _Required Sections_:
   - # PBI-<ID>: <Title>
   - ## Overview
   - ## Problem Statement
@@ -207,14 +211,15 @@ All status transitions must be logged in the PBI's history with timestamp and us
   - ## Dependencies
   - ## Open Questions
   - ## Related Tasks
-- *Linking*:
+- _Linking_:
   - Must link back to the main backlog entry: [View in Backlog](../backlog.md#user-content-<PBI-ID>)
   - The backlog entry must link to this document: [View Details](./<PBI-ID>/prd.md)
-- *Ownership*:
+- _Ownership_:
   - Created when a PBI moves from "Proposed" to "Agreed"
   - Maintained by the team member implementing the PBI
   - Reviewed during PBI review process
-  - 
+  -
+
 # 4. Task Management
 
 > Rationale: Defines how tasks are documented, executed, and tracked, ensuring that all work is broken down into manageable, auditable units.
@@ -223,11 +228,11 @@ All status transitions must be logged in the PBI's history with timestamp and us
 
 > Rationale: Specifies the structure and content required for task documentation, supporting transparency and reproducibility.
 
-- *Location Pattern*: docs/delivery/<PBI-ID>/
-- *File Naming*: 
+- _Location Pattern_: docs/delivery/<PBI-ID>/
+- _File Naming_:
   - Task list: tasks.md
   - Task details: <PBI-ID>-<TASK-ID>.md (e.g., 1-1.md for first task of PBI 1)
-- *Required Sections*:
+- _Required Sections_:
   > Rationale: Required sections ensure all tasks are fully described and verifiable
   - # [Task-ID] [Task-Name]
   - ## Description
@@ -238,6 +243,7 @@ All status transitions must be logged in the PBI's history with timestamp and us
   - ## Files Modified
 
 ## 4.2 Principles
+
 1. Each task must have its own dedicated markdown file.
 2. Task files must follow the specified naming convention.
 3. All required sections must be present and properly filled out.
@@ -252,47 +258,47 @@ All status transitions must be logged in the PBI's history with timestamp and us
 
 To maintain consistency across the codebase:
 
-1. *Immediate Updates*: When a task's status changes, update both the task file and the tasks index (1-tasks.md) in the same commit.
-2. *Status History*: Always add an entry to the task's status history when changing status.
-3. *Status Verification*: Before starting work on a task, verify its status in both locations.
-4. *Status Mismatch*: If a status mismatch is found, immediately update both locations to the most recent status.
+1. _Immediate Updates_: When a task's status changes, update both the task file and the tasks index (1-tasks.md) in the same commit.
+2. _Status History_: Always add an entry to the task's status history when changing status.
+3. _Status Verification_: Before starting work on a task, verify its status in both locations.
+4. _Status Mismatch_: If a status mismatch is found, immediately update both locations to the most recent status.
 
 Example of a status update in a task file:
 
-| 2025-05-19 15:02:00 | Created       | N/A      | Proposed  | Task file created | Julian |
-| 2025-05-19 16:15:00 | Status Update | Proposed | InProgress | Started work      | Julian |
-
+| 2025-05-19 15:02:00 | Created | N/A | Proposed | Task file created | Julian |
+| 2025-05-19 16:15:00 | Status Update | Proposed | InProgress | Started work | Julian |
 
 Example of the corresponding update in 1-tasks.md:
 
 | 1-7 | [Add pino logging...](./1-7.md) | InProgress | Pino logs connection... |
 
-
 ## 4.5 Status Definitions
-- *task_status(Proposed)*: The initial state of a newly defined task.
-- *task_status(Agreed)*: The User has approved the task description and its place in the priority list.
-- *task_status(InProgress)*: The AI Agent is actively working on this task.
-- *task_status(Review)*: The AI Agent has completed the work and it awaits User validation.
-- *task_status(Done)*: The User has reviewed and approved the task's implementation.
-- *task_status(Blocked)*: The task cannot proceed due to an external dependency or issue.
+
+- _task_status(Proposed)_: The initial state of a newly defined task.
+- _task_status(Agreed)_: The User has approved the task description and its place in the priority list.
+- _task_status(InProgress)_: The AI Agent is actively working on this task.
+- _task_status(Review)_: The AI Agent has completed the work and it awaits User validation.
+- _task_status(Done)_: The User has reviewed and approved the task's implementation.
+- _task_status(Blocked)_: The task cannot proceed due to an external dependency or issue.
 
 ## 4.6 Event Transitions
-- *event_transition on "user_approves" from Proposed to Agreed*:
+
+- _event_transition on "user_approves" from Proposed to Agreed_:
   1. Verify task description is clear and complete.
   2. Ensure task is properly prioritized in the backlog.
-  3. Create task documentation file following the _template.md pattern and link it in the tasks index.
-   - The file must be named <PBI-ID>-<TASK-ID>.md
-   - The task description in the index must link to this file
-   - Analysis and design work must be undertaken and documented in the required sections of task file    
+  3. Create task documentation file following the \_template.md pattern and link it in the tasks index.
+  - The file must be named <PBI-ID>-<TASK-ID>.md
+  - The task description in the index must link to this file
+  - Analysis and design work must be undertaken and documented in the required sections of task file
   4. Log status change in task history.
 
-- *event_transition on "start_work" from Agreed to InProgress*:
+- _event_transition on "start_work" from Agreed to InProgress_:
   1. Verify no other tasks are InProgress for the same PBI.
   2. Create a new branch for the task if using version control.
   3. Log start time and assignee in task history.
   4. Update task documentation with implementation start details.
 
-- *event_transition on "submit_for_review" from InProgress to Review*:
+- _event_transition on "submit_for_review" from InProgress to Review_:
   1. Ensure all task requirements are met.
   2. Run all relevant tests and ensure they pass.
   3. Update task documentation with implementation details.
@@ -300,7 +306,7 @@ Example of the corresponding update in 1-tasks.md:
   5. Notify the User that review is needed.
   6. Log submission for review in task history.
 
-- *event_transition on "approve" from Review to Done*:
+- _event_transition on "approve" from Review to Done_:
   1. Verify all acceptance criteria are met.
   2. Merge changes to the main branch if applicable.
   3. Update task documentation with completion details.
@@ -308,30 +314,30 @@ Example of the corresponding update in 1-tasks.md:
   5. Archive task documentation as needed.
   6. Notify relevant stakeholders of completion.
   7. Log approval in task history.
-  8. *Review Next Task Relevance*: Before marking as Done, review the next task(s) in the PBI task list in light of the current task's implementation outcomes. Confirm with the User whether subsequent tasks remain relevant, need modification, or have become redundant due to implementation decisions or scope changes in the current task. Document any task modifications or removals in the task history.
+  8. _Review Next Task Relevance_: Before marking as Done, review the next task(s) in the PBI task list in light of the current task's implementation outcomes. Confirm with the User whether subsequent tasks remain relevant, need modification, or have become redundant due to implementation decisions or scope changes in the current task. Document any task modifications or removals in the task history.
 
-- *event_transition on "reject" from Review to InProgress*:
+- _event_transition on "reject" from Review to InProgress_:
   1. Document the reason for rejection in task history.
   2. Update task documentation with review feedback.
   3. Notify the AI Agent of required changes.
   4. Update task status and log the rejection.
   5. Create new tasks if additional work is identified.
 
-- *event_transition on "significant_update" from Review to InProgress*:
+- _event_transition on "significant_update" from Review to InProgress_:
   1. Document the nature of significant changes made to task requirements, implementation plan, or test plan.
   2. Update task status to reflect that additional work is now required.
   3. Log the update reason in task history.
   4. Notify stakeholders that the task requires additional implementation work.
   5. Resume development work to address the updated requirements.
 
-- *event_transition on "mark_blocked" from InProgress to Blocked*:
+- _event_transition on "mark_blocked" from InProgress to Blocked_:
   1. Document the reason for blocking in task history.
   2. Identify any dependencies or issues causing the block.
   3. Update task documentation with blocking details.
   4. Notify relevant stakeholders of the block.
   5. Consider creating new tasks to address blockers if needed.
 
-- *event_transition on "unblock" from Blocked to InProgress*:
+- _event_transition on "unblock" from Blocked to InProgress_:
   1. Document the resolution of the blocking issue in task history.
   2. Update task documentation with resolution details.
   3. Resume work on the task.
@@ -345,30 +351,28 @@ Only one task per PBI should be 'InProgress' at any given time to maintain focus
 
 > Rationale: Specifies how all changes to tasks are recorded, providing a complete audit trail.
 
-- *Location Description*: Task change history is maintained in the task's markdown file under the 'Status History' section.
-- *Required Fields*:
+- _Location Description_: Task change history is maintained in the task's markdown file under the 'Status History' section.
+- _Required Fields_:
   > Rationale: Defines the required fields for logging task history, ensuring all relevant information is captured.
-  - *history_field(Timestamp)*: Date and time of the change (YYYY-MM-DD HH:MM:SS).
-  - *history_field(Event_Type)*: Type of event that occurred.
-  - *history_field(From_Status)*: Previous status of the task.
-  - *history_field(To_Status)*: New status of the task.
-  - *history_field(Details)*: Description of the change or action taken.
-  - *history_field(User)*: User who initiated the change.
+  - _history_field(Timestamp)_: Date and time of the change (YYYY-MM-DD HH:MM:SS).
+  - _history_field(Event_Type)_: Type of event that occurred.
+  - _history_field(From_Status)_: Previous status of the task.
+  - _history_field(To_Status)_: New status of the task.
+  - _history_field(Details)_: Description of the change or action taken.
+  - _history_field(User)_: User who initiated the change.
 
 ### 4.8.1 Format Example
 
-
-| Timestamp | Event Type | From Status | To Status | Details | User |
-|-----------|------------|-------------|-----------|---------|------|
-| 2025-05-16 15:30:00 | Status Change | Proposed | Agreed | Task approved by Product Owner | johndoe |
-| 2025-05-16 16:45:00 | Status Change | Agreed | InProgress | Started implementation | ai-agent-1 |
-
+| Timestamp           | Event Type    | From Status | To Status  | Details                        | User       |
+| ------------------- | ------------- | ----------- | ---------- | ------------------------------ | ---------- |
+| 2025-05-16 15:30:00 | Status Change | Proposed    | Agreed     | Task approved by Product Owner | johndoe    |
+| 2025-05-16 16:45:00 | Status Change | Agreed      | InProgress | Started implementation         | ai-agent-1 |
 
 ### 4.8.2 Task Validation Rules
 
 > Rationale: Ensures all tasks adhere to required standards and workflows.
 
-1. *Core Rules*:
+1. _Core Rules_:
    - All tasks must be associated with an existing PBI
    - Task IDs must be unique within their parent PBI
    - Tasks must follow the defined workflow states and transitions
@@ -378,19 +382,19 @@ Only one task per PBI should be 'InProgress' at any given time to maintain focus
    - Every task in the tasks index MUST have a corresponding markdown file
    - Task descriptions in the index MUST be linked to their markdown files
 
-2. *Pre-Implementation Checks*:
+2. _Pre-Implementation Checks_:
    - Verify the task exists and is in the correct status before starting work
    - Document the task ID in all related changes
    - List all files that will be modified
    - Get explicit approval before proceeding with implementation
 
-3. *Error Prevention*:
+3. _Error Prevention_:
    - If unable to access required files, stop and report the issue
    - For protected files, provide changes in a format that can be manually applied
    - Verify task status in both task file and index before starting work
    - Document all status checks in the task history
 
-4. *Change Management*:
+4. _Change Management_:
    - Reference the task ID in all commit messages
    - Update task status according to workflow
    - Ensure all changes are properly linked to the task
@@ -400,29 +404,28 @@ Only one task per PBI should be 'InProgress' at any given time to maintain focus
 
 > Rationale: Ensures consistent version control practices when completing tasks, maintaining traceability and automation.
 
-1. *Commit Message Format*:
+1. _Commit Message Format_:
    - When a task moves from Review to Done, create a commit with the message:
-     
+
      <task_id> <task_description>
-     
+
    - Example: 1-7 Add pino logging to help debug database connection issues
 
-2. *Pull Request*:
+2. _Pull Request_:
    - Title: [<task_id>] <task_description>
    - Include a link to the task in the description
    - Ensure all task requirements are met before marking as Done
 
-3. *Automation*:
+3. _Automation_:
    - When a task is marked as Done, run:
      bash
      git acp "<task_id> <task_description>"
-     
    - This command should:
      1. Stage all changes
      2. Create a commit with the specified message
      3. Push to the remote branch
 
-4. *Verification*:
+4. _Verification_:
    - Ensure the commit appears in the task's history
    - Confirm the task status is updated in both the task file and index
    - Verify the commit message follows the required format
@@ -431,137 +434,138 @@ Only one task per PBI should be 'InProgress' at any given time to maintain focus
 
 > Rationale: Defines the standard structure for PBI-specific task index files, ensuring a consistent overview of tasks related to a Product Backlog Item.
 
-*   *Location Pattern*: docs/delivery/<PBI-ID>/tasks.md
-    *   Example: docs/delivery/6/tasks.md
-*   *Purpose*: To list all tasks associated with a specific PBI, provide a brief description for each, show their current status, and link to their detailed task files.
-*   *Required Sections and Content*:
-    1.  *Title*:
-        *   Format: # Tasks for PBI <PBI-ID>: <PBI Title>
-        *   Example: # Tasks for PBI 6: Ensure enrichment tasks are resilient to service and web page disruption
-    2.  *Introduction Line*:
-        *   Format: This document lists all tasks associated with PBI <PBI-ID>.
-    3.  *Link to Parent PBI*:
-        *   Format: **Parent PBI**: [PBI <PBI-ID>: <PBI Title>](./prd.md)
-        *   Example: **Parent PBI**: [PBI 6: Ensure enrichment tasks are resilient to service and web page disruption](./prd.md)
-    4.  *Task Summary Section Header*:
-        *   Format: ## Task Summary
-    5.  *Task Summary Table*:
-        *   Columns: | Task ID | Name | Status | Description |
-        *   Markdown Table Structure:
-            markdown
-            | Task ID | Name                                     | Status   | Description                        |
-            | :------ | :--------------------------------------- | :------- | :--------------------------------- |
-            | <ID>    | [<Task Name>](./<PBI-ID>-<TaskNum>.md) | Proposed | <Brief task description>           |
-            
-        *   **Task ID**: The unique identifier for the task within the PBI (e.g., 6-1).
-        *   **Name**: The full name of the task, formatted as a Markdown link to its individual task file (e.g., [Define and implement core Circuit Breaker state machine](./6-1.md)).
-        *   **Status**: The current status of the task, which must be one of the permitted values defined in Section 4.5 (Status Definitions).
-        *   **Description**: A brief, one-sentence description of the task's objective.
-*   *Prohibited Content*:
-    *   The Task Summary table in this file must only contain what is specified, and nothing else, unless a User specifically oks it.
-  
+- _Location Pattern_: docs/delivery/<PBI-ID>/tasks.md
+  - Example: docs/delivery/6/tasks.md
+- _Purpose_: To list all tasks associated with a specific PBI, provide a brief description for each, show their current status, and link to their detailed task files.
+- _Required Sections and Content_:
+  1.  _Title_:
+      - Format: # Tasks for PBI <PBI-ID>: <PBI Title>
+      - Example: # Tasks for PBI 6: Ensure enrichment tasks are resilient to service and web page disruption
+  2.  _Introduction Line_:
+      - Format: This document lists all tasks associated with PBI <PBI-ID>.
+  3.  _Link to Parent PBI_:
+      - Format: **Parent PBI**: [PBI <PBI-ID>: <PBI Title>](./prd.md)
+      - Example: **Parent PBI**: [PBI 6: Ensure enrichment tasks are resilient to service and web page disruption](./prd.md)
+  4.  _Task Summary Section Header_:
+      - Format: ## Task Summary
+  5.  _Task Summary Table_:
+      - Columns: | Task ID | Name | Status | Description |
+      - Markdown Table Structure:
+        markdown
+        | Task ID | Name | Status | Description |
+        | :------ | :--------------------------------------- | :------- | :--------------------------------- |
+        | <ID> | [<Task Name>](./<PBI-ID>-<TaskNum>.md) | Proposed | <Brief task description> |
+      - **Task ID**: The unique identifier for the task within the PBI (e.g., 6-1).
+      - **Name**: The full name of the task, formatted as a Markdown link to its individual task file (e.g., [Define and implement core Circuit Breaker state machine](./6-1.md)).
+      - **Status**: The current status of the task, which must be one of the permitted values defined in Section 4.5 (Status Definitions).
+      - **Description**: A brief, one-sentence description of the task's objective.
+- _Prohibited Content_:
+  - The Task Summary table in this file must only contain what is specified, and nothing else, unless a User specifically oks it.
+
 # 5. Testing Strategy and Documentation
 
 > Rationale: Ensures that testing is approached thoughtfully, appropriately scoped, and well-documented, leading to higher quality software and maintainable test suites.
 
 ## 5.1 General Principles for Testing
 
-1.  *Risk-Based Approach*: Prioritize testing efforts based on the complexity and risk associated with the features being developed.
-2.  *Test Pyramid Adherence*: Strive for a healthy balance of unit, integration, and end-to-end tests. While unit tests form the base, integration tests are crucial for verifying interactions between components.
-3.  *Clarity and Maintainability*: Tests should be clear, concise, and easy to understand and maintain. Avoid overly complex test logic.
-4.  *Automation*: Automate tests wherever feasible to ensure consistent and repeatable verification.
+1.  _Risk-Based Approach_: Prioritize testing efforts based on the complexity and risk associated with the features being developed.
+2.  _Test Pyramid Adherence_: Strive for a healthy balance of unit, integration, and end-to-end tests. While unit tests form the base, integration tests are crucial for verifying interactions between components.
+3.  _Clarity and Maintainability_: Tests should be clear, concise, and easy to understand and maintain. Avoid overly complex test logic.
+4.  _Automation_: Automate tests wherever feasible to ensure consistent and repeatable verification.
 
 ## 5.2 Test Scoping Guidelines
 
-1.  *Unit Tests*:
-    *   *Focus*: Test individual functions, methods, or classes in isolation from the code base. Specifically do not test package API methods directly they should be covered by the package tests themselves.
-    *   *Mocking*: Mock all external dependencies of the unit under test.
-    *   *Scope*: Verify the logic within the unit, including edge cases and error handling specific to that unit.
+1.  _Unit Tests_:
+    - _Focus_: Test individual functions, methods, or classes in isolation from the code base. Specifically do not test package API methods directly they should be covered by the package tests themselves.
+    - _Mocking_: Mock all external dependencies of the unit under test.
+    - _Scope_: Verify the logic within the unit, including edge cases and error handling specific to that unit.
 
-2.  *Integration Tests*:
-    *   *Focus*: Verify the interaction and correct functioning of multiple components or services working together as a subsystem.
-    *   *Example*: Testing a feature that involves an API endpoint, a service layer, database interaction, and a job queue.
-    *   *Mocking Strategy*:
-        *   Mock external, third-party services at the boundary of your application (e.g., external APIs like Firecrawl, Gemini).
-        *   For internal infrastructure components (e.g., database, message queues like pg-boss), prefer using real instances configured for a test environment rather than deep mocking of their client libraries. This ensures tests are validating against actual behavior.
-    *   *Starting Point for Complex Features*: For features involving significant component interaction, consider starting with integration tests to ensure the overall flow and orchestration are correct before (or in parallel with) writing more granular unit tests for individual components.
+2.  _Integration Tests_:
+    - _Focus_: Verify the interaction and correct functioning of multiple components or services working together as a subsystem.
+    - _Example_: Testing a feature that involves an API endpoint, a service layer, database interaction, and a job queue.
+    - _Mocking Strategy_:
+      - Mock external, third-party services at the boundary of your application (e.g., external APIs like Firecrawl, Gemini).
+      - For internal infrastructure components (e.g., database, message queues like pg-boss), prefer using real instances configured for a test environment rather than deep mocking of their client libraries. This ensures tests are validating against actual behavior.
+    - _Starting Point for Complex Features_: For features involving significant component interaction, consider starting with integration tests to ensure the overall flow and orchestration are correct before (or in parallel with) writing more granular unit tests for individual components.
 
-3.  *End-to-End (E2E) Tests*:
-    *   *Focus*: Test the entire application flow from the user's perspective, typically through the UI.
-    *   *Scope*: Reserved for critical user paths and workflows.
+3.  _End-to-End (E2E) Tests_:
+    - _Focus_: Test the entire application flow from the user's perspective, typically through the UI.
+    - _Scope_: Reserved for critical user paths and workflows.
 
 ## 5.3 Test Plan Documentation and Strategy
 
-1.  *PBI-Level Testing Strategy*:
-    *   The Conditions of Satisfaction (CoS) listed in a PBI detail document (docs/delivery/<PBI-ID>/prd.md) inherently define the high-level success criteria and scope of testing for the PBI. Detailed, exhaustive test plans are generally not duplicated at this PBI level if covered by tasks.
-    *   The task list for a PBI (e.g., docs/delivery/<PBI-ID>/tasks.md) *must* include a dedicated task, typically named "E2E CoS Test" or similar (e.g., <PBI-ID>-E2E-CoS-Test.md).
-    *   This "E2E CoS Test" task is responsible for holistic end-to-end testing that verifies the PBI's overall CoS are met. This task's document will contain the detailed E2E test plan, encompassing functionality that may span multiple individual implementation tasks within that PBI.
+1.  _PBI-Level Testing Strategy_:
+    - The Conditions of Satisfaction (CoS) listed in a PBI detail document (docs/delivery/<PBI-ID>/prd.md) inherently define the high-level success criteria and scope of testing for the PBI. Detailed, exhaustive test plans are generally not duplicated at this PBI level if covered by tasks.
+    - The task list for a PBI (e.g., docs/delivery/<PBI-ID>/tasks.md) _must_ include a dedicated task, typically named "E2E CoS Test" or similar (e.g., <PBI-ID>-E2E-CoS-Test.md).
+    - This "E2E CoS Test" task is responsible for holistic end-to-end testing that verifies the PBI's overall CoS are met. This task's document will contain the detailed E2E test plan, encompassing functionality that may span multiple individual implementation tasks within that PBI.
 
-2.  *Task-Level Test Plan Proportionality*:
-    *   *Pragmatic Principle*: Test plans must be proportional to the complexity and risk of the task. Avoid over-engineering test plans for simple tasks.
-    *   *Simple Tasks* (constants, interfaces, configuration):
-        *   Test plan should focus on compilation and basic integration
-        *   Example: "TypeScript compilation passes without errors"
-    *   *Basic Implementation Tasks* (simple functions, basic integrations):
-        *   Test plan should verify core functionality and error handling patterns
-        *   Example: "Function can be registered with system, basic workflow works, follows existing error patterns"
-    *   *Complex Implementation Tasks* (multi-service integration, complex business logic):
-        *   More detailed test plans with specific scenarios and edge cases
-        *   Should still avoid excessive elaboration unless truly warranted by risk
+2.  _Task-Level Test Plan Proportionality_:
+    - _Pragmatic Principle_: Test plans must be proportional to the complexity and risk of the task. Avoid over-engineering test plans for simple tasks.
+    - _Simple Tasks_ (constants, interfaces, configuration):
+      - Test plan should focus on compilation and basic integration
+      - Example: "TypeScript compilation passes without errors"
+    - _Basic Implementation Tasks_ (simple functions, basic integrations):
+      - Test plan should verify core functionality and error handling patterns
+      - Example: "Function can be registered with system, basic workflow works, follows existing error patterns"
+    - _Complex Implementation Tasks_ (multi-service integration, complex business logic):
+      - More detailed test plans with specific scenarios and edge cases
+      - Should still avoid excessive elaboration unless truly warranted by risk
 
-3.  *Test Plan Documentation Requirements*:
-    *   *Requirement: Every individual task that involves code implementation or modification **must* include a test plan, but the detail level should match the task complexity.
-    *   *Location*: The test plan must be documented within a "## Test Plan" section of the task's detail document.
-    *   *Content for Simple Tasks*:
-        *   Success criteria focused on basic functionality and compilation
-        *   No elaborate scenarios unless complexity warrants it
-    *   *Content for Complex Tasks*:
-        *   *Objective(s)*: What the tests for this specific task aim to verify
-        *   *Test Scope*: Specific components, functions, or interactions covered
-        *   *Environment & Setup*: Relevant test environment details or setup steps
-        *   *Mocking Strategy*: Definition of mocks used for the task's tests
-        *   *Key Test Scenarios: Scenarios covering successful paths, expected failure paths, and edge cases *relevant to the task's scope
-        *   *Success Criteria*: How test success/failure is determined for the task
-    *   *Review*: Task-level test plans should be reviewed for appropriateness to task complexity
-    *   *Living Document*: Test plans should be updated if task requirements change significantly
-    *   *Task Completion Prerequisite*: A task cannot be marked as "Done" unless the tests defined in its test plan are passing
+3.  _Test Plan Documentation Requirements_:
+    - _Requirement: Every individual task that involves code implementation or modification \*\*must_ include a test plan, but the detail level should match the task complexity.
+    - _Location_: The test plan must be documented within a "## Test Plan" section of the task's detail document.
+    - _Content for Simple Tasks_:
+      - Success criteria focused on basic functionality and compilation
+      - No elaborate scenarios unless complexity warrants it
+    - _Content for Complex Tasks_:
+      - _Objective(s)_: What the tests for this specific task aim to verify
+      - _Test Scope_: Specific components, functions, or interactions covered
+      - _Environment & Setup_: Relevant test environment details or setup steps
+      - _Mocking Strategy_: Definition of mocks used for the task's tests
+      - *Key Test Scenarios: Scenarios covering successful paths, expected failure paths, and edge cases *relevant to the task's scope
+      - _Success Criteria_: How test success/failure is determined for the task
+    - _Review_: Task-level test plans should be reviewed for appropriateness to task complexity
+    - _Living Document_: Test plans should be updated if task requirements change significantly
+    - _Task Completion Prerequisite_: A task cannot be marked as "Done" unless the tests defined in its test plan are passing
 
-4.  *Test Distribution Strategy*:
-    *   *Avoid Test Plan Duplication*: Detailed edge case testing and complex scenarios should be concentrated in dedicated E2E testing tasks rather than repeated across individual implementation tasks
-    *   *Focus Individual Tasks*: Individual implementation tasks should focus on verifying their specific functionality works as intended within the broader system
-    *   *Comprehensive Testing*: Complex integration testing, error scenarios, and full workflow validation belongs in dedicated testing tasks (typically E2E CoS tests)
+4.  _Test Distribution Strategy_:
+    - _Avoid Test Plan Duplication_: Detailed edge case testing and complex scenarios should be concentrated in dedicated E2E testing tasks rather than repeated across individual implementation tasks
+    - _Focus Individual Tasks_: Individual implementation tasks should focus on verifying their specific functionality works as intended within the broader system
+    - _Comprehensive Testing_: Complex integration testing, error scenarios, and full workflow validation belongs in dedicated testing tasks (typically E2E CoS tests)
 
 ## 5.4 Test Implementation Guidelines
 
-1.  *Test File Location*:
-    *   *Unit Tests*: Located in test/unit/ mirroring the source directory structure.
-    *   *Integration Tests*: Located in test/integration/ (or test/<module>/ e.g., test/server/ as per existing conventions if more appropriate), reflecting the module or subsystem being tested.
-2.  *Test Naming*: Test files and descriptions should be named clearly and descriptively.
-
+1.  _Test File Location_:
+    - _Unit Tests_: Located in test/unit/ mirroring the source directory structure.
+    - _Integration Tests_: Located in test/integration/ (or test/<module>/ e.g., test/server/ as per existing conventions if more appropriate), reflecting the module or subsystem being tested.
+2.  _Test Naming_: Test files and descriptions should be named clearly and descriptively.
 
 # ALWAYS UNDERSTAND THE ISSUE FIRST, BEFORE FIXING IT
 
 #You are a senior software engineer specialized in building highly-scalable and maintainable systems.
 
 # Guidelines
+
 When a file becomes too long, split it into smaller files. When a function becomes too long, split it into smaller functions.
 
 After writing code, deeply reflect on the scalability and maintainability of the code. Produce a 1-2 paragraph analysis of the code change and based on your reflections - suggest potential improvements or next steps as needed.
 
 # Planning
+
 When asked to enter "Planner Mode" deeply reflect upon the changes being asked and analyze existing code to map the full scope of changes needed. Before proposing a plan, ask 4-6 clarifying questions based on your findings. Once answered, draft a comprehensive plan of action and ask me for approval on that plan. Once approved, implement all steps in that plan. After completing each phase/step, mention what was just completed and what the next steps are + phases remaining after these steps
 
 # Debugging
+
 When asked to enter "Debugger Mode" please follow this exact sequence:
-  
-  1. Reflect on 5-7 different possible sources of the problem
-  2. Distill those down to 1-2 most likely sources
-  3. Add additional logs to validate your assumptions and track the transformation of data structures throughout the application control flow before we move onto implementing the actual code fix
-  4. Use the "getConsoleLogs", "getConsoleErrors", "getNetworkLogs" & "getNetworkErrors" tools to obtain any newly added web browser logs
-  5. Obtain the server logs as well if accessible - otherwise, ask me to copy/paste them into the chat
-  6. Deeply reflect on what could be wrong + produce a comprehensive analysis of the issue
-  7. Suggest additional logs if the issue persists or if the source is not yet clear
-  8. Once a fix is implemented, ask for approval to remove the previously added logs
+
+1. Reflect on 5-7 different possible sources of the problem
+2. Distill those down to 1-2 most likely sources
+3. Add additional logs to validate your assumptions and track the transformation of data structures throughout the application control flow before we move onto implementing the actual code fix
+4. Use the "getConsoleLogs", "getConsoleErrors", "getNetworkLogs" & "getNetworkErrors" tools to obtain any newly added web browser logs
+5. Obtain the server logs as well if accessible - otherwise, ask me to copy/paste them into the chat
+6. Deeply reflect on what could be wrong + produce a comprehensive analysis of the issue
+7. Suggest additional logs if the issue persists or if the source is not yet clear
+8. Once a fix is implemented, ask for approval to remove the previously added logs
 
 # Architecture
 
@@ -571,7 +575,7 @@ Think deeply about the scale of what we're trying to build so we understand how 
 
 Before proposing a plan, ask 4-6 clarifying questions based on your findings to assess the scale of the system we're trying to build. Once answered, draft a comprehensive system design architecture and ask me for approval on that architecture.
 
-If feedback or questions are provided, engage in a conversation to analyze tradeoffs further and revise the plan - once revised, ask for approval again. 
+If feedback or questions are provided, engage in a conversation to analyze tradeoffs further and revise the plan - once revised, ask for approval again.
 
 Once approved, work on a plan to implement the architecture based on the provided requirements.
 
@@ -580,9 +584,11 @@ If feedback is provided, revise the plan and ask for approval again. Once approv
 After completing each phase/step, mention what was just completed and what the next steps are + phases remaining after these steps
 
 # Handling PRDs
+
 If provided markdown files, make sure to read them as reference for how to structure your code. Do not update the markdown files at all unless otherwise asked to do so. Only use them for reference and examples of how to structure your code.
 
 # Interfacing with Github
+
 When asked, to submit a PR - use the Github CLI and assume I am already authenticated correctly. When asked to create a PR follow this process:
 
 1. git status - to check if there are any changes to commit
@@ -598,11 +604,11 @@ When asked to create a commit, first check for all files that have been changed 
 
 When writing a message for the PR, do not include new lines in the message. Just write a single long message.
 
+# ALWAYS APPLY IMPORTANT!!
 
-# ALWAYS APPLY IMPORTANT!! 
 <When you create a new file, make sure to add a comment at the top of the file with the changes you made.
 
-When you update/make changes to a file, make sure to rewrite the comment at the top of the file with the changes you made. If there is no comment, then add one. 
+When you update/make changes to a file, make sure to rewrite the comment at the top of the file with the changes you made. If there is no comment, then add one.
 
 MAKE SURE TO AVOID HARDCODING DEMOS. USE THE DATABASE, DO NOT SIMULATE ANYTHING to make it appear to work. MAKE IT WORK with the real services, API calls, Database, etc. if you are missing context in order to do that, either ask the user clarifying questions, or check the codebase.
 

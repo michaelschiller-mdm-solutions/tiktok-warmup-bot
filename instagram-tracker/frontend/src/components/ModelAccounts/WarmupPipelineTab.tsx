@@ -135,6 +135,10 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
   const [selectedAccounts, setSelectedAccounts] = useState<Set<number>>(new Set());
   const [selectAllMode, setSelectAllMode] = useState(false);
   const [batchActionLoading, setBatchActionLoading] = useState(false);
+  
+  // Content assignment and warmup transition state
+  const [assigningContent, setAssigningContent] = useState(false);
+  const [transitioningToWarmup, setTransitioningToWarmup] = useState(false);
 
   // Add after the existing state declarations (around line 40-50)
   const containerRef = useRef<HTMLDivElement>(null);
@@ -362,6 +366,77 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
       const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
       const details = error.response?.data?.details;
       toast.error(`❌ Failed to switch container: ${errorMsg}${details ? '\n' + details : ''}`, { duration: 7000 });
+    }
+  };
+
+  // Handle bulk content assignment
+  const handleBulkAssignContent = async () => {
+    try {
+      setAssigningContent(true);
+      
+      const response = await fetch('/api/warmup-content-assignment/bulk-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lifecycle_states: ['ready_for_bot_assignment'],
+          force_reassign: false
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to assign content');
+      }
+
+      if (result.success) {
+        toast.success(`✅ Content assigned to ${result.data.successful} accounts`);
+        // Refresh the data to show updated assignments
+        fetchWarmupData();
+      } else {
+        toast.error(result.message || 'Content assignment failed');
+      }
+
+    } catch (error: any) {
+      console.error('Error assigning content:', error);
+      toast.error(error.message || 'Failed to assign content to accounts');
+    } finally {
+      setAssigningContent(false);
+    }
+  };
+
+  // Handle transition to warmup state
+  const handleStartWarmup = async (accountIds?: number[]) => {
+    try {
+      setTransitioningToWarmup(true);
+      
+      const response = await fetch('/api/warmup-content-assignment/transition-to-warmup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_ids: accountIds || [] // Empty array = process all ready accounts
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to start warmup');
+      }
+
+      if (result.success) {
+        toast.success(`🚀 ${result.data.successful} accounts moved to warmup state`);
+        // Refresh the data to show accounts in warmup phases
+        fetchWarmupData();
+      } else {
+        toast.error(result.message || 'Failed to start warmup');
+      }
+
+    } catch (error: any) {
+      console.error('Error starting warmup:', error);
+      toast.error(error.message || 'Failed to start warmup process');
+    } finally {
+      setTransitioningToWarmup(false);
     }
   };
 
@@ -1357,7 +1432,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
     };
 
     loadInitialData();
-  }, [accounts]);
+  }, [accounts, selectedIphoneId]);
 
   // Update warmup configuration
   const handleUpdateWarmupConfig = async (updates: any) => {
@@ -1472,6 +1547,65 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
             <RotateCcw className={`h-4 w-4 ${(accountsLoading || loading) ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+        </div>
+      </div>
+
+      {/* Content Assignment Panel */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 mb-4 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-lg font-medium text-gray-900 mb-1">Warmup Content Management</h4>
+            <p className="text-sm text-gray-600">
+              Assign content to accounts and transition them to warmup phases
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={handleBulkAssignContent}
+              disabled={assigningContent}
+              className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
+            >
+              {assigningContent ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Assigning...
+                </>
+              ) : (
+                <>
+                  <FileText className="h-4 w-4" />
+                  Assign Content
+                </>
+              )}
+            </button>
+            <button 
+              onClick={() => handleStartWarmup()}
+              disabled={transitioningToWarmup}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-md flex items-center gap-2 transition-colors"
+            >
+              {transitioningToWarmup ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Start Warmup
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="mt-3 text-xs text-gray-500">
+          <span className="font-medium">Workflow:</span> 
+          1. Assign content to accounts in "ready_for_bot_assignment" state 
+          → 2. Start warmup to move them to warmup phases 
+          → 3. Accounts follow randomized phase sequence with rules:
+          <div className="ml-4 mt-1">
+            • <span className="font-medium">first_highlight</span> is always named "Me" and must come before new_highlight
+            • <span className="font-medium">set_to_private</span> is always the final phase
+            • Each phase is one-time only with configurable cooldowns
+          </div>
         </div>
       </div>
 

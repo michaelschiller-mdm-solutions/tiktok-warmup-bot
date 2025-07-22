@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useMemo } from 'react';
-import { X, ChevronLeft, ChevronRight, Check, Upload, Trash2, ImagePlus, Star, GripVertical, Layers, XSquare } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Check, Trash2, ImagePlus, GripVertical, Layers, XSquare } from 'lucide-react';
 import { CreateCampaignPoolRequest, HighlightGroup } from '../../../types/campaignPools';
 import { FormRow, FormLabel, FormInput, FormTextarea, FormSelect, FormSwitch } from '../form/FormComponents';
 import { Button } from '../../ui/button';

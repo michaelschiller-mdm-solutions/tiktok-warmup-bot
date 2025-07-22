@@ -29,6 +29,7 @@ import maintenanceStatusRouter from './routes/maintenanceStatus';
 import botIntegrationRouter from './routes/botIntegration';
 import settingsRoutes from './routes/settings';
 import automationRouter, { setupWebSocket } from './routes/automation';
+import warmupContentAssignmentRouter from './routes/warmupContentAssignment';
 
 // Load environment variables
 dotenv.config();
@@ -126,6 +127,9 @@ app.use('/api/settings', settingsRoutes);
 
 // Automation API Routes
 app.use('/api/automation', automationRouter);
+
+// Warmup Content Assignment API Routes
+app.use('/api/warmup-content-assignment', warmupContentAssignmentRouter);
 
 // 404 handler
 app.use('*', (req, res) => {

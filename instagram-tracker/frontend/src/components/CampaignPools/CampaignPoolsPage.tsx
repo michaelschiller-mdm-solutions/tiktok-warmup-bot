@@ -16,7 +16,7 @@ const CampaignPoolsPage: React.FC = () => {
   const [isSprintWizardOpen, setIsSprintWizardOpen] = useState(false);
 
   // Mock data for wizards
-  const [highlightGroups, setHighlightGroups] = useState<HighlightGroup[]>([]);
+  const [highlightGroups] = useState<HighlightGroup[]>([]);
 
   const handlePoolCreate = async (poolData: CreateCampaignPoolRequest) => {
     console.log("Pool data to be created:", poolData);
