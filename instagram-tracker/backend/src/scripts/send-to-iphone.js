@@ -104,7 +104,10 @@ async function sendContentToIphone(accountId, phase, iphoneIP = '192.168.178.65'
     // Send image content to gallery if exists
     if (phaseData.content_file_path) {
       try {
-        const fullPath = path.resolve(__dirname, '../../uploads', phaseData.content_file_path);
+        // Handle both absolute and relative paths
+        const fullPath = path.isAbsolute(phaseData.content_file_path) 
+          ? phaseData.content_file_path 
+          : path.resolve(__dirname, '../../uploads', phaseData.content_file_path);
         console.log(`🖼️  Sending image to gallery: ${phaseData.content_filename}`);
         console.log(`   File path: ${fullPath}`);
         
@@ -286,8 +289,8 @@ async function main() {
   
   const accountId = parseInt(args[0]);
   const phase = args[1];
-  const iphoneIP = filteredArgs[2] || '192.168.178.65';
-  const iphonePort = parseInt(filteredArgs[3]) || 46952;
+  const iphoneIP = args[2] || '192.168.178.65';
+  const iphonePort = parseInt(args[3]) || 46952;
   
   try {
     if (phase) {

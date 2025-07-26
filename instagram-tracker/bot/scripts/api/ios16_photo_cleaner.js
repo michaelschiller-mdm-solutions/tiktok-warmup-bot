@@ -46,10 +46,10 @@ class iOS16PhotoCleaner {
     }
 
     /**
-     * Step 1: Nuclear option - Delete entire Photos database
+     * Step 1: Nuclear option - Delete and restore Photos database
      */
     async deletePhotosDatabase() {
-        console.log('💥 Step 1: Nuclear option - Deleting entire Photos database...\n');
+        console.log('💥 Step 1: Nuclear option - Deleting and restoring Photos database...\n');
         
         try {
             // Kill all photo-related processes
@@ -68,7 +68,39 @@ class iOS16PhotoCleaner {
             await this.executeSSH('rm -f /var/mobile/Media/PhotoData/Photos.sqlite-wal 2>/dev/null || true');
             await this.executeSSH('rm -f /var/mobile/Media/PhotoData/Photos.sqlite-shm 2>/dev/null || true');
             
-            console.log('✅ Photos database deleted\n');
+            // CRITICAL FIX: Restore database from backup (the approach that works)
+            console.log('🔧 Restoring Photos database...');
+            
+            // First try to find iOS template
+            const defaultExists = await this.executeSSH('ls -la /var/mobile/Media/PhotoData/Photos.sqlite.default 2>/dev/null || echo "NOT_FOUND"');
+            
+            if (!defaultExists.includes('NOT_FOUND')) {
+                console.log('✅ Restoring from iOS template...');
+                await this.executeSSH('cp /var/mobile/Media/PhotoData/Photos.sqlite.default /var/mobile/Media/PhotoData/Photos.sqlite');
+            } else {
+                // Use backup restoration approach (this is what worked)
+                console.log('🔧 Looking for backup to restore...');
+                const backups = await this.executeSSH('ls -t /var/mobile/Media/PhotoData/Photos.sqlite.backup.* 2>/dev/null | head -1 || echo "NO_BACKUP"');
+                
+                if (!backups.includes('NO_BACKUP')) {
+                    console.log(`✅ Restoring from backup: ${backups.trim()}`);
+                    await this.executeSSH(`cp "${backups.trim()}" /var/mobile/Media/PhotoData/Photos.sqlite`);
+                } else {
+                    console.log('⚠️ No backup found - creating empty file for iOS to rebuild');
+                    await this.executeSSH('touch /var/mobile/Media/PhotoData/Photos.sqlite');
+                }
+            }
+            
+            // CRITICAL: Remove WAL/SHM files for clean rebuild
+            console.log('🗑️ Removing old WAL/SHM files for clean rebuild...');
+            await this.executeSSH('rm -f /var/mobile/Media/PhotoData/Photos.sqlite-wal 2>/dev/null || true');
+            await this.executeSSH('rm -f /var/mobile/Media/PhotoData/Photos.sqlite-shm 2>/dev/null || true');
+            
+            // Set proper ownership and permissions
+            await this.executeSSH('chown mobile:mobile /var/mobile/Media/PhotoData/Photos.sqlite* 2>/dev/null || true');
+            await this.executeSSH('chmod 644 /var/mobile/Media/PhotoData/Photos.sqlite 2>/dev/null || true');
+            
+            console.log('✅ Photos database deleted and restored\n');
             
         } catch (error) {
             console.log('⚠️ Photos database deletion had issues, continuing...\n');
@@ -76,10 +108,10 @@ class iOS16PhotoCleaner {
     }
 
     /**
-     * Step 2: Clean all PhotoData subdirectories
+     * Step 2: Clean and recreate PhotoData subdirectories
      */
     async cleanAllPhotoData() {
-        console.log('🧹 Step 2: Cleaning all PhotoData subdirectories...\n');
+        console.log('🧹 Step 2: Cleaning and recreating PhotoData subdirectories...\n');
         
         const photoDataDirs = [
             '/var/mobile/Media/PhotoData/MISC',
@@ -88,25 +120,34 @@ class iOS16PhotoCleaner {
             '/var/mobile/Media/PhotoData/external',
             '/var/mobile/Media/PhotoData/private',
             '/var/mobile/Media/PhotoData/CPL',
-            '/var/mobile/Media/PhotoData/AlbumsMetadata'
+            '/var/mobile/Media/PhotoData/AlbumsMetadata',
+            '/var/mobile/Media/PhotoData/Masters'  // Important for some iOS versions
         ];
         
         for (const dir of photoDataDirs) {
             try {
                 console.log(`🗑️ Cleaning ${dir}...`);
                 
-                // Remove all contents
+                // Remove all contents but keep directory structure
                 await this.executeSSH(`rm -rf "${dir}"/* 2>/dev/null || true`);
                 await this.executeSSH(`rm -rf "${dir}"/.[^.]* 2>/dev/null || true`);
                 
-                console.log(`✅ Cleaned ${dir}`);
+                // CRITICAL FIX: Recreate directory if it doesn't exist
+                await this.executeSSH(`mkdir -p "${dir}" 2>/dev/null || true`);
+                
+                console.log(`✅ Cleaned and recreated ${dir}`);
                 
             } catch (error) {
                 console.log(`⚠️ Could not clean ${dir}`);
             }
         }
         
-        console.log('✅ PhotoData cleanup completed\n');
+        // CRITICAL FIX: Set proper ownership and permissions for entire PhotoData
+        console.log('🔐 Setting proper ownership and permissions...');
+        await this.executeSSH('chown -R mobile:mobile /var/mobile/Media/PhotoData 2>/dev/null || true');
+        await this.executeSSH('chmod -R 755 /var/mobile/Media/PhotoData 2>/dev/null || true');
+        
+        console.log('✅ PhotoData cleanup and recreation completed\n');
     }
 
     /**
@@ -154,6 +195,11 @@ class iOS16PhotoCleaner {
             // Clear temporary files
             console.log('🗑️ Clearing temporary files...');
             await this.executeSSH('rm -rf /tmp/com.apple.photos* 2>/dev/null || true');
+            
+            // CRITICAL FIX: Clear crash logs that can prevent Photos from starting
+            console.log('🗑️ Clearing Photos crash logs...');
+            await this.executeSSH('rm -f /var/mobile/Library/Logs/CrashReporter/*Photos* 2>/dev/null || true');
+            await this.executeSSH('rm -f /var/mobile/Library/Logs/CrashReporter/*photolibraryd* 2>/dev/null || true');
             
             console.log('✅ iOS caches cleared\n');
             

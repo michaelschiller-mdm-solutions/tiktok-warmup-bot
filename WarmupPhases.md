@@ -1,5 +1,18 @@
 # WARMUP PHASES
 
+## Explanation
+
+  models have content assigned to them. models have accounts assigned to them. these accounts should get content from the model they're assigned to, assigned to the accounts for each phase. means:  each account will have mapped out what content they will have for what phase. 
+
+we have text and picture content. they are categorized. 
+
+accounts need to go through phases to be properly warmed up. each account goes through each phase. each phase needs to have the accounts get content assigned to them, so they can be ran throught the phase. for example a post without caption needs a picture.  
+picture content is always mandatory. text content is optional.
+
+
+
+WarmupPhases.md holds the needed content for every phase and what category. 
+
 ## Container Selection Process
 
 **IMPORTANT**: All phases now use the updated container selection system. Instead of individual `open_container{N}.lua` scripts, the system now uses:
