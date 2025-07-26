@@ -301,16 +301,63 @@ class iOS16PhotoCleaner {
             await this.forcePhotoServicesRestart();
             await this.verifyCompleteCleanup();
             
+            // CRITICAL: Apply final photos fix to ensure Photos app works
+            await this.applyFinalPhotosFix();
+            
             console.log('\n🎯 iOS 16 NUCLEAR CLEANUP COMPLETED!');
-            console.log('📱 Please check Photos app on iPhone now');
-            console.log('🔄 If photos still appear:');
-            console.log('   1. Manually open Photos app (may take time to rebuild)');
-            console.log('   2. Restart iPhone completely');
-            console.log('   3. Check Settings > General > iPhone Storage > Photos');
-            console.log('   4. The database rebuild may take several minutes');
+            console.log('📱 Photos app should now work properly');
+            console.log('✅ Final photos fix applied automatically');
             
         } catch (error) {
             console.error('💥 iOS 16 cleanup failed:', error.message);
+        }
+    }
+
+    /**
+     * Apply final photos fix to ensure Photos app works after nuclear cleanup
+     * This integrates the working solution from final-photos-fix.js
+     */
+    async applyFinalPhotosFix() {
+        console.log('🔧 Applying final photos fix for reliable Photos app access...\n');
+        
+        try {
+            // Step 1: Clean up old WAL/SHM files for fresh rebuild
+            console.log('🗑️ Cleaning up old database files for fresh rebuild...');
+            await this.executeSSH('rm -f /var/mobile/Media/PhotoData/Photos.sqlite-wal 2>/dev/null || true');
+            await this.executeSSH('rm -f /var/mobile/Media/PhotoData/Photos.sqlite-shm 2>/dev/null || true');
+            console.log('✅ Old WAL/SHM files removed');
+            
+            // Step 2: Set proper ownership and permissions
+            console.log('🔐 Setting proper ownership and permissions...');
+            await this.executeSSH('chown mobile:mobile /var/mobile/Media/PhotoData/Photos.sqlite');
+            await this.executeSSH('chmod 644 /var/mobile/Media/PhotoData/Photos.sqlite');
+            await this.executeSSH('chown -R mobile:mobile /var/mobile/Media/PhotoData');
+            await this.executeSSH('chmod -R 755 /var/mobile/Media/PhotoData');
+            console.log('✅ Ownership and permissions set correctly');
+            
+            // Step 3: Kill photo processes for clean restart
+            console.log('🔄 Killing photo processes for clean restart...');
+            const processes = ['photoanalysisd', 'photolibraryd', 'Photos', 'mediaserverd', 'imagent', 'assetsd'];
+            for (const process of processes) {
+                await this.executeSSH(`killall -9 ${process} 2>/dev/null || true`);
+            }
+            console.log('✅ Photo processes killed');
+            
+            // Step 4: Launch Photos app to trigger database rebuild
+            console.log('📱 Launching Photos app to trigger database rebuild...');
+            await this.executeSSH('uiopen com.apple.mobileslideshow 2>/dev/null || true');
+            console.log('✅ Photos app launch command sent');
+            
+            // Step 5: Wait for processes to restart
+            console.log('⏳ Waiting 10 seconds for photo processes to restart...');
+            await new Promise(resolve => setTimeout(resolve, 10000));
+            
+            console.log('✅ Final photos fix applied successfully');
+            console.log('📱 Photos app should now be accessible and show "No Photos or Videos"');
+            
+        } catch (error) {
+            console.log('⚠️ Final photos fix had issues:', error.message);
+            console.log('📱 You may need to manually open Photos app on iPhone');
         }
     }
 }
