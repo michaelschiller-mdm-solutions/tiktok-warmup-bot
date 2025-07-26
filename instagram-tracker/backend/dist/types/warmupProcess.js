@@ -4,7 +4,6 @@ exports.ContentType = exports.WarmupPhaseStatus = exports.WarmupPhase = void 0;
 var WarmupPhase;
 (function (WarmupPhase) {
     WarmupPhase["MANUAL_SETUP"] = "manual_setup";
-    WarmupPhase["SET_TO_PRIVATE"] = "set_to_private";
     WarmupPhase["BIO"] = "bio";
     WarmupPhase["GENDER"] = "gender";
     WarmupPhase["NAME"] = "name";

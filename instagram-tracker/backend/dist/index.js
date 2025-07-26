@@ -65,6 +65,7 @@ const maintenanceStatus_1 = __importDefault(require("./routes/maintenanceStatus"
 const botIntegration_1 = __importDefault(require("./routes/botIntegration"));
 const settings_1 = __importDefault(require("./routes/settings"));
 const automation_1 = __importStar(require("./routes/automation"));
+const warmupContentAssignment_1 = __importDefault(require("./routes/warmupContentAssignment"));
 dotenv_1.default.config();
 const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3090';
@@ -123,6 +124,7 @@ app.use('/api/maintenance-status', maintenanceStatus_1.default);
 app.use('/api/bot-integration', botIntegration_1.default);
 app.use('/api/settings', settings_1.default);
 app.use('/api/automation', automation_1.default);
+app.use('/api/warmup-content-assignment', warmupContentAssignment_1.default);
 app.use('*', (req, res) => {
     res.status(404).json({
         error: 'Endpoint not found',
@@ -138,6 +140,7 @@ app.use((err, req, res, next) => {
         ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
     });
 });
+const WarmupQueueService_1 = require("./services/WarmupQueueService");
 async function startServer() {
     try {
         console.log('🔄 Running database migrations...');
@@ -145,12 +148,27 @@ async function startServer() {
         console.log('✅ Migrations completed successfully.');
         await (0, database_1.testConnection)();
         console.log('✅ Database connected successfully');
+        console.log('🤖 Starting warmup automation queue...');
+        const warmupQueue = new WarmupQueueService_1.WarmupQueueService();
+        await warmupQueue.start();
+        console.log('✅ Warmup automation queue started');
+        process.on('SIGINT', async () => {
+            console.log('🛑 Shutting down gracefully...');
+            await warmupQueue.stop();
+            process.exit(0);
+        });
+        process.on('SIGTERM', async () => {
+            console.log('🛑 Shutting down gracefully...');
+            await warmupQueue.stop();
+            process.exit(0);
+        });
         (0, automation_1.setupWebSocket)(server);
         server.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT}`);
             console.log(`📊 Dashboard: http://localhost:${PORT}/health`);
             console.log(`🔗 CORS enabled for: ${CORS_ORIGIN}`);
             console.log(`📁 Static files served from: ${path_1.default.join(__dirname, '../uploads')}`);
+            console.log(`🤖 Warmup automation: ACTIVE (polling every 30s)`);
         });
     }
     catch (error) {

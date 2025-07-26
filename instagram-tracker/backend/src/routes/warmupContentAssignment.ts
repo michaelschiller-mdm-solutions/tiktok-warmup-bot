@@ -386,7 +386,7 @@ router.post('/send-to-iphone/:accountId/:phase', async (req: any, res: any) => {
     const { 
       iphone_ip = '192.168.178.65', 
       iphone_port = 46952,
-      use_nuclear_cleaner = true  // Nuclear cleaner is now the default
+      use_nuclear_cleaner = true  // Nuclear cleaner is the only one that works
     } = req.body;
 
     console.log(`📱 Sending content to iPhone for account ${accountId}, phase: ${phase}`);
@@ -459,15 +459,46 @@ router.post('/send-to-iphone/:accountId/:phase', async (req: any, res: any) => {
           // IMPORTANT: Clean iPhone gallery before sending new images
           console.log(`🧹 Cleaning iPhone gallery before sending image...`);
           try {
-            // Use simple cleaner by default (no respring required)
+            // Use nuclear cleaner (only one that works reliably)
             const photoCleaner = use_nuclear_cleaner ? new iOS16PhotoCleaner() : new SimplePhotoCleaner();
             
             if (use_nuclear_cleaner) {
               console.log(`💥 Using nuclear cleaner (will cause iPhone respring)...`);
               await photoCleaner.performiOS16Cleanup();
-              // Wait longer for system to stabilize after nuclear cleanup
-              console.log(`⏳ Waiting for iPhone to stabilize after nuclear cleanup...`);
-              await new Promise(resolve => setTimeout(resolve, 10000));
+              
+              // Wait for iPhone respring to complete
+              console.log(`⏳ Waiting 15 seconds for iPhone respring to complete...`);
+              await new Promise(resolve => setTimeout(resolve, 15000));
+              
+              // Execute wake_up.lua to ensure iPhone is responsive
+              console.log(`📱 Executing wake_up.lua to wake up iPhone after respring...`);
+              try {
+                const AutomationBridge = require('../../../bot/services/AutomationBridge');
+                const bridge = new AutomationBridge({
+                  iphoneIP: iphone_ip,
+                  iphonePort: iphone_port
+                });
+                
+                // Set a shorter timeout to prevent hanging
+                const wakeUpResult = await Promise.race([
+                  bridge.executeScript('wake_up.lua', {
+                    timeout: 15000,
+                    retries: 2
+                  }),
+                  new Promise(resolve => setTimeout(() => resolve(false), 20000)) // 20s max wait
+                ]);
+                
+                if (wakeUpResult) {
+                  console.log(`✅ iPhone wake-up completed successfully`);
+                  // Additional wait for iPhone to be fully ready
+                  console.log(`⏳ Waiting additional 3 seconds for iPhone to be fully ready...`);
+                  await new Promise(resolve => setTimeout(resolve, 3000));
+                } else {
+                  console.warn(`⚠️ iPhone wake-up may have failed or timed out, but continuing...`);
+                }
+              } catch (wakeUpError) {
+                console.warn(`⚠️ Wake-up script failed: ${wakeUpError.message}, but continuing...`);
+              }
             } else {
               console.log(`🧹 Using simple cleaner (no respring required)...`);
               await photoCleaner.performSimpleCleanup();

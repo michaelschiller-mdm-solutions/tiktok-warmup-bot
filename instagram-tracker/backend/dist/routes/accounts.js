@@ -39,8 +39,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const database_1 = require("../database");
 const lifecycle_1 = __importDefault(require("./accounts/lifecycle"));
+const verification_1 = __importDefault(require("./accounts/verification"));
 const router = express_1.default.Router();
 router.use('/lifecycle', lifecycle_1.default);
+router.use('/verification', verification_1.default);
 router.get('/statistics', async (req, res) => {
     try {
         const query = `

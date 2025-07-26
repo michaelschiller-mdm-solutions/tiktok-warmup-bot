@@ -152,6 +152,9 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
+// Import and initialize warmup queue service
+import { WarmupQueueService } from './services/WarmupQueueService';
+
 // Start server
 async function startServer() {
   try {
@@ -163,6 +166,25 @@ async function startServer() {
     await testConnection();
     console.log('✅ Database connected successfully');
     
+    // Initialize and start warmup queue service
+    console.log('🤖 Starting warmup automation queue...');
+    const warmupQueue = new WarmupQueueService();
+    await warmupQueue.start();
+    console.log('✅ Warmup automation queue started');
+    
+    // Graceful shutdown handlers for warmup queue
+    process.on('SIGINT', async () => {
+      console.log('🛑 Shutting down gracefully...');
+      await warmupQueue.stop();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+      console.log('🛑 Shutting down gracefully...');
+      await warmupQueue.stop();
+      process.exit(0);
+    });
+    
     // Attach WebSocket server
     setupWebSocket(server);
 
@@ -171,6 +193,7 @@ async function startServer() {
       console.log(`📊 Dashboard: http://localhost:${PORT}/health`);
       console.log(`🔗 CORS enabled for: ${CORS_ORIGIN}`);
       console.log(`📁 Static files served from: ${path.join(__dirname, '../uploads')}`);
+      console.log(`🤖 Warmup automation: ACTIVE (polling every 30s)`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);

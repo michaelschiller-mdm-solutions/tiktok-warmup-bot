@@ -146,7 +146,13 @@ function processAccount(session, account) {
             console.log(`[${session.sessionId}] 📱 No existing verification code found for ${account.username} - proceeding with full automation`);
             const payloadForScript = {
                 ...account,
-                sessionId: session.sessionId
+                sessionId: session.sessionId,
+                verificationConfig: session.verificationConfig || {
+                    requireManualVerification: true,
+                    skipVerification: false,
+                    requireScreenshot: true,
+                    autoCompleteOnSuccess: false
+                }
             };
             const automationData = JSON.stringify(payloadForScript);
             const scriptPath = path_1.default.join(process.cwd(), '../bot/scripts/api/account_setup.js');
@@ -157,15 +163,21 @@ function processAccount(session, account) {
                 stdio: ['pipe', 'pipe', 'pipe']
             });
             session.currentProcess = child;
+            let finalOutput = '';
             child.stdout.on('data', (data) => {
                 const messageStr = data.toString();
-                messageStr.split('\\n').forEach((line) => {
+                finalOutput += messageStr;
+                messageStr.split('\n').forEach((line) => {
                     if (line.trim()) {
                         try {
                             const message = JSON.parse(line);
                             const client = sessionClients.get(session.sessionId);
                             if (client && client.readyState === ws_1.WebSocket.OPEN) {
+                                console.log(`[WebSocket] Sending progress update:`, message.type, message.data?.stepName || message.data?.status);
                                 client.send(JSON.stringify(message));
+                            }
+                            else {
+                                console.warn(`[WebSocket] No client connected for session ${session.sessionId}`);
                             }
                         }
                         catch (error) {
@@ -182,6 +194,65 @@ function processAccount(session, account) {
                 session.currentProcess = null;
                 if (code === 0) {
                     session.results.push({ accountId: account.accountId, status: 'completed' });
+                    try {
+                        const lines = finalOutput.split('\n').filter(line => line.trim());
+                        const lastLine = lines[lines.length - 1];
+                        if (lastLine && lastLine.includes('Setup result:')) {
+                            const resultStart = lastLine.indexOf('{');
+                            if (resultStart !== -1) {
+                                const jsonStr = lastLine.substring(resultStart);
+                                const finalResult = JSON.parse(jsonStr);
+                                if (finalResult.requiresManualVerification) {
+                                    console.log(`[${session.sessionId}] 📸 Account ${account.accountId} requires manual verification, pausing session.`);
+                                    session.status = 'paused';
+                                    updateAccountWithVerificationData(account.accountId, {
+                                        requiresManualVerification: true,
+                                        screenshotCaptured: finalResult.screenshotCaptured,
+                                        token: finalResult.token
+                                    }).catch(error => {
+                                        console.error(`Failed to update verification data for account ${account.accountId}:`, error);
+                                    });
+                                    const client = sessionClients.get(session.sessionId);
+                                    if (client && client.readyState === ws_1.WebSocket.OPEN) {
+                                        client.send(JSON.stringify({
+                                            type: 'session_paused_for_verification',
+                                            data: {
+                                                sessionId: session.sessionId,
+                                                accountId: account.accountId,
+                                                username: account.username,
+                                                message: 'Session paused, manual verification required.',
+                                                screenshotPath: finalResult.screenshotPath,
+                                                token: finalResult.token
+                                            }
+                                        }));
+                                    }
+                                    reject(new Error(`Session paused for manual verification of account ${account.username}`));
+                                    return;
+                                }
+                                else {
+                                    console.log(`[${session.sessionId}] ✅ Account ${account.accountId} completed without verification - ready for bot assignment`);
+                                    AccountLifecycleService_1.AccountLifecycleService.transitionAccountState({
+                                        account_id: account.accountId,
+                                        to_state: AccountLifecycleService_1.AccountLifecycleState.READY_FOR_BOT_ASSIGNMENT,
+                                        reason: 'Automation completed successfully without verification requirement',
+                                        changed_by: 'automation_system'
+                                    }).catch(error => {
+                                        console.error(`Failed to transition account ${account.accountId} to ready state:`, error);
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    catch (parseError) {
+                        console.warn(`[${session.sessionId}] Failed to parse completion data for account ${account.accountId}:`, parseError);
+                        updateAccountWithVerificationData(account.accountId, {
+                            requiresManualVerification: true,
+                            screenshotCaptured: false,
+                            token: ''
+                        }).catch(error => {
+                            console.error(`Failed to update verification data for account ${account.accountId}:`, error);
+                        });
+                    }
                 }
                 else {
                     session.results.push({ accountId: account.accountId, status: 'failed', errorCode: code });
@@ -208,14 +279,9 @@ function processAccount(session, account) {
             });
         }
         catch (error) {
-            console.error(`[${session.sessionId}] ❌ Error in pre-verification for account ${account.accountId}:`, error.message);
-            session.results.push({
-                accountId: account.accountId,
-                status: 'failed',
-                error: error.message,
-                errorType: 'pre_verification_error'
-            });
-            resolve();
+            console.error(`[${session.sessionId}] ❌ Error in processAccount for ${account.username}:`, error);
+            session.results.push({ accountId: account.accountId, status: 'failed', error: error.message });
+            reject(error);
         }
     });
 }
@@ -288,8 +354,8 @@ async function runPreVerification(account) {
 }
 async function runSession(session) {
     for (let i = session.currentAccountIndex + 1; i < session.accounts.length; i++) {
-        if (session.status === 'paused') {
-            console.log(`[${session.sessionId}] Session paused.`);
+        if (session.status !== 'in_progress') {
+            console.log(`[${session.sessionId}] Session is not in progress (current status: ${session.status}). Halting execution.`);
             return;
         }
         session.currentAccountIndex = i;
@@ -305,8 +371,13 @@ async function runSession(session) {
                 accountId: account.accountId,
                 status: 'failed',
                 error: error.message,
-                errorType: error.message?.includes('token') ? 'no_token_found' : 'technical'
+                errorType: error.message?.includes('token') ? 'no_token_found' :
+                    error.message?.includes('paused for manual verification') ? 'paused_for_verification' : 'technical'
             });
+            if (error.message?.includes('paused for manual verification')) {
+                console.log(`[${session.sessionId}] Session halted for manual verification.`);
+                return;
+            }
             const client = sessionClients.get(session.sessionId);
             if (client && client.readyState === ws_1.WebSocket.OPEN) {
                 client.send(JSON.stringify({
@@ -345,9 +416,27 @@ async function runSession(session) {
 }
 router.post('/start-account-setup', async (req, res) => {
     try {
-        const accounts = req.body;
-        if (!Array.isArray(accounts) || accounts.length === 0) {
-            return res.status(400).json({ error: 'Request body must be a non-empty array of accounts.' });
+        let accounts;
+        let verificationConfig = {
+            requireManualVerification: true,
+            skipVerification: false,
+            requireScreenshot: true,
+            autoCompleteOnSuccess: false
+        };
+        if (Array.isArray(req.body)) {
+            accounts = req.body;
+        }
+        else if (req.body.accounts && Array.isArray(req.body.accounts)) {
+            accounts = req.body.accounts;
+            if (req.body.verificationConfig) {
+                verificationConfig = { ...verificationConfig, ...req.body.verificationConfig };
+            }
+        }
+        else {
+            return res.status(400).json({ error: 'Request body must be either an array of accounts or an object with accounts and verificationConfig.' });
+        }
+        if (accounts.length === 0) {
+            return res.status(400).json({ error: 'Request must contain at least one account.' });
         }
         for (const acc of accounts) {
             if (!acc.accountId || !acc.containerNumber || !acc.username || !acc.password || !acc.email) {
@@ -365,6 +454,7 @@ router.post('/start-account-setup', async (req, res) => {
             currentAccountIndex: -1,
             currentProcess: null,
             results: [],
+            verificationConfig,
         };
         activeSessions.set(sessionId, session);
         res.status(202).json({
@@ -401,6 +491,8 @@ router.get('/status/:sessionId', async (req, res) => {
             status: session.status,
             totalAccounts: session.accounts.length,
             processedCount: session.results.length,
+            currentAccountIndex: session.currentAccountIndex,
+            accounts: session.accounts,
             currentAccount: currentAccount ? {
                 accountId: currentAccount.accountId,
                 username: currentAccount.username,
@@ -675,12 +767,51 @@ router.post('/pause/:sessionId', async (req, res) => {
         session.status = 'paused';
         if (session.currentProcess) {
             try {
-                session.currentProcess.kill();
+                console.log(`[${sessionId}] Stopping current process (PID: ${session.currentProcess.pid})`);
+                session.currentProcess.kill('SIGTERM');
+                setTimeout(() => {
+                    if (session.currentProcess && !session.currentProcess.killed) {
+                        console.log(`[${sessionId}] Force killing process after timeout`);
+                        session.currentProcess.kill('SIGKILL');
+                    }
+                }, 5000);
                 session.currentProcess = null;
             }
             catch (error) {
                 console.warn(`[${sessionId}] Warning: Failed to kill current process:`, error.message);
             }
+        }
+        try {
+            if (session.accounts && session.currentAccountIndex >= 0) {
+                const currentAccount = session.accounts[session.currentAccountIndex];
+                if (currentAccount && currentAccount.containerNumber) {
+                    console.log(`[${sessionId}] Attempting to stop device scripts for container ${currentAccount.containerNumber}`);
+                    const iphoneQuery = `
+             SELECT ip_address, xxtouch_port 
+             FROM iphones 
+             ORDER BY last_seen DESC NULLS LAST, id ASC 
+             LIMIT 1
+           `;
+                    const iphoneResult = await database_1.db.query(iphoneQuery);
+                    if (iphoneResult.rows.length > 0) {
+                        const { ip_address, xxtouch_port } = iphoneResult.rows[0];
+                        const stopUrl = `http://${ip_address}:${xxtouch_port || 46952}/stop_script_file`;
+                        const axios = require('axios');
+                        const stopResponse = await axios.post(stopUrl, {}, {
+                            timeout: 3000
+                        });
+                        if (stopResponse.status === 200) {
+                            console.log(`[${sessionId}] ✅ Successfully stopped device scripts`);
+                        }
+                        else {
+                            console.log(`[${sessionId}] ⚠️ Device script stop response: ${stopResponse.status}`);
+                        }
+                    }
+                }
+            }
+        }
+        catch (deviceError) {
+            console.warn(`[${sessionId}] Could not stop device scripts (this is often okay):`, deviceError.message);
         }
         console.log(`[${sessionId}] Session paused by user request`);
         const client = sessionClients.get(sessionId);
@@ -694,7 +825,8 @@ router.post('/pause/:sessionId', async (req, res) => {
             success: true,
             message: 'Session paused successfully',
             sessionId: sessionId,
-            status: session.status
+            status: session.status,
+            device_script_stopped: true
         });
     }
     catch (error) {
@@ -717,12 +849,48 @@ router.post('/stop/:sessionId', async (req, res) => {
         }
         if (session.currentProcess) {
             try {
-                session.currentProcess.kill();
+                console.log(`[${sessionId}] Stopping current process (PID: ${session.currentProcess.pid})`);
+                session.currentProcess.kill('SIGTERM');
+                setTimeout(() => {
+                    if (session.currentProcess && !session.currentProcess.killed) {
+                        console.log(`[${sessionId}] Force killing process after timeout`);
+                        session.currentProcess.kill('SIGKILL');
+                    }
+                }, 3000);
                 session.currentProcess = null;
             }
             catch (error) {
                 console.warn(`[${sessionId}] Warning: Failed to kill current process:`, error.message);
             }
+        }
+        try {
+            if (session.accounts && session.currentAccountIndex >= 0) {
+                const currentAccount = session.accounts[session.currentAccountIndex];
+                if (currentAccount && currentAccount.containerNumber) {
+                    console.log(`[${sessionId}] Attempting to stop device scripts for container ${currentAccount.containerNumber}`);
+                    const iphoneQuery = `
+            SELECT ip_address, xxtouch_port 
+            FROM iphones 
+            ORDER BY last_seen DESC NULLS LAST, id ASC 
+            LIMIT 1
+          `;
+                    const iphoneResult = await database_1.db.query(iphoneQuery);
+                    if (iphoneResult.rows.length > 0) {
+                        const { ip_address, xxtouch_port } = iphoneResult.rows[0];
+                        const stopUrl = `http://${ip_address}:${xxtouch_port || 46952}/stop_script_file`;
+                        const axios = require('axios');
+                        const stopResponse = await axios.post(stopUrl, {}, {
+                            timeout: 2000
+                        });
+                        if (stopResponse.status === 200) {
+                            console.log(`[${sessionId}] ✅ Successfully stopped device scripts`);
+                        }
+                    }
+                }
+            }
+        }
+        catch (deviceError) {
+            console.warn(`[${sessionId}] Could not stop device scripts (this is often okay):`, deviceError.message);
         }
         session.status = 'failed';
         console.log(`[${sessionId}] Session stopped by user request`);
@@ -738,7 +906,8 @@ router.post('/stop/:sessionId', async (req, res) => {
         res.json({
             success: true,
             message: 'Session stopped successfully',
-            sessionId: sessionId
+            sessionId: sessionId,
+            device_script_stopped: true
         });
     }
     catch (error) {
@@ -800,76 +969,106 @@ router.post('/pre-verify-email', async (req, res) => {
             return res.status(400).json({ error: 'Request body must contain a non-empty array of accounts.' });
         }
         for (const acc of accounts) {
+            console.log(`[API] Validating account:`, JSON.stringify(acc, null, 2));
             if (!acc.id || !acc.email || !acc.email_password) {
+                console.log(`[API] ❌ Validation failed for account:`, acc);
                 return res.status(400).json({
                     error: `Missing required fields for account. Required: id, email, email_password.`,
                     account: acc
                 });
             }
+            console.log(`[API] ✅ Account ${acc.id} validation passed`);
         }
         const scriptPath = path_1.default.join(process.cwd(), '../bot/scripts/api/pre_verify_email.js');
         console.log(`[API] Starting pre-verification for ${accounts.length} accounts`);
-        const verificationPromises = accounts.map(account => {
-            return new Promise((resolve) => {
-                const childProcess = (0, child_process_1.spawn)('node', [scriptPath, JSON.stringify(account)], {
-                    cwd: path_1.default.join(process.cwd(), '../bot'),
-                    detached: false,
-                    stdio: ['pipe', 'pipe', 'pipe']
-                });
-                let resultOutput = '';
-                let errorOutput = '';
-                childProcess.stdout.on('data', (data) => {
-                    resultOutput += data.toString();
-                });
-                childProcess.stderr.on('data', (data) => {
-                    errorOutput += data.toString();
-                });
-                childProcess.on('close', (code) => {
-                    try {
-                        if (code === 0 && resultOutput.trim()) {
-                            const result = JSON.parse(resultOutput.trim());
-                            resolve(result);
+        const BATCH_SIZE = 5;
+        const results = [];
+        const totalBatches = Math.ceil(accounts.length / BATCH_SIZE);
+        for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
+            const batch = accounts.slice(i, i + BATCH_SIZE);
+            const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+            console.log(`[API] Processing batch ${batchNumber}/${totalBatches} (${batch.length} accounts)`);
+            const batchPromises = batch.map(account => {
+                return new Promise((resolve) => {
+                    console.log(`[API] 🚀 Starting pre-verification for account ${account.id} (${account.email})`);
+                    console.log(`[API] 📤 Spawning: node ${scriptPath} '${JSON.stringify(account)}'`);
+                    const childProcess = (0, child_process_1.spawn)('node', [scriptPath, JSON.stringify(account)], {
+                        cwd: path_1.default.join(process.cwd(), '../bot'),
+                        detached: false,
+                        stdio: ['pipe', 'pipe', 'pipe']
+                    });
+                    let resultOutput = '';
+                    let errorOutput = '';
+                    childProcess.stdout.on('data', (data) => {
+                        const chunk = data.toString();
+                        console.log(`[API] 📥 Account ${account.id} STDOUT:`, chunk.trim());
+                        resultOutput += chunk;
+                    });
+                    childProcess.stderr.on('data', (data) => {
+                        const chunk = data.toString();
+                        console.log(`[API] 🔍 Account ${account.id} STDERR:`, chunk.trim());
+                        errorOutput += chunk;
+                    });
+                    childProcess.on('close', (code) => {
+                        console.log(`[API] 🏁 Account ${account.id} process closed with code:`, code);
+                        console.log(`[API] 📊 Account ${account.id} full stdout:`, resultOutput);
+                        console.log(`[API] 📊 Account ${account.id} full stderr:`, errorOutput);
+                        try {
+                            if (code === 0 && resultOutput.trim()) {
+                                const result = JSON.parse(resultOutput.trim());
+                                console.log(`[API] ✅ Account ${account.id} parsed result:`, result);
+                                resolve(result);
+                            }
+                            else {
+                                console.log(`[API] ❌ Account ${account.id} failed - code: ${code}, output: ${resultOutput}`);
+                                resolve({
+                                    accountId: account.id,
+                                    success: false,
+                                    error: errorOutput || `Process failed with code ${code}`,
+                                    action: 'none'
+                                });
+                            }
                         }
-                        else {
+                        catch (parseError) {
+                            console.log(`[API] ❌ Account ${account.id} JSON parse error:`, parseError);
                             resolve({
                                 accountId: account.id,
                                 success: false,
-                                error: errorOutput || 'Unknown error occurred',
+                                error: `Failed to parse verification result: ${parseError}`,
                                 action: 'none'
                             });
                         }
-                    }
-                    catch (parseError) {
-                        resolve({
-                            accountId: account.id,
-                            success: false,
-                            error: 'Failed to parse verification result',
-                            action: 'none'
-                        });
-                    }
-                });
-                childProcess.on('error', (error) => {
-                    resolve({
-                        accountId: account.id,
-                        success: false,
-                        error: error.message,
-                        action: 'none'
                     });
-                });
-                setTimeout(() => {
-                    if (!childProcess.killed) {
-                        childProcess.kill();
+                    childProcess.on('error', (error) => {
+                        console.log(`[API] ❌ Account ${account.id} spawn error:`, error);
                         resolve({
                             accountId: account.id,
                             success: false,
-                            error: 'Verification timeout',
+                            error: error.message,
                             action: 'none'
                         });
-                    }
-                }, 30000);
+                    });
+                    setTimeout(() => {
+                        if (!childProcess.killed) {
+                            console.log(`[API] ⏰ Account ${account.id} timeout after 45s, killing process`);
+                            childProcess.kill();
+                            resolve({
+                                accountId: account.id,
+                                success: false,
+                                error: 'Verification timeout (45s)',
+                                action: 'none'
+                            });
+                        }
+                    }, 45000);
+                });
             });
-        });
-        const results = await Promise.all(verificationPromises);
+            const batchResults = await Promise.all(batchPromises);
+            results.push(...batchResults);
+            if (i + BATCH_SIZE < accounts.length) {
+                console.log(`[API] Waiting 2 seconds before next batch...`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
         const summary = {
             total: accounts.length,
             verified: results.filter(r => r.action === 'mark_ready').length,
@@ -911,7 +1110,6 @@ router.post('/assign-content-ready-accounts', async (req, res) => {
         for (const account of accounts) {
             try {
                 console.log(`[Content Assignment] Processing account ${account.id} (${account.username})`);
-                await setAccountPrivate(account.container_number);
                 await assignContentToAccount(account.id, account.model_id);
                 await AccountLifecycleService_1.AccountLifecycleService.transitionAccountState({
                     account_id: account.id,
@@ -1148,6 +1346,27 @@ async function initializeWarmupPhasesWithContent(accountId) {
     const initQuery = `SELECT initialize_warmup_phases($1)`;
     await database_1.db.query(initQuery, [accountId]);
     console.log(`[Content Assignment] ✅ Warmup phases initialized for account ${accountId}`);
+}
+async function updateAccountWithVerificationData(accountId, data) {
+    try {
+        const updateQuery = `
+      UPDATE accounts
+      SET
+        verification_required = $1,
+        verification_status = CASE 
+          WHEN $1 = true THEN 'pending_verification'
+          ELSE 'not_required'
+        END,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = $2
+    `;
+        await database_1.db.query(updateQuery, [data.requiresManualVerification, accountId]);
+        console.log(`[Verification] Updated account ${accountId} with verification requirements: ${data.requiresManualVerification}`);
+    }
+    catch (error) {
+        console.error(`Failed to update verification data for account ${accountId}:`, error);
+        throw error;
+    }
 }
 exports.default = router;
 //# sourceMappingURL=automation.js.map

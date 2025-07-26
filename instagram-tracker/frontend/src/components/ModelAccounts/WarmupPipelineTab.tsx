@@ -253,7 +253,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
 
   useEffect(() => {
     fetchWarmupData();
-  }, [accounts]);
+  }, [accounts, fetchWarmupData]);
 
   // Update filters when search term changes
   useEffect(() => {
@@ -824,9 +824,9 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
           {
             id: 'invalid_actions',
             field: 'id',
-            header: 'Recovery Actions',
-            width: 240,
-            minWidth: 200,
+            header: 'Actions',
+            width: 280,
+            minWidth: 260,
             resizable: false,
             sortable: false,
             filterable: false,
@@ -840,6 +840,52 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
             render: (value, row) => (
               <div className="flex items-center gap-1">
                 <button
+                  onClick={() => handleMarkInvalid(row.id)}
+                  disabled={markingInvalid[row.id]}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors disabled:opacity-50"
+                  title="Mark account as invalid"
+                >
+                  {markingInvalid[row.id] ? (
+                    <>
+                      <div className="w-3 h-3 border border-red-600 border-t-transparent rounded-full animate-spin" />
+                      Marking...
+                    </>
+                  ) : (
+                    <>
+                      <X className="h-3 w-3" />
+                      Invalid
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    const email = row.account_details?.email || row.email;
+                    const emailPassword = row.account_details?.email_password || row.email_password;
+                    
+                    if (!email || !emailPassword) {
+                      toast.error('Email and email password are required');
+                      return;
+                    }
+                    
+                    handleFetchEmailToken(row.id, email, emailPassword);
+                  }}
+                  disabled={fetchingTokens[row.id]}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors disabled:opacity-50"
+                  title="Get Instagram verification token"
+                >
+                  {fetchingTokens[row.id] ? (
+                    <>
+                      <div className="w-3 h-3 border border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      Getting...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="h-3 w-3" />
+                      Get Token
+                    </>
+                  )}
+                </button>
+                <button
                   onClick={() => handleReactivateAccount(row.id)}
                   className="flex items-center gap-1 px-2 py-1 text-xs bg-green-50 hover:bg-green-100 text-green-700 rounded transition-colors"
                   title="Attempt to reactivate account"
@@ -848,19 +894,11 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
                   Reactivate
                 </button>
                 <button
-                  onClick={() => handleMarkForReplacement(row.id)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 rounded transition-colors"
-                  title="Mark for replacement"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  Replace
-                </button>
-                <button
                   onClick={() => {
                     setSelectedAccountId(row.id);
                     setShowPhaseDetails(true);
                   }}
-                  className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors"
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-50 hover:bg-gray-100 text-gray-700 rounded transition-colors"
                   title="View account details"
                 >
                   <Eye className="h-3 w-3" />
@@ -1144,8 +1182,8 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
             id: 'assignment_actions',
             field: 'id',
             header: 'Actions',
-            width: 180,
-            minWidth: 160,
+            width: 280,
+            minWidth: 260,
             resizable: false,
             sortable: false,
             filterable: false,
@@ -1159,10 +1197,56 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
             render: (value, row) => (
               <div className="flex items-center gap-1">
                 <button
+                  onClick={() => handleMarkInvalid(row.id)}
+                  disabled={markingInvalid[row.id]}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors disabled:opacity-50"
+                  title="Mark account as invalid"
+                >
+                  {markingInvalid[row.id] ? (
+                    <>
+                      <div className="w-3 h-3 border border-red-600 border-t-transparent rounded-full animate-spin" />
+                      Marking...
+                    </>
+                  ) : (
+                    <>
+                      <X className="h-3 w-3" />
+                      Invalid
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    const email = row.account_details?.email || row.email;
+                    const emailPassword = row.account_details?.email_password || row.email_password;
+                    
+                    if (!email || !emailPassword) {
+                      toast.error('Email and email password are required');
+                      return;
+                    }
+                    
+                    handleFetchEmailToken(row.id, email, emailPassword);
+                  }}
+                  disabled={fetchingTokens[row.id]}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors disabled:opacity-50"
+                  title="Get Instagram verification token"
+                >
+                  {fetchingTokens[row.id] ? (
+                    <>
+                      <div className="w-3 h-3 border border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      Getting...
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="h-3 w-3" />
+                      Get Token
+                    </>
+                  )}
+                </button>
+                <button
                   onClick={async () => {
                     try {
                       // Call the content assignment API
-                                             const response = await fetch(`/api/automation/assign-content-ready-accounts`, {
+                      const response = await fetch(`/api/automation/assign-content-ready-accounts`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ accountIds: [row.id] })
@@ -1363,8 +1447,8 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         id: 'actions',
         field: 'id',
         header: 'Actions',
-        width: 100,
-        minWidth: 90,
+        width: 200,
+        minWidth: 180,
         resizable: false,
         sortable: false,
         filterable: false,
@@ -1376,23 +1460,71 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
         editable: false,
         required: false,
         render: (value, row) => (
-          <button
-            onClick={() => {
-              setSelectedAccountId(row.id);
-              setShowPhaseDetails(true);
-            }}
-            className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors"
-            title="View phase details"
-          >
-            <Eye className="h-3 w-3" />
-            Details
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => handleMarkInvalid(row.id)}
+              disabled={markingInvalid[row.id]}
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors disabled:opacity-50"
+              title="Mark account as invalid and free resources"
+            >
+              {markingInvalid[row.id] ? (
+                <>
+                  <div className="w-3 h-3 border border-red-600 border-t-transparent rounded-full animate-spin" />
+                  Marking...
+                </>
+              ) : (
+                <>
+                  <X className="h-3 w-3" />
+                  Invalid
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => {
+                const email = row.account_details?.email || row.email;
+                const emailPassword = row.account_details?.email_password || row.email_password;
+                
+                if (!email || !emailPassword) {
+                  toast.error('Email and email password are required');
+                  return;
+                }
+                
+                handleFetchEmailToken(row.id, email, emailPassword);
+              }}
+              disabled={fetchingTokens[row.id]}
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition-colors disabled:opacity-50"
+              title="Get Instagram verification token"
+            >
+              {fetchingTokens[row.id] ? (
+                <>
+                  <div className="w-3 h-3 border border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  Getting...
+                </>
+              ) : (
+                <>
+                  <Mail className="h-3 w-3" />
+                  Get Token
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setSelectedAccountId(row.id);
+                setShowPhaseDetails(true);
+              }}
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-50 hover:bg-gray-100 text-gray-700 rounded transition-colors"
+              title="View phase details"
+            >
+              <Eye className="h-3 w-3" />
+              Details
+            </button>
+          </div>
         )
       }
     ];
 
     // Only add end columns (proxy and actions) for phases other than manual setup
-    if (phaseId === WarmupPhase.MANUAL_SETUP) {
+    if (phaseId === 'manual_setup') {
       return [...baseColumns, ...phaseSpecificColumns];
     }
     

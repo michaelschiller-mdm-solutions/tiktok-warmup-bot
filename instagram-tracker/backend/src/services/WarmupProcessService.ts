@@ -645,12 +645,12 @@ export class WarmupProcessService {
       const result = await db.query(`
         UPDATE account_warmup_phases 
         SET 
-          status = 'in_progress',
+          status = 'in_progress'::warmup_phase_status,
           started_at = CURRENT_TIMESTAMP,
           bot_id = $3,
           bot_session_id = $4,
           updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = $1 AND phase = $2 AND status = 'available'
+        WHERE account_id = $1 AND phase = $2 AND status = 'available'::warmup_phase_status
         RETURNING id
       `, [accountId, phase, botId, sessionId]);
 
@@ -695,12 +695,12 @@ export class WarmupProcessService {
       const result = await db.query(`
         UPDATE account_warmup_phases 
         SET 
-          status = 'completed',
+          status = 'completed'::warmup_phase_status,
           completed_at = CURRENT_TIMESTAMP,
           execution_time_ms = $3,
           instagram_response = $4,
           updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = $1 AND phase = $2 AND bot_id = $5 AND status = 'in_progress'
+        WHERE account_id = $1 AND phase = $2 AND bot_id = $5 AND status = 'in_progress'::warmup_phase_status
         RETURNING id
       `, [accountId, phase, executionTimeMs, JSON.stringify(instagramResponse), botId]);
 
@@ -812,9 +812,9 @@ export class WarmupProcessService {
         UPDATE account_warmup_phases 
         SET 
           status = CASE 
-            WHEN $6::boolean = true THEN 'requires_review'
-            WHEN retry_count + 1 >= max_retries THEN 'requires_review'
-            ELSE 'failed'
+            WHEN $6::boolean = true THEN 'requires_review'::warmup_phase_status
+            WHEN retry_count + 1 >= max_retries THEN 'requires_review'::warmup_phase_status
+            ELSE 'failed'::warmup_phase_status
           END,
           retry_count = retry_count + 1,
           error_message = $3,
@@ -825,7 +825,7 @@ export class WarmupProcessService {
             ELSE review_required_at
           END,
           updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = $1 AND phase = $2 AND bot_id = $5 AND status = 'in_progress'
+        WHERE account_id = $1 AND phase = $2 AND bot_id = $5 AND status = 'in_progress'::warmup_phase_status
         RETURNING id, status, retry_count, max_retries
       `, [accountId, phase, errorMessage, JSON.stringify(errorDetails), botId, shouldEscalateToReview, failureCategory]);
 

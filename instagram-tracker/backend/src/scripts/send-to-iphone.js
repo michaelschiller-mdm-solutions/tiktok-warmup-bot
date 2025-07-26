@@ -74,10 +74,19 @@ async function sendContentToIphone(accountId, phase, iphoneIP = '192.168.178.65'
     // Send text content to clipboard if exists
     if (phaseData.text_content) {
       try {
-        console.log(`📝 Sending text to clipboard: "${phaseData.text_content.substring(0, 50)}..."`);
+        let textToSend = phaseData.text_content;
+        
+        // Special handling for username phase: append last letter twice
+        if (phase === 'username' && textToSend && textToSend.length > 0) {
+          const lastLetter = textToSend.slice(-1).toLowerCase();
+          textToSend = textToSend + lastLetter + lastLetter;
+          console.log(`🔤 Modified username for iPhone: ${phaseData.text_content} → ${textToSend} (appended "${lastLetter}" twice)`);
+        }
+        
+        console.log(`📝 Sending text to clipboard: "${textToSend.substring(0, 50)}..."`);
         
         const clipboard = new ClipboardAPI(baseUrl);
-        const clipboardResult = await clipboard.setText(phaseData.text_content);
+        const clipboardResult = await clipboard.setText(textToSend);
         
         if (clipboardResult.success) {
           results.text_sent = true;
@@ -103,15 +112,46 @@ async function sendContentToIphone(accountId, phase, iphoneIP = '192.168.178.65'
           // IMPORTANT: Clean iPhone gallery before sending new images
           console.log(`🧹 Cleaning iPhone gallery before sending image...`);
           try {
-            // Use simple cleaner by default (no respring required)
+            // Use nuclear cleaner (only one that works reliably)
             const photoCleaner = useNuclearCleaner ? new iOS16PhotoCleaner() : new SimplePhotoCleaner();
             
             if (useNuclearCleaner) {
               console.log(`💥 Using nuclear cleaner (will cause iPhone respring)...`);
               await photoCleaner.performiOS16Cleanup();
-              // Wait longer for system to stabilize after nuclear cleanup
-              console.log(`⏳ Waiting for iPhone to stabilize after nuclear cleanup...`);
-              await new Promise(resolve => setTimeout(resolve, 10000));
+              
+              // Wait for iPhone respring to complete
+              console.log(`⏳ Waiting 15 seconds for iPhone respring to complete...`);
+              await new Promise(resolve => setTimeout(resolve, 15000));
+              
+              // Execute wake_up.lua to ensure iPhone is responsive
+              console.log(`📱 Executing wake_up.lua to wake up iPhone after respring...`);
+              try {
+                const AutomationBridge = require('../../../bot/services/AutomationBridge');
+                const bridge = new AutomationBridge({
+                  iphoneIP: iphoneIP,
+                  iphonePort: iphonePort
+                });
+                
+                // Set a shorter timeout to prevent hanging
+                const wakeUpResult = await Promise.race([
+                  bridge.executeScript('wake_up.lua', {
+                    timeout: 15000,
+                    retries: 2
+                  }),
+                  new Promise(resolve => setTimeout(() => resolve(false), 20000)) // 20s max wait
+                ]);
+                
+                if (wakeUpResult) {
+                  console.log(`✅ iPhone wake-up completed successfully`);
+                  // Additional wait for iPhone to be fully ready
+                  console.log(`⏳ Waiting additional 3 seconds for iPhone to be fully ready...`);
+                  await new Promise(resolve => setTimeout(resolve, 3000));
+                } else {
+                  console.warn(`⚠️ iPhone wake-up may have failed or timed out, but continuing...`);
+                }
+              } catch (wakeUpError) {
+                console.warn(`⚠️ Wake-up script failed: ${wakeUpError.message}, but continuing...`);
+              }
             } else {
               console.log(`🧹 Using simple cleaner (no respring required)...`);
               await photoCleaner.performSimpleCleanup();
@@ -237,19 +277,15 @@ async function main() {
     console.log('  node send-to-iphone.js 71  # Send all phases');
     console.log('  node send-to-iphone.js 71 bio --simple  # Use simple cleaner (no respring)');
     console.log('');
-    console.log('Cleaner Options:');
-    console.log('  Default: Nuclear cleaner (thorough, causes iPhone respring)');
-    console.log('  --simple: Simple cleaner (faster, no respring)');
+    console.log('Note: Uses nuclear cleaner (only one that works reliably)');
     process.exit(1);
   }
   
-  // Check for simple cleaner flag (nuclear is now default)
-  const useSimpleCleaner = args.includes('--simple');
-  const filteredArgs = args.filter(arg => arg !== '--simple');
-  const useNuclearCleaner = !useSimpleCleaner; // Nuclear is default
+  // Always use nuclear cleaner (only one that works)
+  const useNuclearCleaner = true;
   
-  const accountId = parseInt(filteredArgs[0]);
-  const phase = filteredArgs[1];
+  const accountId = parseInt(args[0]);
+  const phase = args[1];
   const iphoneIP = filteredArgs[2] || '192.168.178.65';
   const iphonePort = parseInt(filteredArgs[3]) || 46952;
   

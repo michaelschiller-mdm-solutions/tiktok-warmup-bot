@@ -97,13 +97,94 @@ class WarmupQueueService extends events_1.EventEmitter {
         }
     }
     async executePhaseAutomation(account, phase) {
-        console.log(`🤖 [PLACEHOLDER] Executing ${phase} for container ${account.container_number}`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        return {
-            success: true,
-            executionTimeMs: 2000,
-            message: 'Automation completed successfully'
-        };
+        const startTime = Date.now();
+        try {
+            console.log(`🤖 Executing ${phase} for ${account.username} on container ${account.container_number}`);
+            const path = require('path');
+            const { spawn } = require('child_process');
+            const sendContentScript = path.join(process.cwd(), 'src/scripts/send-to-iphone.js');
+            console.log(`📱 Sending content to iPhone for ${phase}...`);
+            const contentResult = await this.executeNodeScript(sendContentScript, [
+                account.id.toString(),
+                phase
+            ]);
+            if (!contentResult.success) {
+                throw new Error(`Failed to send content to iPhone: ${contentResult.error}`);
+            }
+            const warmupExecutorScript = path.join(process.cwd(), '../bot/scripts/api/warmup_executor.js');
+            console.log(`🎯 Executing phase automation for ${phase}...`);
+            const automationResult = await this.executeNodeScript(warmupExecutorScript, [
+                '--account-id', account.id.toString(),
+                '--container-number', account.container_number.toString(),
+                '--phase', phase,
+                '--username', account.username
+            ]);
+            if (!automationResult.success) {
+                throw new Error(`Phase automation failed: ${automationResult.error}`);
+            }
+            const executionTimeMs = Date.now() - startTime;
+            return {
+                success: true,
+                executionTimeMs,
+                message: `Phase ${phase} completed successfully`,
+                contentDelivered: true,
+                automationCompleted: true
+            };
+        }
+        catch (error) {
+            const executionTimeMs = Date.now() - startTime;
+            console.error(`❌ Phase automation failed for ${account.username}:`, error.message);
+            return {
+                success: false,
+                executionTimeMs,
+                error: error.message,
+                phase,
+                accountId: account.id
+            };
+        }
+    }
+    async executeNodeScript(scriptPath, args) {
+        const { spawn } = require('child_process');
+        return new Promise((resolve) => {
+            const child = spawn('node', [scriptPath, ...args], {
+                stdio: ['pipe', 'pipe', 'pipe']
+            });
+            let stdout = '';
+            let stderr = '';
+            child.stdout.on('data', (data) => {
+                stdout += data.toString();
+            });
+            child.stderr.on('data', (data) => {
+                stderr += data.toString();
+            });
+            child.on('close', (code) => {
+                if (code === 0) {
+                    try {
+                        const result = JSON.parse(stdout.trim());
+                        resolve(result);
+                    }
+                    catch (parseError) {
+                        resolve({
+                            success: true,
+                            message: stdout.trim() || 'Script completed successfully'
+                        });
+                    }
+                }
+                else {
+                    resolve({
+                        success: false,
+                        error: stderr.trim() || `Script exited with code ${code}`,
+                        stdout: stdout.trim()
+                    });
+                }
+            });
+            child.on('error', (error) => {
+                resolve({
+                    success: false,
+                    error: error.message
+                });
+            });
+        });
     }
     getStatus() {
         return {
