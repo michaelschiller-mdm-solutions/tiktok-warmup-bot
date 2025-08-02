@@ -1,21 +1,27 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WarmupProcessService = void 0;
+const path_1 = __importDefault(require("path"));
 const database_1 = require("../database");
 const warmupProcess_1 = require("../types/warmupProcess");
 class WarmupProcessService {
     async initializeWarmupPhases(accountId) {
         try {
-            await database_1.db.query('SELECT initialize_warmup_phases_with_content($1)', [accountId]);
+            await database_1.db.query("SELECT initialize_warmup_phases_with_content($1)", [
+                accountId,
+            ]);
         }
         catch (error) {
             console.error(`Error initializing warmup phases for account ${accountId}:`, error);
-            throw new Error('Failed to initialize warmup phases');
+            throw new Error("Failed to initialize warmup phases");
         }
     }
     async assignContentToAllPhases(accountId) {
         try {
-            const result = await database_1.db.query('SELECT assign_content_to_all_phases($1) as assigned_count', [accountId]);
+            const result = await database_1.db.query("SELECT assign_content_to_all_phases($1) as assigned_count", [accountId]);
             const assignedCount = result.rows[0].assigned_count;
             if (assignedCount > 0) {
                 console.log(`Assigned content to ${assignedCount} phases for account ${accountId}`);
@@ -26,7 +32,7 @@ class WarmupProcessService {
         }
         catch (error) {
             console.error(`Error assigning content to all phases for account ${accountId}:`, error);
-            throw new Error('Failed to assign content to all phases');
+            throw new Error("Failed to assign content to all phases");
         }
     }
     async ensureContentAssigned(accountId) {
@@ -63,17 +69,17 @@ class WarmupProcessService {
             return result.rows;
         }
         catch (error) {
-            console.error('Error fetching ready accounts:', error);
-            throw new Error('Failed to fetch ready accounts');
+            console.error("Error fetching ready accounts:", error);
+            throw new Error("Failed to fetch ready accounts");
         }
     }
     async canBotStartWork(botId) {
         try {
-            const result = await database_1.db.query('SELECT can_bot_start_work($1) as can_start', [botId]);
+            const result = await database_1.db.query("SELECT can_bot_start_work($1) as can_start", [botId]);
             return result.rows[0].can_start;
         }
         catch (error) {
-            console.error('Error checking bot constraint:', error);
+            console.error("Error checking bot constraint:", error);
             return false;
         }
     }
@@ -84,8 +90,8 @@ class WarmupProcessService {
                 return {
                     success: false,
                     accountId,
-                    message: 'Another account is currently being processed by a bot',
-                    error: 'Bot constraint violation'
+                    message: "Another account is currently being processed by a bot",
+                    error: "Bot constraint violation",
                 };
             }
             const accountResult = await database_1.db.query(`
@@ -97,8 +103,8 @@ class WarmupProcessService {
                 return {
                     success: false,
                     accountId,
-                    message: 'Account not found',
-                    error: 'Account not found'
+                    message: "Account not found",
+                    error: "Account not found",
                 };
             }
             const account = accountResult.rows[0];
@@ -106,8 +112,8 @@ class WarmupProcessService {
                 return {
                     success: false,
                     accountId,
-                    message: 'Account must have container assigned before starting warmup',
-                    error: 'No container assigned'
+                    message: "Account must have container assigned before starting warmup",
+                    error: "No container assigned",
                 };
             }
             await database_1.db.query(`
@@ -127,9 +133,9 @@ class WarmupProcessService {
             return {
                 success: true,
                 accountId,
-                message: 'Warmup process started successfully. Account ready for manual setup.',
+                message: "Warmup process started successfully. Account ready for manual setup.",
                 nextPhase: warmupProcess_1.WarmupPhase.MANUAL_SETUP,
-                containerNumber: account.container_number
+                containerNumber: account.container_number,
             };
         }
         catch (error) {
@@ -137,29 +143,29 @@ class WarmupProcessService {
             return {
                 success: false,
                 accountId,
-                message: 'Failed to start warmup process',
-                error: error instanceof Error ? error.message : 'Unknown error'
+                message: "Failed to start warmup process",
+                error: error instanceof Error ? error.message : "Unknown error",
             };
         }
     }
     async completeManualSetup(accountId, changedBy) {
         try {
-            const accountResult = await database_1.db.query('SELECT lifecycle_state FROM accounts WHERE id = $1', [accountId]);
+            const accountResult = await database_1.db.query("SELECT lifecycle_state FROM accounts WHERE id = $1", [accountId]);
             if (accountResult.rows.length === 0) {
                 return {
                     success: false,
                     accountId,
-                    message: 'Account not found',
-                    error: 'ACCOUNT_NOT_FOUND'
+                    message: "Account not found",
+                    error: "ACCOUNT_NOT_FOUND",
                 };
             }
             const currentState = accountResult.rows[0].lifecycle_state;
-            if (currentState !== 'imported') {
+            if (currentState !== "imported") {
                 return {
                     success: false,
                     accountId,
                     message: `Account is not in 'imported' state (current: ${currentState}). Cannot complete manual setup.`,
-                    error: 'INVALID_STATE_TRANSITION'
+                    error: "INVALID_STATE_TRANSITION",
                 };
             }
             await database_1.db.query(`
@@ -173,7 +179,7 @@ class WarmupProcessService {
             return {
                 success: true,
                 accountId,
-                message: 'Manual setup complete. Account is now ready for warmup.'
+                message: "Manual setup complete. Account is now ready for warmup.",
             };
         }
         catch (error) {
@@ -181,8 +187,8 @@ class WarmupProcessService {
             return {
                 success: false,
                 accountId,
-                message: 'Failed to complete manual setup',
-                error: error instanceof Error ? error.message : 'Unknown error'
+                message: "Failed to complete manual setup",
+                error: error instanceof Error ? error.message : "Unknown error",
             };
         }
     }
@@ -218,7 +224,7 @@ class WarmupProcessService {
         }
         catch (error) {
             console.error(`Error fetching available phases for account ${accountId}:`, error);
-            throw new Error('Failed to fetch available phases');
+            throw new Error("Failed to fetch available phases");
         }
     }
     async assignContentToPhase(accountId, phaseId, phase) {
@@ -227,7 +233,7 @@ class WarmupProcessService {
         SELECT model_id FROM accounts WHERE id = $1
       `, [accountId]);
             if (accountResult.rows.length === 0) {
-                throw new Error('Account not found');
+                throw new Error("Account not found");
             }
             const modelId = accountResult.rows[0].model_id;
             let contentId = null;
@@ -243,13 +249,54 @@ class WarmupProcessService {
                     textId = bioResult.rows.length > 0 ? bioResult.rows[0].id : null;
                     break;
                 case warmupProcess_1.WarmupPhase.NAME:
-                    const nameResult = await database_1.db.query(`
-            SELECT id FROM central_text_content 
-            WHERE categories @> '["name"]'::jsonb 
-            AND status = 'active'
-            ORDER BY RANDOM() LIMIT 1
-          `);
-                    textId = nameResult.rows.length > 0 ? nameResult.rows[0].id : null;
+                    try {
+                        const modelNameResult = await database_1.db.query(`
+              SELECT m.name as model_name
+              FROM accounts a
+              JOIN models m ON a.model_id = m.id
+              WHERE a.id = $1
+            `, [accountId]);
+                        if (modelNameResult.rows.length > 0) {
+                            const modelName = modelNameResult.rows[0].model_name;
+                            const textResult = await database_1.db.query(`
+                INSERT INTO central_text_content (
+                  text_content, 
+                  categories, 
+                  template_name, 
+                  status
+                ) VALUES ($1, $2, $3, $4)
+                ON CONFLICT (text_content) DO UPDATE SET updated_at = NOW()
+                RETURNING id
+              `, [
+                                modelName,
+                                JSON.stringify(["name", "model_derived"]),
+                                `Model Name: ${modelName}`,
+                                "active",
+                            ]);
+                            textId = textResult.rows[0].id;
+                            console.log(`📝 Using model name "${modelName}" for name phase`);
+                        }
+                        else {
+                            console.warn(`⚠️ Could not find model name for account ${accountId}, falling back to random name`);
+                            const nameResult = await database_1.db.query(`
+                SELECT id FROM central_text_content 
+                WHERE categories @> '["name"]'::jsonb 
+                AND status = 'active'
+                ORDER BY RANDOM() LIMIT 1
+              `);
+                            textId = nameResult.rows.length > 0 ? nameResult.rows[0].id : null;
+                        }
+                    }
+                    catch (nameError) {
+                        console.warn("Model name assignment failed, using fallback:", nameError);
+                        const nameResult = await database_1.db.query(`
+              SELECT id FROM central_text_content 
+              WHERE categories @> '["name"]'::jsonb 
+              AND status = 'active'
+              ORDER BY RANDOM() LIMIT 1
+            `);
+                        textId = nameResult.rows.length > 0 ? nameResult.rows[0].id : null;
+                    }
                     break;
                 case warmupProcess_1.WarmupPhase.FIRST_HIGHLIGHT:
                 case warmupProcess_1.WarmupPhase.NEW_HIGHLIGHT:
@@ -292,9 +339,9 @@ class WarmupProcessService {
                   RETURNING id
                 `, [
                                     bundle.name,
-                                    JSON.stringify(['highlight_group_name', 'bundle_derived']),
+                                    JSON.stringify(["highlight_group_name", "bundle_derived"]),
                                     `Bundle: ${bundle.name}`,
-                                    'active'
+                                    "active",
                                 ]);
                                 textId = textResult.rows[0].id;
                             }
@@ -306,18 +353,22 @@ class WarmupProcessService {
                 AND status = 'active'
                 ORDER BY RANDOM() LIMIT 1
               `);
-                            contentId = fallbackResult.rows.length > 0 ? fallbackResult.rows[0].id : null;
+                            contentId =
+                                fallbackResult.rows.length > 0
+                                    ? fallbackResult.rows[0].id
+                                    : null;
                         }
                     }
                     catch (bundleError) {
-                        console.warn('Bundle assignment failed for highlight, using fallback:', bundleError);
+                        console.warn("Bundle assignment failed for highlight, using fallback:", bundleError);
                         const fallbackResult = await database_1.db.query(`
               SELECT id FROM central_content 
               WHERE categories @> '["highlight"]'::jsonb 
               AND status = 'active'
               ORDER BY RANDOM() LIMIT 1
             `);
-                        contentId = fallbackResult.rows.length > 0 ? fallbackResult.rows[0].id : null;
+                        contentId =
+                            fallbackResult.rows.length > 0 ? fallbackResult.rows[0].id : null;
                     }
                     break;
                 case warmupProcess_1.WarmupPhase.POST_CAPTION:
@@ -327,14 +378,18 @@ class WarmupProcessService {
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    contentId = postContentResult.rows.length > 0 ? postContentResult.rows[0].id : null;
+                    contentId =
+                        postContentResult.rows.length > 0
+                            ? postContentResult.rows[0].id
+                            : null;
                     const postTextResult = await database_1.db.query(`
             SELECT id FROM central_text_content 
             WHERE categories @> '["post"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    textId = postTextResult.rows.length > 0 ? postTextResult.rows[0].id : null;
+                    textId =
+                        postTextResult.rows.length > 0 ? postTextResult.rows[0].id : null;
                     break;
                 case warmupProcess_1.WarmupPhase.POST_NO_CAPTION:
                     const postNoTextResult = await database_1.db.query(`
@@ -343,7 +398,10 @@ class WarmupProcessService {
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    contentId = postNoTextResult.rows.length > 0 ? postNoTextResult.rows[0].id : null;
+                    contentId =
+                        postNoTextResult.rows.length > 0
+                            ? postNoTextResult.rows[0].id
+                            : null;
                     break;
                 case warmupProcess_1.WarmupPhase.STORY_CAPTION:
                     const storyContentResult = await database_1.db.query(`
@@ -352,14 +410,18 @@ class WarmupProcessService {
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    contentId = storyContentResult.rows.length > 0 ? storyContentResult.rows[0].id : null;
+                    contentId =
+                        storyContentResult.rows.length > 0
+                            ? storyContentResult.rows[0].id
+                            : null;
                     const storyTextResult = await database_1.db.query(`
             SELECT id FROM central_text_content 
             WHERE categories @> '["story"]'::jsonb 
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    textId = storyTextResult.rows.length > 0 ? storyTextResult.rows[0].id : null;
+                    textId =
+                        storyTextResult.rows.length > 0 ? storyTextResult.rows[0].id : null;
                     break;
                 case warmupProcess_1.WarmupPhase.STORY_NO_CAPTION:
                     const storyNoTextResult = await database_1.db.query(`
@@ -368,7 +430,10 @@ class WarmupProcessService {
             AND status = 'active'
             ORDER BY RANDOM() LIMIT 1
           `);
-                    contentId = storyNoTextResult.rows.length > 0 ? storyNoTextResult.rows[0].id : null;
+                    contentId =
+                        storyNoTextResult.rows.length > 0
+                            ? storyNoTextResult.rows[0].id
+                            : null;
                     break;
                 default:
                     console.log(`No content assignment needed for phase: ${phase}`);
@@ -486,13 +551,13 @@ class WarmupProcessService {
         GROUP BY a.id, a.username, a.lifecycle_state, a.container_number, a.last_bot_action_by, a.last_bot_action_at
       `, [accountId]);
             if (result.rows.length === 0) {
-                throw new Error('Account not found');
+                throw new Error("Account not found");
             }
             return result.rows[0];
         }
         catch (error) {
             console.error(`Error fetching warmup status for account ${accountId}:`, error);
-            throw new Error('Failed to fetch warmup status');
+            throw new Error("Failed to fetch warmup status");
         }
     }
     async startPhase(accountId, phase, botId, sessionId) {
@@ -502,8 +567,8 @@ class WarmupProcessService {
                 return {
                     success: false,
                     accountId,
-                    message: 'Another account is currently being processed by a bot',
-                    error: 'Bot constraint violation'
+                    message: "Another account is currently being processed by a bot",
+                    error: "Bot constraint violation",
                 };
             }
             const phaseResult = await database_1.db.query(`
@@ -515,7 +580,7 @@ class WarmupProcessService {
                     success: false,
                     accountId,
                     message: `Phase ${phase} is not available for account ${accountId}`,
-                    error: 'Phase not available'
+                    error: "Phase not available",
                 };
             }
             const phaseData = phaseResult.rows[0];
@@ -525,12 +590,12 @@ class WarmupProcessService {
             const result = await database_1.db.query(`
         UPDATE account_warmup_phases 
         SET 
-          status = 'in_progress',
+          status = 'in_progress'::warmup_phase_status,
           started_at = CURRENT_TIMESTAMP,
           bot_id = $3,
           bot_session_id = $4,
           updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = $1 AND phase = $2 AND status = 'available'
+        WHERE account_id = $1 AND phase = $2 AND status = 'available'::warmup_phase_status
         RETURNING id
       `, [accountId, phase, botId, sessionId]);
             if (result.rows.length === 0) {
@@ -538,7 +603,7 @@ class WarmupProcessService {
                     success: false,
                     accountId,
                     message: `Phase ${phase} is not available for account ${accountId}`,
-                    error: 'Phase not available'
+                    error: "Phase not available",
                 };
             }
             return {
@@ -546,7 +611,7 @@ class WarmupProcessService {
                 accountId,
                 message: `Phase ${phase} started successfully`,
                 phase,
-                phaseId: result.rows[0].id
+                phaseId: result.rows[0].id,
             };
         }
         catch (error) {
@@ -555,7 +620,7 @@ class WarmupProcessService {
                 success: false,
                 accountId,
                 message: `Failed to start phase ${phase}`,
-                error: error instanceof Error ? error.message : 'Unknown error'
+                error: error instanceof Error ? error.message : "Unknown error",
             };
         }
     }
@@ -564,34 +629,33 @@ class WarmupProcessService {
             const result = await database_1.db.query(`
         UPDATE account_warmup_phases 
         SET 
-          status = 'completed',
+          status = 'completed'::warmup_phase_status,
           completed_at = CURRENT_TIMESTAMP,
           execution_time_ms = $3,
           instagram_response = $4,
           updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = $1 AND phase = $2 AND bot_id = $5 AND status = 'in_progress'
+        WHERE account_id = $1 AND phase = $2 AND bot_id = $5 AND status = 'in_progress'::warmup_phase_status
         RETURNING id
-      `, [accountId, phase, executionTimeMs, JSON.stringify(instagramResponse), botId]);
+      `, [
+                accountId,
+                phase,
+                executionTimeMs,
+                JSON.stringify(instagramResponse),
+                botId,
+            ]);
             if (result.rows.length === 0) {
                 return {
                     success: false,
                     accountId,
                     message: `Phase ${phase} could not be completed - not in progress by this bot`,
-                    error: 'Phase not in progress'
+                    error: "Phase not in progress",
                 };
-            }
-            if (phase === warmupProcess_1.WarmupPhase.USERNAME && instagramResponse?.new_username) {
-                await database_1.db.query(`
-          UPDATE accounts 
-          SET username = $2,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $1
-        `, [accountId, instagramResponse.new_username]);
             }
             const isComplete = await this.isWarmupComplete(accountId);
             if (isComplete) {
-                const accountResult = await database_1.db.query('SELECT container_number FROM accounts WHERE id = $1', [accountId]);
-                if (accountResult.rows.length > 0 && accountResult.rows[0].container_number) {
+                const accountResult = await database_1.db.query("SELECT container_number FROM accounts WHERE id = $1", [accountId]);
+                if (accountResult.rows.length > 0 &&
+                    accountResult.rows[0].container_number) {
                     const containerNumber = accountResult.rows[0].container_number;
                     try {
                         console.log(`[WarmupProcess] Setting account ${accountId} to private after warmup completion`);
@@ -628,7 +692,7 @@ class WarmupProcessService {
                     : `Phase ${phase} completed successfully. Next phase will be available after cooldown.`,
                 phase,
                 phaseId: result.rows[0].id,
-                warmupComplete: isComplete
+                warmupComplete: isComplete,
             };
         }
         catch (error) {
@@ -637,23 +701,23 @@ class WarmupProcessService {
                 success: false,
                 accountId,
                 message: `Failed to complete phase ${phase}`,
-                error: error instanceof Error ? error.message : 'Unknown error'
+                error: error instanceof Error ? error.message : "Unknown error",
             };
         }
     }
     async failPhase(accountId, phase, botId, errorMessage, errorDetails, failureCategory, forceEscalateToReview) {
         try {
             const shouldEscalateToReview = forceEscalateToReview ||
-                failureCategory === 'instagram_challenge' ||
-                failureCategory === 'account_suspended' ||
-                failureCategory === 'captcha';
+                failureCategory === "instagram_challenge" ||
+                failureCategory === "account_suspended" ||
+                failureCategory === "captcha";
             const result = await database_1.db.query(`
         UPDATE account_warmup_phases 
         SET 
           status = CASE 
-            WHEN $6::boolean = true THEN 'requires_review'
-            WHEN retry_count + 1 >= max_retries THEN 'requires_review'
-            ELSE 'failed'
+            WHEN $6::boolean = true THEN 'requires_review'::warmup_phase_status
+            WHEN retry_count + 1 >= max_retries THEN 'requires_review'::warmup_phase_status
+            ELSE 'failed'::warmup_phase_status
           END,
           retry_count = retry_count + 1,
           error_message = $3,
@@ -664,19 +728,27 @@ class WarmupProcessService {
             ELSE review_required_at
           END,
           updated_at = CURRENT_TIMESTAMP
-        WHERE account_id = $1 AND phase = $2 AND bot_id = $5 AND status = 'in_progress'
+        WHERE account_id = $1 AND phase = $2 AND bot_id = $5 AND status = 'in_progress'::warmup_phase_status
         RETURNING id, status, retry_count, max_retries
-      `, [accountId, phase, errorMessage, JSON.stringify(errorDetails), botId, shouldEscalateToReview, failureCategory]);
+      `, [
+                accountId,
+                phase,
+                errorMessage,
+                JSON.stringify(errorDetails),
+                botId,
+                shouldEscalateToReview,
+                failureCategory,
+            ]);
             if (result.rows.length === 0) {
                 return {
                     success: false,
                     accountId,
                     message: `Phase ${phase} could not be failed - not in progress by this bot`,
-                    error: 'Phase not in progress'
+                    error: "Phase not in progress",
                 };
             }
             const phaseData = result.rows[0];
-            const needsReview = phaseData.status === 'requires_review';
+            const needsReview = phaseData.status === "requires_review";
             if (needsReview) {
                 await database_1.db.query(`
           UPDATE accounts 
@@ -695,7 +767,7 @@ class WarmupProcessService {
                 phase,
                 phaseId: phaseData.id,
                 needsHumanReview: needsReview,
-                retryCount: phaseData.retry_count
+                retryCount: phaseData.retry_count,
             };
         }
         catch (error) {
@@ -704,7 +776,7 @@ class WarmupProcessService {
                 success: false,
                 accountId,
                 message: `Failed to mark phase ${phase} as failed`,
-                error: error instanceof Error ? error.message : 'Unknown error'
+                error: error instanceof Error ? error.message : "Unknown error",
             };
         }
     }
@@ -796,8 +868,10 @@ class WarmupProcessService {
             return {
                 ...phase,
                 script_sequence: scriptSequence,
-                content_url: phase.content_file_path ? `/uploads/content/${phase.content_filename}` : null,
-                full_content_path: phase.content_file_path || null
+                content_url: phase.content_file_path
+                    ? `/uploads/content/${phase.content_filename}`
+                    : null,
+                full_content_path: phase.content_file_path || null,
             };
         }
         catch (error) {
@@ -807,7 +881,7 @@ class WarmupProcessService {
     }
     async isWarmupComplete(accountId) {
         try {
-            const result = await database_1.db.query('SELECT is_warmup_complete($1) as is_complete', [accountId]);
+            const result = await database_1.db.query("SELECT is_warmup_complete($1) as is_complete", [accountId]);
             return result.rows[0].is_complete;
         }
         catch (error) {
@@ -859,222 +933,223 @@ class WarmupProcessService {
             return result.rows[0];
         }
         catch (error) {
-            console.error('Error fetching warmup statistics:', error);
-            throw new Error('Failed to fetch warmup statistics');
+            console.error("Error fetching warmup statistics:", error);
+            throw new Error("Failed to fetch warmup statistics");
         }
     }
     getPhaseScriptSequence(phase, containerNumber) {
         const baseScripts = {
-            ios16_photo_cleaner: 'instagram-tracker/bot/scripts/api/ios16_photo_cleaner.js',
-            gallery: 'instagram-tracker/bot/scripts/api/gallery.js',
-            clipboard: 'instagram-tracker/bot/scripts/api/clipboard.js',
-            lua_executor: 'instagram-tracker/bot/scripts/api/lua_executor.js'
+            ios16_photo_cleaner: "instagram-tracker/bot/scripts/api/ios16_photo_cleaner.js",
+            gallery: "instagram-tracker/bot/scripts/api/gallery.js",
+            clipboard: "instagram-tracker/bot/scripts/api/clipboard.js",
+            lua_executor: "instagram-tracker/bot/scripts/api/lua_executor.js",
         };
         const containerScript = `instagram-tracker/bot/scripts/open_container/open_container${containerNumber}.lua`;
         switch (phase) {
             case warmupProcess_1.WarmupPhase.MANUAL_SETUP:
                 return {
-                    phase: 'manual_setup',
-                    description: 'Manual account setup - no automation scripts',
+                    phase: "manual_setup",
+                    description: "Manual account setup - no automation scripts",
                     api_scripts: [],
                     lua_scripts: [],
                     requires_content: false,
-                    requires_text: false
+                    requires_text: false,
                 };
             case warmupProcess_1.WarmupPhase.BIO:
                 return {
-                    phase: 'bio',
-                    description: 'Change bio using clipboard text',
+                    phase: "bio",
+                    description: "Change bio using clipboard text",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
                         baseScripts.clipboard,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/change_bio_to_clipboard.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/change_bio_to_clipboard.lua",
                     ],
                     requires_content: false,
                     requires_text: true,
-                    text_categories: ['bio']
+                    text_categories: ["bio"],
                 };
             case warmupProcess_1.WarmupPhase.GENDER:
                 return {
-                    phase: 'gender',
-                    description: 'Change gender to female',
+                    phase: "gender",
+                    description: "Change gender to female",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/change_gender_to_female.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/change_gender_to_female.lua",
                     ],
                     requires_content: false,
-                    requires_text: false
+                    requires_text: false,
                 };
             case warmupProcess_1.WarmupPhase.NAME:
                 return {
-                    phase: 'name',
-                    description: 'Change display name using clipboard text',
+                    phase: "name",
+                    description: "Change display name using clipboard text",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
                         baseScripts.clipboard,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/change_name_to_clipboard.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/change_name_to_clipboard.lua",
                     ],
                     requires_content: false,
                     requires_text: true,
-                    text_categories: ['name']
+                    text_categories: ["name"],
                 };
             case warmupProcess_1.WarmupPhase.USERNAME:
                 return {
-                    phase: 'username',
-                    description: 'Change username using clipboard text - UPDATE DATABASE AFTER SUCCESS',
+                    phase: "username",
+                    description: "Change username using clipboard text - UPDATE DATABASE AFTER SUCCESS",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
                         baseScripts.clipboard,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/change_username_to_clipboard.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/change_username_to_clipboard.lua",
                     ],
                     requires_content: false,
                     requires_text: true,
-                    text_categories: ['username'],
-                    post_execution_action: 'update_username_in_database'
+                    text_categories: ["username"],
+                    post_execution_action: "update_username_in_database",
                 };
             case warmupProcess_1.WarmupPhase.FIRST_HIGHLIGHT:
                 return {
-                    phase: 'first_highlight',
-                    description: 'Upload first highlight group with image and clipboard name',
+                    phase: "first_highlight",
+                    description: "Upload first highlight group with image and clipboard name",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
                         baseScripts.gallery,
                         baseScripts.clipboard,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/upload_first_highlight_group_with_clipboard_name_newest_media_no_caption.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/upload_first_highlight_group_with_clipboard_name_newest_media_no_caption.lua",
                     ],
                     requires_content: true,
                     requires_text: true,
-                    content_categories: ['highlight', 'any'],
-                    text_categories: ['highlight_group_name']
+                    content_categories: ["highlight", "any"],
+                    text_categories: ["highlight_group_name"],
                 };
             case warmupProcess_1.WarmupPhase.NEW_HIGHLIGHT:
                 return {
-                    phase: 'new_highlight',
-                    description: 'Upload new highlight group - requires first highlight to be completed',
+                    phase: "new_highlight",
+                    description: "Upload new highlight group - requires first highlight to be completed",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
                         baseScripts.gallery,
                         baseScripts.clipboard,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/upload_new_highlightgroup_clipboard_name_newest_media_no_caption.lua.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/upload_new_highlightgroup_clipboard_name_newest_media_no_caption.lua.lua",
                     ],
                     requires_content: true,
                     requires_text: true,
-                    content_categories: ['highlight', 'any'],
-                    text_categories: ['highlight_group_name'],
-                    dependencies: ['first_highlight']
+                    content_categories: ["highlight", "any"],
+                    text_categories: ["highlight_group_name"],
+                    dependencies: ["first_highlight"],
                 };
             case warmupProcess_1.WarmupPhase.POST_CAPTION:
                 return {
-                    phase: 'post_caption',
-                    description: 'Upload post with image and clipboard caption',
+                    phase: "post_caption",
+                    description: "Upload post with image and clipboard caption",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
                         baseScripts.gallery,
                         baseScripts.clipboard,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/upload_post_newest_media_clipboard_caption.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/upload_post_newest_media_clipboard_caption.lua",
                     ],
                     requires_content: true,
                     requires_text: true,
-                    content_categories: ['post', 'any'],
-                    text_categories: ['post', 'any']
+                    content_categories: ["post", "any"],
+                    text_categories: ["post", "any"],
                 };
             case warmupProcess_1.WarmupPhase.POST_NO_CAPTION:
                 return {
-                    phase: 'post_no_caption',
-                    description: 'Upload post with image only, no caption',
+                    phase: "post_no_caption",
+                    description: "Upload post with image only, no caption",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
                         baseScripts.gallery,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/upload_post_newest_media_no_caption.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/upload_post_newest_media_no_caption.lua",
                     ],
                     requires_content: true,
                     requires_text: false,
-                    content_categories: ['post', 'any']
+                    content_categories: ["post", "any"],
                 };
             case warmupProcess_1.WarmupPhase.STORY_CAPTION:
                 return {
-                    phase: 'story_caption',
-                    description: 'Upload story with image and clipboard caption',
+                    phase: "story_caption",
+                    description: "Upload story with image and clipboard caption",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
                         baseScripts.gallery,
                         baseScripts.clipboard,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/upload_story_newest_media_clipboard_caption.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/upload_story_newest_media_clipboard_caption.lua",
                     ],
                     requires_content: true,
                     requires_text: true,
-                    content_categories: ['story', 'any'],
-                    text_categories: ['story', 'any']
+                    content_categories: ["story", "any"],
+                    text_categories: ["story", "any"],
                 };
             case warmupProcess_1.WarmupPhase.STORY_NO_CAPTION:
                 return {
-                    phase: 'story_no_caption',
-                    description: 'Upload story with image only, no caption',
+                    phase: "story_no_caption",
+                    description: "Upload story with image only, no caption",
                     api_scripts: [
                         baseScripts.ios16_photo_cleaner,
                         baseScripts.gallery,
-                        baseScripts.lua_executor
+                        baseScripts.lua_executor,
                     ],
                     lua_scripts: [
                         containerScript,
-                        'instagram-tracker/bot/scripts/iphone_lua/upload_story_newest_media_no_caption.lua'
+                        "instagram-tracker/bot/scripts/iphone_lua/upload_story_newest_media_no_caption.lua",
                     ],
                     requires_content: true,
                     requires_text: false,
-                    content_categories: ['story', 'any']
+                    content_categories: ["story", "any"],
                 };
             default:
                 return {
                     phase: phase,
-                    description: 'Unknown phase',
+                    description: "Unknown phase",
                     api_scripts: [],
                     lua_scripts: [],
                     requires_content: false,
                     requires_text: false,
-                    error: 'Unknown warmup phase'
+                    error: "Unknown warmup phase",
                 };
         }
     }
     async checkPhaseDependencies(accountId, phase) {
         try {
             const scriptSequence = this.getPhaseScriptSequence(phase, 1);
-            if (!scriptSequence.dependencies || scriptSequence.dependencies.length === 0) {
+            if (!scriptSequence.dependencies ||
+                scriptSequence.dependencies.length === 0) {
                 return true;
             }
             const result = await database_1.db.query(`
@@ -1082,9 +1157,9 @@ class WarmupProcessService {
         WHERE account_id = $1 AND phase = ANY($2::text[])
       `, [accountId, scriptSequence.dependencies]);
             const completedPhases = result.rows
-                .filter(row => row.status === 'completed')
-                .map(row => row.phase);
-            return scriptSequence.dependencies.every(dep => completedPhases.includes(dep));
+                .filter((row) => row.status === "completed")
+                .map((row) => row.phase);
+            return scriptSequence.dependencies.every((dep) => completedPhases.includes(dep));
         }
         catch (error) {
             console.error(`Error checking phase dependencies for ${phase}:`, error);
@@ -1093,26 +1168,26 @@ class WarmupProcessService {
     }
     async setAccountPrivate(containerNumber) {
         return new Promise((resolve, reject) => {
-            const path = require('path');
-            const { spawn } = require('child_process');
-            const scriptPath = path.join(process.cwd(), '../bot/scripts/api/lua_executor.js');
+            const path = require("path");
+            const { spawn } = require("child_process");
+            const scriptPath = path.join(process.cwd(), "../bot/scripts/api/lua_executor.js");
             const commands = [
                 {
-                    script: 'open_settings.lua',
-                    description: 'Open container settings'
+                    script: "open_settings.lua",
+                    description: "Open container settings",
                 },
                 {
-                    script: 'scroll_to_top_container.lua',
-                    description: 'Scroll to top of container list'
+                    script: "scroll_to_top_container.lua",
+                    description: "Scroll to top of container list",
                 },
                 {
                     script: `select_container_${containerNumber}.lua`,
-                    description: `Select container ${containerNumber}`
+                    description: `Select container ${containerNumber}`,
                 },
                 {
-                    script: 'set_account_private.lua',
-                    description: 'Set account to private'
-                }
+                    script: "set_account_private.lua",
+                    description: "Set account to private",
+                },
             ];
             let currentCommand = 0;
             function executeNextCommand() {
@@ -1122,20 +1197,20 @@ class WarmupProcessService {
                 }
                 const command = commands[currentCommand];
                 console.log(`[WarmupProcess] Executing: ${command.description}`);
-                const childProcess = spawn('node', [scriptPath, command.script], {
-                    cwd: path.join(process.cwd(), '../bot'),
+                const childProcess = spawn("node", [scriptPath, command.script], {
+                    cwd: path.join(process.cwd(), "../bot"),
                     detached: false,
-                    stdio: ['pipe', 'pipe', 'pipe']
+                    stdio: ["pipe", "pipe", "pipe"],
                 });
-                let output = '';
-                let errorOutput = '';
-                childProcess.stdout.on('data', (data) => {
+                let output = "";
+                let errorOutput = "";
+                childProcess.stdout.on("data", (data) => {
                     output += data.toString();
                 });
-                childProcess.stderr.on('data', (data) => {
+                childProcess.stderr.on("data", (data) => {
                     errorOutput += data.toString();
                 });
-                childProcess.on('close', (code) => {
+                childProcess.on("close", (code) => {
                     if (code === 0) {
                         console.log(`[WarmupProcess] ✅ ${command.description} completed`);
                         currentCommand++;
@@ -1146,12 +1221,165 @@ class WarmupProcessService {
                         reject(new Error(`Failed to execute ${command.description}: ${errorOutput}`));
                     }
                 });
-                childProcess.on('error', (error) => {
+                childProcess.on("error", (error) => {
                     reject(new Error(`Failed to start ${command.description}: ${error.message}`));
                 });
             }
             executeNextCommand();
         });
+    }
+    async processPhase(accountId, phase) {
+        try {
+            console.log(`🤖 Processing phase ${phase} for account ${accountId}`);
+            const accountResult = await database_1.db.query(`
+        SELECT id, username, container_number, lifecycle_state 
+        FROM accounts 
+        WHERE id = $1
+      `, [accountId]);
+            if (accountResult.rows.length === 0) {
+                throw new Error("Account not found");
+            }
+            const account = accountResult.rows[0];
+            console.log(`🤖 Executing ${phase} for ${account.username} on container ${account.container_number}`);
+            const contentResult = await database_1.db.query(`
+        SELECT 
+          awp.assigned_content_id,
+          awp.assigned_text_id,
+          cc.file_path as content_file_path,
+          cc.filename as content_filename,
+          ctc.text_content
+        FROM account_warmup_phases awp
+        LEFT JOIN central_content cc ON awp.assigned_content_id = cc.id
+        LEFT JOIN central_text_content ctc ON awp.assigned_text_id = ctc.id
+        WHERE awp.account_id = $1 AND awp.phase = $2
+      `, [accountId, phase]);
+            const content = contentResult.rows[0] || {};
+            const hasImage = content.content_file_path;
+            const hasText = content.text_content;
+            console.log(`📋 Content for ${phase}: image=${!!hasImage}, text=${!!hasText}`);
+            const ClipboardAPI = require("../../../bot/scripts/api/clipboard.js");
+            const GalleryAPI = require("../../../bot/scripts/api/gallery.js");
+            const iOS16PhotoCleaner = require("../../../bot/scripts/api/ios16_photo_cleaner.js");
+            const AutomationBridge = require("../../../bot/services/AutomationBridge.js");
+            const iphoneIP = "192.168.178.65";
+            const iphonePort = 46952;
+            const baseUrl = `http://${iphoneIP}:${iphonePort}`;
+            if (hasImage) {
+                console.log(`🧹 Cleaning iPhone gallery before sending image...`);
+                try {
+                    const cleaner = new iOS16PhotoCleaner();
+                    await cleaner.performiOS16Cleanup();
+                    console.log(`⏳ Waiting 15 seconds for iPhone respring...`);
+                    await new Promise((resolve) => setTimeout(resolve, 15000));
+                    console.log(`📱 Executing wake_up.lua to wake up iPhone...`);
+                    const bridge = new AutomationBridge({ iphoneIP, iphonePort });
+                    await bridge.executeScript("wake_up.lua", {
+                        timeout: 15000,
+                        retries: 2,
+                    });
+                    console.log(`✅ iPhone gallery cleaned and ready`);
+                }
+                catch (cleanError) {
+                    console.warn(`⚠️ Gallery cleaning failed: ${cleanError.message}, continuing anyway...`);
+                }
+            }
+            if (hasText) {
+                console.log(`📝 Sending text to iPhone clipboard...`);
+                let textToSend = content.text_content;
+                if (phase === "username" && textToSend && textToSend.length > 0) {
+                    const lastLetter = textToSend.slice(-1).toLowerCase();
+                    textToSend = textToSend + lastLetter + lastLetter;
+                    console.log(`🔤 Modified username: ${content.text_content} → ${textToSend}`);
+                }
+                const clipboard = new ClipboardAPI(baseUrl);
+                const clipResult = await clipboard.setText(textToSend);
+                if (!clipResult.success) {
+                    throw new Error(`Failed to send text to clipboard: ${clipResult.error}`);
+                }
+                console.log(`✅ Text sent to iPhone clipboard`);
+            }
+            if (hasImage) {
+                console.log(`🖼️ Sending image to iPhone gallery...`);
+                const imagePath = path_1.default.isAbsolute(content.content_file_path)
+                    ? content.content_file_path
+                    : path_1.default.resolve(__dirname, "../../uploads", content.content_file_path);
+                const gallery = new GalleryAPI(baseUrl);
+                const galleryResult = await gallery.addImage(imagePath);
+                if (!galleryResult.success) {
+                    throw new Error(`Failed to send image to gallery: ${galleryResult.error}`);
+                }
+                console.log(`✅ Image sent to iPhone gallery (${galleryResult.fileSizeKB} KB)`);
+            }
+            console.log(`🤖 Executing warmup automation for ${phase}...`);
+            const bridge = new AutomationBridge({ iphoneIP, iphonePort });
+            console.log(`📦 Selecting container ${account.container_number}...`);
+            const containerSelected = await bridge.selectContainer(account.container_number);
+            if (!containerSelected) {
+                throw new Error(`Failed to select container ${account.container_number}`);
+            }
+            const phaseScriptMapping = {
+                bio: "change_bio_to_clipboard.lua",
+                gender: "change_gender_to_female.lua",
+                name: "change_name_to_clipboard.lua",
+                username: "change_username_to_clipboard.lua",
+                first_highlight: "upload_first_highlight_group_with_clipboard_name_newest_media_no_caption.lua",
+                new_highlight: "upload_new_highlightgroup_clipboard_name_newest_media_no_caption.lua",
+                post_caption: "upload_post_newest_media_clipboard_caption.lua",
+                post_no_caption: "upload_post_newest_media_no_caption.lua",
+                story_no_caption: "upload_story_newest_media_no_caption.lua",
+                set_to_private: "set_account_private.lua",
+            };
+            const phaseScript = phaseScriptMapping[phase];
+            if (!phaseScript) {
+                throw new Error(`No script mapping found for phase: ${phase}`);
+            }
+            console.log(`📜 Executing phase script: ${phaseScript}`);
+            const scriptResult = await bridge.executeScript(phaseScript, {
+                timeout: 120000,
+                retries: 3,
+            });
+            if (!scriptResult) {
+                throw new Error(`Phase script ${phaseScript} failed to execute`);
+            }
+            console.log(`✅ Phase ${phase} completed successfully for ${account.username}`);
+            await database_1.db.query(`
+        UPDATE account_warmup_phases 
+        SET bot_id = $3,
+            updated_at = NOW()
+        WHERE account_id = $1 AND phase = $2 AND status = 'in_progress'
+      `, [accountId, phase, "warmup-automation-bot"]);
+            const completionResult = await this.completePhase(accountId, phase, "warmup-automation-bot", undefined, undefined);
+            if (!completionResult.success) {
+                throw new Error(`Failed to complete phase properly: ${completionResult.error}`);
+            }
+            return {
+                success: true,
+                accountId,
+                message: `Phase ${phase} completed successfully`,
+                phase,
+            };
+        }
+        catch (error) {
+            console.error(`❌ Error processing phase ${phase} for account ${accountId}:`, error);
+            try {
+                await database_1.db.query(`
+          UPDATE account_warmup_phases 
+          SET status = 'available',
+              error_message = $3,
+              updated_at = NOW()
+          WHERE account_id = $1 AND phase = $2
+        `, [accountId, phase, error.message]);
+            }
+            catch (resetError) {
+                console.error("❌ Error updating phase status:", resetError);
+            }
+            return {
+                success: false,
+                accountId,
+                message: `Failed to process phase ${phase}`,
+                error: error instanceof Error ? error.message : "Unknown error",
+            };
+        }
     }
 }
 exports.WarmupProcessService = WarmupProcessService;

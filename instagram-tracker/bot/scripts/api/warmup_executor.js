@@ -3,6 +3,12 @@
  * 
  * This script bridges the WarmupQueueService with AutomationBridge
  * to execute iPhone automation for warmup phases.
+ * 
+ * TIMING: Includes 15-second delays before and after each phase-specific script
+ * to ensure proper execution and stability.
+ * 
+ * TEMPORARY FIX: new_highlight phase temporarily disabled due to missing script file
+ * upload_new_highlightgroup_clipboard_name_newest_media_no_caption.lua
  */
 
 const AutomationBridge = require('../../services/AutomationBridge');
@@ -29,21 +35,21 @@ class WarmupExecutor {
       if (skipOnboarding) {
         console.log(`🎯 FIRST TIME AUTOMATION DETECTED for ${username}!`);
         console.log(`📱 Executing skip_onboarding.lua before main phase...`);
-        
+
         try {
           // Execute skip_onboarding.lua first
           const skipOnboardingResult = await this.bridge.executeScript('skip_onboarding.lua', {
             timeout: 60000, // 1 minute
             retries: 2
           });
-          
+
           if (!skipOnboardingResult.success) {
             throw new Error(`skip_onboarding.lua failed: ${skipOnboardingResult.error}`);
           }
-          
+
           console.log(`✅ skip_onboarding.lua completed successfully for ${username}`);
           skipOnboardingExecuted = true;
-          
+
         } catch (skipError) {
           console.error(`❌ skip_onboarding.lua failed for ${username}:`, skipError.message);
           // Don't fail the entire phase if skip_onboarding fails - log and continue
@@ -77,11 +83,24 @@ class WarmupExecutor {
 
       console.log(`📜 Executing main phase script: ${phaseScript}`);
 
+      // Simple state management: Stop any running scripts first (minimal fix)
+      console.log(`🔄 Ensuring clean iPhone state before phase execution...`);
+      await this.bridge.stopScript();
+      await new Promise(resolve => setTimeout(resolve, 4000)); // Brief pause for state reset
+
+      // 15-second delay BEFORE phase script execution
+      console.log(`⏰ Waiting 15 seconds before executing phase script...`);
+      await new Promise(resolve => setTimeout(resolve, 20000));
+
       // Execute the phase-specific script
       const result = await this.bridge.executeScript(phaseScript, {
-        timeout: 120000, // 2 minutes
+        timeout: 22000, // 2 minutes
         retries: 3
       });
+
+      // 20-second delay AFTER phase script execution
+      console.log(`⏰ Waiting 20 seconds after phase script completion...`);
+      await new Promise(resolve => setTimeout(resolve, 30000));
 
       console.log(`✅ Phase ${phase} completed successfully for ${username}`);
 
@@ -113,14 +132,16 @@ class WarmupExecutor {
 
 
 
+
+
   /**
    * Map warmup phases to their corresponding Lua scripts
    * Updated to match actual script names in instagram-tracker/bot/scripts/iphone_lua/
    */
   getPhaseScript(phase) {
     // Manual phases that don't require automation
-    const manualPhases = ['manual_setup', 'instagram_set_private'];
-    
+    const manualPhases = ['manual_setup', 'instagram_set_private', 'new_highlight']; // new_highlight temporarily manual - script missing
+
     if (manualPhases.includes(phase)) {
       return 'MANUAL_PHASE'; // Special marker for manual phases
     }
@@ -131,8 +152,9 @@ class WarmupExecutor {
       'gender': 'change_gender_to_female.lua',
       'name': 'change_name_to_clipboard.lua',
       'username': 'change_username_to_clipboard.lua',
+      'profile_picture': 'change_pfp_to_newest_picture.lua',
       'first_highlight': 'upload_first_highlight_group_with_clipboard_name_newest_media_no_caption.lua',
-      'new_highlight': 'upload_new_highlightgroup_clipboard_name_newest_media_no_caption.lua',
+      // 'new_highlight': 'upload_new_highlightgroup_clipboard_name_newest_media_no_caption.lua', // TEMPORARILY REMOVED - script file missing
       'post_caption': 'upload_post_newest_media_clipboard_caption.lua',
       'post_no_caption': 'upload_post_newest_media_no_caption.lua',
       'story_caption': 'upload_story_newest_media_clipboard_caption.lua',
@@ -160,10 +182,10 @@ async function main() {
       options[key] = value;
     }
 
-    const { 
-      'account-id': accountId, 
-      'container-number': containerNumber, 
-      phase, 
+    const {
+      'account-id': accountId,
+      'container-number': containerNumber,
+      phase,
       username,
       'skip-onboarding': skipOnboarding
     } = options;
@@ -193,7 +215,7 @@ async function main() {
 
   } catch (error) {
     console.error('💥 Warmup executor error:', error.message);
-    
+
     // Output error as JSON
     console.log(JSON.stringify({
       success: false,

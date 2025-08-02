@@ -6,6 +6,7 @@ export enum WarmupPhase {
   GENDER = 'gender',
   NAME = 'name',
   USERNAME = 'username',
+  PROFILE_PICTURE = 'profile_picture',
   FIRST_HIGHLIGHT = 'first_highlight',
   NEW_HIGHLIGHT = 'new_highlight',
   POST_CAPTION = 'post_caption',

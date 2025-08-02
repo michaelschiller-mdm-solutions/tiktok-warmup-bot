@@ -1,84 +1,71 @@
-/**
- * Check table structures for warmup system
- */
+const { db } = require('./dist/database');
 
-const { Pool } = require('pg');
-
-const pool = new Pool({
-  user: 'admin',
-  host: 'localhost',
-  database: 'instagram_tracker',
-  password: 'password123',
-  port: 5432,
-});
-
-async function checkTableStructures() {
+async function checkTableStructure() {
   try {
-    console.log('🔍 Checking warmup table structures...\n');
-
-    // Check warmup_content_assignments structure
-    const wcaQuery = `
-      SELECT column_name, data_type, is_nullable
-      FROM information_schema.columns 
-      WHERE table_name = 'warmup_content_assignments' 
-      ORDER BY ordinal_position
-    `;
+    console.log('📋 CHECKING TABLE STRUCTURES');
+    console.log('============================\n');
     
-    const wcaResult = await pool.query(wcaQuery);
-    console.log(`📋 warmup_content_assignments table structure:`);
-    wcaResult.rows.forEach(row => {
-      console.log(`  - ${row.column_name}: ${row.data_type} (${row.is_nullable === 'YES' ? 'nullable' : 'not null'})`);
-    });
-
-    // Check account_warmup_phases structure
-    const awpQuery = `
-      SELECT column_name, data_type, is_nullable
+    // Check account_warmup_phases table
+    console.log('1. account_warmup_phases columns:');
+    const awpColumns = await db.query(`
+      SELECT column_name, data_type, is_nullable, column_default
       FROM information_schema.columns 
       WHERE table_name = 'account_warmup_phases' 
       ORDER BY ordinal_position
-    `;
+    `);
     
-    const awpResult = await pool.query(awpQuery);
-    console.log(`\n🔄 account_warmup_phases table structure:`);
-    awpResult.rows.forEach(row => {
-      console.log(`  - ${row.column_name}: ${row.data_type} (${row.is_nullable === 'YES' ? 'nullable' : 'not null'})`);
+    awpColumns.rows.forEach(col => {
+      console.log(`  ${col.column_name}: ${col.data_type} (nullable: ${col.is_nullable})`);
     });
-
-    // Check bot_ready_accounts view structure
-    const braQuery = `
-      SELECT column_name, data_type
+    
+    // Check accounts table
+    console.log('\n2. accounts table columns:');
+    const accountColumns = await db.query(`
+      SELECT column_name, data_type, is_nullable, column_default
       FROM information_schema.columns 
-      WHERE table_name = 'bot_ready_accounts' 
+      WHERE table_name = 'accounts' 
       ORDER BY ordinal_position
-    `;
+    `);
     
-    const braResult = await pool.query(braQuery);
-    console.log(`\n🤖 bot_ready_accounts view structure:`);
-    braResult.rows.forEach(row => {
-      console.log(`  - ${row.column_name}: ${row.data_type}`);
+    accountColumns.rows.forEach(col => {
+      console.log(`  ${col.column_name}: ${col.data_type} (nullable: ${col.is_nullable})`);
     });
-
-    // Sample data from warmup_content_assignments
-    const sampleWcaQuery = `SELECT * FROM warmup_content_assignments LIMIT 3`;
-    const sampleWcaResult = await pool.query(sampleWcaQuery);
-    console.log(`\n📁 Sample warmup_content_assignments data: ${sampleWcaResult.rows.length} rows`);
-    sampleWcaResult.rows.forEach((row, index) => {
-      console.log(`  Row ${index + 1}:`, JSON.stringify(row, null, 2));
+    
+    // Check how cooldowns are implemented
+    console.log('\n3. Checking cooldown implementation:');
+    
+    // Look for available_at column usage
+    const availableAtUsage = await db.query(`
+      SELECT 
+        a.username,
+        awp.phase,
+        awp.status,
+        awp.available_at,
+        awp.completed_at,
+        CASE 
+          WHEN awp.available_at > NOW() THEN 'In cooldown'
+          WHEN awp.available_at <= NOW() THEN 'Available'
+          ELSE 'No cooldown set'
+        END as cooldown_status
+      FROM accounts a
+      JOIN account_warmup_phases awp ON a.id = awp.account_id
+      WHERE awp.status IN ('pending', 'available')
+      AND awp.available_at IS NOT NULL
+      ORDER BY awp.available_at DESC
+      LIMIT 10
+    `);
+    
+    console.log('Recent phases with available_at (cooldown mechanism):');
+    availableAtUsage.rows.forEach(row => {
+      console.log(`  - ${row.username}: ${row.phase} (${row.status}) → ${row.cooldown_status}`);
+      console.log(`    Available at: ${row.available_at}`);
     });
-
-    // Sample data from account_warmup_phases
-    const sampleAwpQuery = `SELECT * FROM account_warmup_phases LIMIT 3`;
-    const sampleAwpResult = await pool.query(sampleAwpQuery);
-    console.log(`\n🔄 Sample account_warmup_phases data: ${sampleAwpResult.rows.length} rows`);
-    sampleAwpResult.rows.forEach((row, index) => {
-      console.log(`  Row ${index + 1}:`, JSON.stringify(row, null, 2));
-    });
-
+    
+    process.exit(0);
   } catch (error) {
-    console.error('❌ Error checking table structures:', error);
-  } finally {
-    await pool.end();
+    console.error('❌ Error:', error);
+    process.exit(1);
   }
 }
 
-checkTableStructures();
+checkTableStructure();

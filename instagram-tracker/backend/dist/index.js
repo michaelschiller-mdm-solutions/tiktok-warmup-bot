@@ -148,32 +148,54 @@ async function startServer() {
         console.log('✅ Migrations completed successfully.');
         await (0, database_1.testConnection)();
         console.log('✅ Database connected successfully');
-        console.log('🤖 Starting warmup automation queue...');
-        const warmupQueue = new WarmupQueueService_1.WarmupQueueService();
-        await warmupQueue.start();
-        console.log('✅ Warmup automation queue started');
-        process.on('SIGINT', async () => {
-            console.log('🛑 Shutting down gracefully...');
-            await warmupQueue.stop();
-            process.exit(0);
-        });
-        process.on('SIGTERM', async () => {
-            console.log('🛑 Shutting down gracefully...');
-            await warmupQueue.stop();
-            process.exit(0);
-        });
         (0, automation_1.setupWebSocket)(server);
         server.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT}`);
             console.log(`📊 Dashboard: http://localhost:${PORT}/health`);
             console.log(`🔗 CORS enabled for: ${CORS_ORIGIN}`);
             console.log(`📁 Static files served from: ${path_1.default.join(__dirname, '../uploads')}`);
-            console.log(`🤖 Warmup automation: ACTIVE (polling every 30s)`);
         });
+        initializeWarmupQueue();
     }
     catch (error) {
         console.error('❌ Failed to start server:', error);
         process.exit(1);
+    }
+}
+async function initializeWarmupQueue() {
+    try {
+        console.log('🤖 Starting warmup automation queue...');
+        const warmupQueue = new WarmupQueueService_1.WarmupQueueService();
+        const startTimeout = setTimeout(() => {
+            console.warn('⚠️ Warmup queue startup taking too long, continuing without it...');
+        }, 10000);
+        await warmupQueue.start();
+        clearTimeout(startTimeout);
+        console.log('✅ Warmup automation queue started');
+        process.on('SIGINT', async () => {
+            console.log('🛑 Shutting down gracefully...');
+            try {
+                await warmupQueue.stop();
+            }
+            catch (error) {
+                console.error('Error stopping warmup queue:', error);
+            }
+            process.exit(0);
+        });
+        process.on('SIGTERM', async () => {
+            console.log('🛑 Shutting down gracefully...');
+            try {
+                await warmupQueue.stop();
+            }
+            catch (error) {
+                console.error('Error stopping warmup queue:', error);
+            }
+            process.exit(0);
+        });
+    }
+    catch (error) {
+        console.error('❌ Failed to start warmup queue (server will continue without it):', error);
+        console.log('🔄 Server is still running normally for frontend connectivity');
     }
 }
 startServer();

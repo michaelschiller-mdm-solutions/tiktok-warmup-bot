@@ -166,38 +166,65 @@ async function startServer() {
     await testConnection();
     console.log('✅ Database connected successfully');
     
-    // Initialize and start warmup queue service
-    console.log('🤖 Starting warmup automation queue...');
-    const warmupQueue = new WarmupQueueService();
-    await warmupQueue.start();
-    console.log('✅ Warmup automation queue started');
-    
-    // Graceful shutdown handlers for warmup queue
-    process.on('SIGINT', async () => {
-      console.log('🛑 Shutting down gracefully...');
-      await warmupQueue.stop();
-      process.exit(0);
-    });
-
-    process.on('SIGTERM', async () => {
-      console.log('🛑 Shutting down gracefully...');
-      await warmupQueue.stop();
-      process.exit(0);
-    });
-    
     // Attach WebSocket server
     setupWebSocket(server);
 
+    // Start the Express server FIRST - this is critical for frontend connectivity
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📊 Dashboard: http://localhost:${PORT}/health`);
       console.log(`🔗 CORS enabled for: ${CORS_ORIGIN}`);
       console.log(`📁 Static files served from: ${path.join(__dirname, '../uploads')}`);
-      console.log(`🤖 Warmup automation: ACTIVE (polling every 30s)`);
     });
+
+    // Initialize warmup queue service AFTER server is running (non-blocking)
+    initializeWarmupQueue();
+    
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
+  }
+}
+
+// Initialize warmup queue asynchronously to prevent blocking server startup
+async function initializeWarmupQueue() {
+  try {
+    console.log('🤖 Starting warmup automation queue...');
+    const warmupQueue = new WarmupQueueService();
+    
+    // Add timeout protection to prevent hanging
+    const startTimeout = setTimeout(() => {
+      console.warn('⚠️ Warmup queue startup taking too long, continuing without it...');
+    }, 10000); // 10 second timeout
+    
+    await warmupQueue.start();
+    clearTimeout(startTimeout);
+    console.log('✅ Warmup automation queue started');
+    
+    // Graceful shutdown handlers for warmup queue
+    process.on('SIGINT', async () => {
+      console.log('🛑 Shutting down gracefully...');
+      try {
+        await warmupQueue.stop();
+      } catch (error) {
+        console.error('Error stopping warmup queue:', error);
+      }
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+      console.log('🛑 Shutting down gracefully...');
+      try {
+        await warmupQueue.stop();
+      } catch (error) {
+        console.error('Error stopping warmup queue:', error);
+      }
+      process.exit(0);
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to start warmup queue (server will continue without it):', error);
+    console.log('🔄 Server is still running normally for frontend connectivity');
   }
 }
 

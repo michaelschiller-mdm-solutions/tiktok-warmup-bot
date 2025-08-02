@@ -39,23 +39,23 @@ class GalleryAPI {
             // Resolve path relative to script location
             const fullPath = path.resolve(imagePath);
             const fileName = path.basename(fullPath);
-            
+
             console.log(`📸 Sending image to iPhone photo gallery...`);
             console.log(`File: ${fileName}`);
             console.log(`Path: ${fullPath}`);
-            
+
             // Check if file exists
             if (!fs.existsSync(fullPath)) {
                 throw new Error(`Image file not found: ${fullPath}`);
             }
-            
+
             // Get file info
             const stats = fs.statSync(fullPath);
             const imageData = fs.readFileSync(fullPath);
-            
+
             console.log(`Size: ${imageData.length} bytes (${(imageData.length / 1024).toFixed(1)} KB)`);
             console.log(`Modified: ${stats.mtime.toISOString()}`);
-            
+
             // Send to iPhone
             const response = await axios.post(
                 `${this.baseUrl}/image_to_album`,
@@ -67,10 +67,10 @@ class GalleryAPI {
                     timeout: 30000 // 30 second timeout for images
                 }
             );
-            
+
             console.log('✅ Image successfully saved to iPhone photo gallery!');
             console.log(`Response: ${JSON.stringify(response.data)}`);
-            
+
             return {
                 success: true,
                 data: response.data,
@@ -79,14 +79,14 @@ class GalleryAPI {
                 fileSize: imageData.length,
                 fileSizeKB: Math.round(imageData.length / 1024)
             };
-            
+
         } catch (error) {
             console.error('❌ Failed to send image to gallery:', error.message);
             if (error.response) {
                 console.error(`Status: ${error.response.status}`);
                 console.error(`Response: ${JSON.stringify(error.response.data)}`);
             }
-            
+
             return {
                 success: false,
                 error: error.message,
@@ -116,7 +116,7 @@ class GalleryAPI {
 async function main() {
     // Get command line arguments
     const args = process.argv.slice(2);
-    
+
     if (args.length === 0) {
         console.log('❌ Error: No image path provided');
         console.log('\n📖 USAGE:');
@@ -129,25 +129,25 @@ async function main() {
         console.log(GalleryAPI.getSupportedFormats().join(', '));
         process.exit(1);
     }
-    
+
     const imagePath = args[0];
     const baseUrl = args[1] || 'http://127.0.0.1:46952';
-    
+
     // Check if supported format
     if (!GalleryAPI.isSupportedImage(imagePath)) {
         console.log(`⚠️ Warning: ${path.extname(imagePath)} may not be supported`);
         console.log(`Supported formats: ${GalleryAPI.getSupportedFormats().join(', ')}`);
     }
-    
+
     console.log('🖼️ XXTouch Elite Gallery API');
     console.log('============================');
     console.log(`📱 iPhone: ${baseUrl}`);
     console.log(`📁 Image: ${path.basename(imagePath)}`);
     console.log('');
-    
+
     const gallery = new GalleryAPI(baseUrl);
     const result = await gallery.addImage(imagePath);
-    
+
     if (result.success) {
         console.log('\n🎉 SUCCESS!');
         console.log(`📸 Image "${result.fileName}" added to iPhone photo gallery`);

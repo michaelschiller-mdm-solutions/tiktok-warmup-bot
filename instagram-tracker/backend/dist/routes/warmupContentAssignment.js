@@ -367,12 +367,8 @@ router.post('/send-to-iphone/:accountId/:phase', async (req, res) => {
                         if (use_nuclear_cleaner) {
                             console.log(`💥 Using nuclear cleaner (will cause iPhone respring)...`);
                             await photoCleaner.performiOS16Cleanup();
-                            
-                            // Wait for iPhone respring to complete
                             console.log(`⏳ Waiting 15 seconds for iPhone respring to complete...`);
                             await new Promise(resolve => setTimeout(resolve, 15000));
-                            
-                            // Execute wake_up.lua to ensure iPhone is responsive
                             console.log(`📱 Executing wake_up.lua to wake up iPhone after respring...`);
                             try {
                                 const AutomationBridge = require('../../../bot/services/AutomationBridge');
@@ -380,21 +376,23 @@ router.post('/send-to-iphone/:accountId/:phase', async (req, res) => {
                                     iphoneIP: iphone_ip,
                                     iphonePort: iphone_port
                                 });
-                                
-                                const wakeUpResult = await bridge.executeScript('wake_up.lua', {
-                                    timeout: 30000,
-                                    retries: 3
-                                });
-                                
+                                const wakeUpResult = await Promise.race([
+                                    bridge.executeScript('wake_up.lua', {
+                                        timeout: 15000,
+                                        retries: 2
+                                    }),
+                                    new Promise(resolve => setTimeout(() => resolve(false), 20000))
+                                ]);
                                 if (wakeUpResult) {
                                     console.log(`✅ iPhone wake-up completed successfully`);
-                                    // Additional wait for iPhone to be fully ready
-                                    console.log(`⏳ Waiting additional 5 seconds for iPhone to be fully ready...`);
-                                    await new Promise(resolve => setTimeout(resolve, 5000));
-                                } else {
-                                    console.warn(`⚠️ iPhone wake-up may have failed, but continuing...`);
+                                    console.log(`⏳ Waiting additional 3 seconds for iPhone to be fully ready...`);
+                                    await new Promise(resolve => setTimeout(resolve, 3000));
                                 }
-                            } catch (wakeUpError) {
+                                else {
+                                    console.warn(`⚠️ iPhone wake-up may have failed or timed out, but continuing...`);
+                                }
+                            }
+                            catch (wakeUpError) {
                                 console.warn(`⚠️ Wake-up script failed: ${wakeUpError.message}, but continuing...`);
                             }
                         }

@@ -85,6 +85,22 @@ This is handled automatically by the `AutomationBridge.selectContainer(container
 
 ---
 
+## Phase Profile Picture
+(accepted Categories Image: pfp)
+
+**Required Scripts:**
+- `instagram-tracker\bot\scripts\api\ios16_photo_cleaner.js`
+- `instagram-tracker\bot\scripts\api\gallery.js`
+- `instagram-tracker\bot\scripts\api\lua_executor.js`
+
+**Execution Order:**
+1. **Container Selection**: Use `AutomationBridge.selectContainer(assignedContainerNumber)`
+2. **Profile Picture Change**: `instagram-tracker\bot\scripts\iphone_lua\change_pfp_to_newest_picture.lua`
+
+**⚠️ IMPORTANT**: This phase uses the newest image from the iPhone gallery after content is sent via the gallery API.
+
+---
+
 ## Phase Upload First Highlight
 (accepted Categories Image: highlight, any)
 (accepted Categories Text: highlight_group_category_name - needs to be created)

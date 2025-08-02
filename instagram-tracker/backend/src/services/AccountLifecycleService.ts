@@ -415,16 +415,16 @@ export class AccountLifecycleService {
       }
       const currentState = currentStateResult.rows[0].lifecycle_state;
 
-      // The trigger 'trigger_release_container_on_archive' will automatically handle container release.
-      // We just need to transition the state to ARCHIVED and release the proxy.
-      
       const notes = 'Account marked as invalid; resources released.';
+      
+      // 1. Update account state and clear all resource assignments
       const updateStateQuery = `
           UPDATE accounts
           SET lifecycle_state = $1,
               state_changed_at = CURRENT_TIMESTAMP,
               state_changed_by = $2,
               state_notes = $3,
+              container_number = NULL,
               proxy_id = NULL,
               proxy_assigned_at = NULL
           WHERE id = $4
@@ -436,10 +436,29 @@ export class AccountLifecycleService {
         accountId
       ]);
 
-      // Release any iPhone container (new device-level system)
-      await client.query('SELECT release_account_from_iphone_container($1)', [accountId]);
+      // 2. Skip all active warmup phases and clear any errors
+      const skipWarmupPhasesQuery = `
+          UPDATE account_warmup_phases 
+          SET status = 'skipped',
+              completed_at = CURRENT_TIMESTAMP,
+              updated_at = CURRENT_TIMESTAMP,
+              error_message = NULL,
+              started_at = NULL,
+              bot_id = NULL
+          WHERE account_id = $1
+          AND status IN ('pending', 'available', 'in_progress')
+      `;
+      await client.query(skipWarmupPhasesQuery, [accountId]);
 
-      // Log the transition in the audit table
+      // 3. Release any iPhone container (if function exists)
+      try {
+        await client.query('SELECT release_account_from_iphone_container($1)', [accountId]);
+      } catch (error) {
+        // Function might not exist, continue without failing
+        console.warn(`release_account_from_iphone_container function not available for account ${accountId}`);
+      }
+
+      // 4. Log the transition in the audit table
       const logTransitionQuery = `
           INSERT INTO account_state_transitions
               (account_id, from_state, to_state, transition_reason, changed_by, notes)

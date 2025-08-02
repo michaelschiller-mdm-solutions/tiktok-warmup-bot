@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Activity, Play, Pause, RotateCcw, TrendingUp, Clock, Eye, ChevronRight, User, Hash, Image, FileText, CheckCircle, X, Settings, AlertCircle, Mail, Users, Smartphone } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { DataGrid } from '../DataGrid';
@@ -56,6 +56,14 @@ const WARMUP_PHASES = [
     icon: Hash,
     color: 'purple',
     contentTypes: ['username']
+  },
+  { 
+    id: WarmupPhase.PROFILE_PICTURE, 
+    name: 'Profile Picture', 
+    description: 'Change profile picture',
+    icon: User,
+    color: 'cyan',
+    contentTypes: ['pfp']
   },
   { 
     id: WarmupPhase.FIRST_HIGHLIGHT, 
@@ -159,8 +167,8 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
 
   const phases = [...WARMUP_PHASES];
 
-  // Fetch warmup data for accounts
-  const fetchWarmupData = async () => {
+  // Fetch warmup data for accounts - memoized to prevent infinite loops
+  const fetchWarmupData = useCallback(async () => {
     if (accounts.length === 0) return;
 
     try {
@@ -249,11 +257,11 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [accounts]); // Only depend on accounts, not the function itself
 
   useEffect(() => {
     fetchWarmupData();
-  }, [accounts, fetchWarmupData]);
+  }, [fetchWarmupData]); // Now safe to depend on fetchWarmupData since it's memoized
 
   // Update filters when search term changes
   useEffect(() => {
@@ -1302,6 +1310,7 @@ const WarmupPipelineTab: React.FC<WarmupPipelineTabProps> = ({ modelId }) => {
 
       case WarmupPhase.BIO:
       case WarmupPhase.NAME:
+      case WarmupPhase.PROFILE_PICTURE:
       case WarmupPhase.FIRST_HIGHLIGHT:
       case WarmupPhase.NEW_HIGHLIGHT:
       case WarmupPhase.POST_CAPTION:

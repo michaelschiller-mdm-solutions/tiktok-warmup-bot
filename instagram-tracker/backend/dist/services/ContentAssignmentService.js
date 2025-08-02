@@ -80,6 +80,14 @@ class ContentAssignmentService {
             if (criteria.excludeUsedContent) {
                 query += ` AND (last_assigned_at IS NULL OR last_assigned_at < CURRENT_TIMESTAMP - INTERVAL '7 days')`;
             }
+            if (criteria.contentType === 'username') {
+                query += ` AND id NOT IN (
+          SELECT DISTINCT assigned_text_id 
+          FROM account_warmup_phases 
+          WHERE phase = 'username' 
+          AND assigned_text_id IS NOT NULL
+        )`;
+            }
             query += ` ORDER BY quality_score DESC, assignment_count ASC, RANDOM() LIMIT 1`;
             const result = await database_1.db.query(query, params);
             return result.rows.length > 0 ? result.rows[0] : null;
