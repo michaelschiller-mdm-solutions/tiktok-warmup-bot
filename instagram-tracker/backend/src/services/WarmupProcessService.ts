@@ -1822,6 +1822,7 @@ export class WarmupProcessService {
         gender: "change_gender_to_female.lua",
         name: "change_name_to_clipboard.lua",
         username: "change_username_to_clipboard.lua",
+        profile_picture: "change_pfp_to_newest_picture.lua",
         first_highlight:
           "upload_first_highlight_group_with_clipboard_name_newest_media_no_caption.lua",
         new_highlight:

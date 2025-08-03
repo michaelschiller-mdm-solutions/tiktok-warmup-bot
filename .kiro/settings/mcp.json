@@ -11,7 +11,10 @@
         "browser_click",
         "browser_type",
         "browser_wait",
-        "browser_snapshot"
+        "browser_snapshot",
+        "browser_screenshot",
+        "browser_press_key",
+        "browser_get_console_logs"
       ]
     }
   }

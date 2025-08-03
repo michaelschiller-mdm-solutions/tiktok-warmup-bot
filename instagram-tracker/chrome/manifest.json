@@ -70,6 +70,10 @@
     {
       "resources": [
         "content/sidebar.css",
+        "content/enhanced-queue-manager.js",
+        "content/human-behavior.js",
+        "content/instagram-interface.js",
+        "content/automation-engine.js",
         "icons/*"
       ],
       "matches": [
