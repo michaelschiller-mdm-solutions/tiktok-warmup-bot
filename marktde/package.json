@@ -1,0 +1,17 @@
+{
+  "name": "markt-de-scraper",
+  "version": "1.0.0",
+  "description": "Automated scraper for markt.de profile pages",
+  "main": "markt-de-scraper-automated.js",
+  "scripts": {
+    "start": "node markt-de-scraper-automated.js",
+    "install-browsers": "npx playwright install chromium",
+    "setup": "npm install && npm run install-browsers"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
+  },
+  "keywords": ["scraper", "markt.de", "automation", "playwright"],
+  "author": "",
+  "license": "MIT"
+}
