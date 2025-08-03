@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Instagram Automation</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <div class="popup-header">
+      <div class="header-content">
+        <img src="../icons/icon32.png" alt="Instagram Automation" class="header-icon">
+        <h1>Instagram Automation</h1>
+      </div>
+      <div class="status-indicator" id="status-indicator">
+        <span class="status-dot"></span>
+        <span class="status-text">Ready</span>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="popup-content">
+      <!-- Quick Stats -->
+      <div class="stats-section">
+        <div class="stat-card">
+          <div class="stat-number" id="daily-follows">0</div>
+          <div class="stat-label">Follows Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="daily-unfollows">0</div>
+          <div class="stat-label">Unfollows Today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="queue-total">0</div>
+          <div class="stat-label">In Queue</div>
+        </div>
+      </div>
+
+      <!-- Current Action -->
+      <div class="current-action-section">
+        <h3>Current Status</h3>
+        <div class="current-action" id="current-action">
+          <div class="action-text">Ready to start</div>
+          <div class="action-details"></div>
+        </div>
+      </div>
+
+      <!-- Quick Controls -->
+      <div class="controls-section">
+        <h3>Quick Controls</h3>
+        <div class="control-buttons">
+          <button id="start-btn" class="btn btn-primary">
+            <span class="btn-icon">▶</span>
+            Start
+          </button>
+          <button id="pause-btn" class="btn btn-secondary" disabled>
+            <span class="btn-icon">⏸</span>
+            Pause
+          </button>
+          <button id="stop-btn" class="btn btn-danger" disabled>
+            <span class="btn-icon">⏹</span>
+            Stop
+          </button>
+        </div>
+      </div>
+
+      <!-- File Upload -->
+      <div class="upload-section">
+        <h3>Upload Accounts</h3>
+        <div class="upload-area" id="upload-area">
+          <input type="file" id="file-input" accept=".csv,.txt" style="display: none;">
+          <div class="upload-content">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">
+              <p>Drop CSV/TXT file here</p>
+              <small>or click to browse</small>
+            </div>
+          </div>
+        </div>
+        <div id="upload-status" class="upload-status"></div>
+      </div>
+
+      <!-- Quick Settings -->
+      <div class="settings-section">
+        <h3>Daily Limits</h3>
+        <div class="settings-grid">
+          <div class="setting-row">
+            <label for="follow-limit">Follow Limit:</label>
+            <input type="number" id="follow-limit" min="1" max="200" value="100">
+          </div>
+          <div class="setting-row">
+            <label for="unfollow-limit">Unfollow Limit:</label>
+            <input type="number" id="unfollow-limit" min="1" max="200" value="100">
+          </div>
+        </div>
+        <button id="save-limits-btn" class="btn btn-secondary btn-small">Save Limits</button>
+      </div>
+
+      <!-- Test Actions -->
+      <div class="test-section">
+        <h3>Test Actions</h3>
+        <div class="test-controls">
+          <input type="text" id="test-username-popup" placeholder="Enter username to test" maxlength="30">
+          <div class="test-buttons">
+            <button id="test-follow-popup-btn" class="btn btn-test">Test Follow</button>
+            <button id="test-unfollow-popup-btn" class="btn btn-test">Test Unfollow</button>
+          </div>
+          <div id="test-status-popup" class="test-status"></div>
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="activity-section">
+        <h3>Recent Activity</h3>
+        <div class="activity-list" id="activity-list">
+          <div class="no-activity">No recent activity</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="popup-footer">
+      <div class="footer-links">
+        <button id="open-instagram-btn" class="link-btn">Open Instagram</button>
+        <button id="view-logs-btn" class="link-btn">View Logs</button>
+        <button id="settings-btn" class="link-btn">Settings</button>
+      </div>
+      <div class="footer-info">
+        <small>v1.0.0 • Anti-Detection Enabled</small>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loading-overlay" style="display: none;">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">Loading...</div>
+  </div>
+
+  <!-- Error Toast -->
+  <div class="error-toast" id="error-toast" style="display: none;">
+    <div class="toast-content">
+      <span class="toast-icon">⚠️</span>
+      <span class="toast-message"></span>
+    </div>
+  </div>
+
+  <!-- Success Toast -->
+  <div class="success-toast" id="success-toast" style="display: none;">
+    <div class="toast-content">
+      <span class="toast-icon">✅</span>
+      <span class="toast-message"></span>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
