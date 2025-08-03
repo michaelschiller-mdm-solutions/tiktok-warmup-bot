@@ -43,6 +43,7 @@
       "js": [
         "content/human-behavior.js",
         "content/instagram-interface.js",
+        "content/enhanced-queue-manager.js",
         "content/automation-engine.js",
         "content/content-script.js"
       ],

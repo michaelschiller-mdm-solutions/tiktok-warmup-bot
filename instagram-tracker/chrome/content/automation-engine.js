@@ -421,10 +421,10 @@ class AutomationEngine {
     return baseDelay * Math.pow(multiplier, retryCount - 1) * (1 + jitter);
   }
 
-  // Wait for next action with human-like timing
+  // Wait for next action with human-like timing and behavior
   async waitForNextAction() {
-    const minInterval = this.state.settings.timingLimits.minActionInterval;
-    const maxInterval = this.state.settings.timingLimits.maxActionInterval;
+    const minInterval = this.state.settings.timingLimits.minActionInterval || 60000;
+    const maxInterval = this.state.settings.timingLimits.maxActionInterval || 300000;
     
     const baseDelay = minInterval + Math.random() * (maxInterval - minInterval);
     
@@ -434,7 +434,173 @@ class AutomationEngine {
     
     console.log(`Waiting ${Math.round(finalDelay / 1000)} seconds before next action`);
     
-    await this.humanBehavior.delay(finalDelay);
+    // Execute human behavior during wait time
+    await this.executeHumanBehaviorDuringWait(finalDelay);
+  }
+
+  // Execute human-like behavior during wait periods
+  async executeHumanBehaviorDuringWait(totalWaitTime) {
+    const behaviorSettings = this.state.settings.humanBehavior || {};
+    const scrollProbability = behaviorSettings.scrollProbability || 0.7;
+    const idleProbability = behaviorSettings.idleProbability || 0.25;
+    
+    let remainingTime = totalWaitTime;
+    
+    while (remainingTime > 5000) { // Continue until less than 5 seconds remain
+      const behaviorChoice = Math.random();
+      
+      if (behaviorChoice < scrollProbability) {
+        // Scroll home feed
+        console.log('🏠 Scrolling home feed during wait...');
+        const scrollTime = await this.scrollHomeFeed();
+        remainingTime -= scrollTime;
+        
+      } else if (behaviorChoice < scrollProbability + idleProbability) {
+        // Idle behavior (just wait and do nothing)
+        console.log('😴 Idle behavior - simulating reading/thinking...');
+        const idleTime = await this.simulateIdleBehavior();
+        remainingTime -= idleTime;
+        
+      } else {
+        // Regular wait
+        const waitTime = Math.min(remainingTime, 10000 + Math.random() * 20000);
+        await this.humanBehavior.delay(waitTime);
+        remainingTime -= waitTime;
+      }
+      
+      // Small buffer between behaviors
+      if (remainingTime > 2000) {
+        await this.humanBehavior.delay(1000 + Math.random() * 2000);
+        remainingTime -= 2000;
+      }
+    }
+    
+    // Wait remaining time
+    if (remainingTime > 0) {
+      await this.humanBehavior.delay(remainingTime);
+    }
+  }
+
+  // Scroll home feed naturally
+  async scrollHomeFeed() {
+    const behaviorSettings = this.state.settings.humanBehavior || {};
+    const scrollDuration = behaviorSettings.scrollDuration || 15000;
+    
+    try {
+      // Navigate to home if not already there
+      if (!window.location.pathname.includes('/') || window.location.pathname.length > 1) {
+        console.log('📱 Navigating to home feed...');
+        
+        // Find home button
+        const homeButton = document.querySelector('a[href="/"]') || 
+                          document.querySelector('svg[aria-label="Home"]')?.closest('a');
+        
+        if (homeButton) {
+          await this.humanBehavior.navigateToElement(homeButton);
+          await this.humanBehavior.delay(200 + Math.random() * 300);
+          homeButton.click();
+          
+          // Wait for page load
+          await this.humanBehavior.delay(2000 + Math.random() * 2000);
+        }
+      }
+      
+      // Perform natural scrolling
+      const startTime = Date.now();
+      const endTime = startTime + scrollDuration;
+      
+      while (Date.now() < endTime) {
+        // Random scroll amount and direction
+        const scrollAmount = 200 + Math.random() * 400;
+        const scrollDirection = Math.random() > 0.1 ? 1 : -1; // 90% down, 10% up
+        
+        window.scrollBy({
+          top: scrollAmount * scrollDirection,
+          behavior: 'smooth'
+        });
+        
+        // Random pause between scrolls (simulating reading)
+        const pauseTime = 1000 + Math.random() * 3000;
+        await this.humanBehavior.delay(pauseTime);
+        
+        // Occasionally interact with posts (like, save, etc.)
+        if (Math.random() < 0.1) { // 10% chance
+          await this.simulatePostInteraction();
+        }
+      }
+      
+      console.log(`✅ Scrolled home feed for ${Math.round(scrollDuration / 1000)} seconds`);
+      return scrollDuration;
+      
+    } catch (error) {
+      console.error('Error scrolling home feed:', error);
+      return 5000; // Return minimum time if error
+    }
+  }
+
+  // Simulate idle behavior (reading, thinking)
+  async simulateIdleBehavior() {
+    const behaviorSettings = this.state.settings.humanBehavior || {};
+    const idleDuration = behaviorSettings.idleDuration || 30000;
+    
+    // Add some variation to idle time
+    const actualIdleTime = idleDuration * (0.7 + Math.random() * 0.6);
+    
+    // Occasionally move mouse slightly during idle time
+    const idleStartTime = Date.now();
+    while (Date.now() - idleStartTime < actualIdleTime) {
+      // Small mouse movements every 5-10 seconds
+      if (Math.random() < 0.3) {
+        await this.humanBehavior.simulateIdleMovements();
+      }
+      
+      // Wait 5-10 seconds before next check
+      await this.humanBehavior.delay(5000 + Math.random() * 5000);
+    }
+    
+    console.log(`✅ Idle behavior completed (${Math.round(actualIdleTime / 1000)} seconds)`);
+    return actualIdleTime;
+  }
+
+  // Simulate post interactions during scrolling
+  async simulatePostInteraction() {
+    try {
+      // Find visible posts
+      const posts = document.querySelectorAll('article');
+      const visiblePosts = Array.from(posts).filter(post => {
+        const rect = post.getBoundingClientRect();
+        return rect.top >= 0 && rect.top <= window.innerHeight;
+      });
+      
+      if (visiblePosts.length === 0) return;
+      
+      const randomPost = visiblePosts[Math.floor(Math.random() * visiblePosts.length)];
+      const interactionType = Math.random();
+      
+      if (interactionType < 0.3) {
+        // Like post
+        const likeButton = randomPost.querySelector('svg[aria-label="Like"]')?.closest('button');
+        if (likeButton) {
+          console.log('❤️ Liking post during scroll...');
+          await this.humanBehavior.navigateToElement(likeButton);
+          await this.humanBehavior.delay(300 + Math.random() * 500);
+          likeButton.click();
+        }
+      } else if (interactionType < 0.4) {
+        // Save post
+        const saveButton = randomPost.querySelector('svg[aria-label="Save"]')?.closest('button');
+        if (saveButton) {
+          console.log('💾 Saving post during scroll...');
+          await this.humanBehavior.navigateToElement(saveButton);
+          await this.humanBehavior.delay(300 + Math.random() * 500);
+          saveButton.click();
+        }
+      }
+      // 60% chance of no interaction (just scrolling)
+      
+    } catch (error) {
+      console.log('Could not interact with post:', error.message);
+    }
   }
 
   // Execute unpredictable behavior
