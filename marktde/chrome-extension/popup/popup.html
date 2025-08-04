@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <div class="header">
+      <h2>Markt.de DM Bot</h2>
+      <div class="status-indicator" id="statusIndicator">
+        <span class="status-dot"></span>
+        <span class="status-text">Disconnected</span>
+      </div>
+    </div>
+    
+    <!-- Login Section -->
+    <div class="section" id="loginSection">
+      <h3>Login Configuration</h3>
+      <div class="input-group">
+        <input type="email" id="emailInput" placeholder="Email" value="jodie@kodo-marketing.de">
+        <input type="password" id="passwordInput" placeholder="Password" value="PW%xZ,kjb5CF_R*">
+      </div>
+      <button id="loginButton" class="btn btn-primary">Login to Markt.de</button>
+      <div class="login-status" id="loginStatus"></div>
+    </div>
+    
+    <!-- Campaign Section -->
+    <div class="section" id="campaignSection" style="display: none;">
+      <h3>Campaign Management</h3>
+      <div class="file-upload">
+        <input type="file" id="csvUpload" accept=".csv" style="display: none;">
+        <button id="csvUploadBtn" class="btn btn-secondary">Upload Target Accounts CSV</button>
+        <div class="file-info" id="fileInfo"></div>
+      </div>
+      <div class="campaign-controls">
+        <button id="startCampaign" class="btn btn-success">Start Campaign</button>
+        <button id="stopCampaign" class="btn btn-danger" style="display: none;">Stop Campaign</button>
+      </div>
+    </div>
+    
+    <!-- Progress Section -->
+    <div class="section" id="progressSection" style="display: none;">
+      <h3>Progress</h3>
+      <div class="stats">
+        <div class="stat">
+          <span class="label">Processed:</span>
+          <span id="processedCount">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">Successful:</span>
+          <span id="successCount">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">Failed:</span>
+          <span id="failedCount">0</span>
+        </div>
+        <div class="stat">
+          <span class="label">Success Rate:</span>
+          <span id="successRate">0%</span>
+        </div>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
+      </div>
+      <div class="current-account" id="currentAccount"></div>
+    </div>
+    
+    <!-- Settings Section -->
+    <div class="section collapsible" id="settingsSection">
+      <h3 class="section-header" data-target="settingsContent">
+        Settings
+        <span class="toggle-icon">▼</span>
+      </h3>
+      <div class="section-content" id="settingsContent" style="display: none;">
+        <label>
+          Max Accounts per Session:
+          <input type="number" id="maxAccounts" value="50" min="1" max="100">
+        </label>
+        <label>
+          Delay between accounts (seconds):
+          <input type="number" id="accountDelay" value="5" min="3" max="30">
+        </label>
+        <label>
+          DM Message Template:
+          <textarea id="messageTemplate" rows="4">Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findestund mich kennenlerenen willst schreib mir doch auf Telegram @</textarea>
+        </label>
+        <button id="saveSettings" class="btn btn-secondary">Save Settings</button>
+      </div>
+    </div>
+    
+    <!-- Logs Section -->
+    <div class="section collapsible" id="logsSection">
+      <h3 class="section-header" data-target="logsContent">
+        Recent Activity
+        <span class="toggle-icon">▼</span>
+      </h3>
+      <div class="section-content" id="logsContent" style="display: none;">
+        <div class="logs-container" id="logsContainer">
+          <div class="log-entry info">Extension initialized</div>
+        </div>
+        <div class="logs-controls">
+          <button id="clearLogs" class="btn btn-secondary">Clear Logs</button>
+          <button id="exportLogs" class="btn btn-secondary">Export Logs</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

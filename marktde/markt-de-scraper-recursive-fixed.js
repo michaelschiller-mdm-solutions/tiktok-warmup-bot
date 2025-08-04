@@ -1,14 +1,22 @@
 /*
- * Markt.de Recursive Network Scraper - Multi-Tab Version with Timeouts
+ * Fixed Markt.de Recursive Network Scraper - Multi-Tab Version
  * 
  * This advanced scraper runs 5 browser tabs simultaneously and recursively
  * scrapes through host accounts to build a massive network of accounts.
  * 
+ * Key Fixes Applied:
+ * - Robust cookie consent handling from working automated scraper
+ * - Removed premature timeout-based tab closures
+ * - Fixed queue management for proper recursive processing
+ * - Added 2-retry system for failed accounts
+ * - Improved modal interaction to prevent click interception
+ * - Enhanced account extraction logic
+ * 
  * Features:
- * - 5 concurrent browser tabs
+ * - 5 concurrent browser tabs (no premature closures)
  * - Recursive scraping (each host account gets scraped)
- * - Account timeouts to prevent long-running accounts
- * - Pagination limits to control scraping time
+ * - No time limits - accounts can take 10+ minutes if needed
+ * - 2-retry system for failed accounts
  * - Tracks processed accounts to avoid duplicates
  * - Progressive CSV saving with batch processing
  * - Network effect: exponential account discovery
@@ -28,27 +36,28 @@ const path = require('path');
 // Configuration
 const CONFIG = {
     // Starting profile URL
-    startingProfileUrl: 'https://www.markt.de/dinademona/userId,19354400/profile.htm',
+    startingProfileUrl: 'https://www.markt.de/lehrerinpam/userId,23305704/profile.htm',
 
     // Multi-tab configuration
-    concurrentTabs: 5,          // Number of simultaneous browser tabs
+    concurrentTabs: 10,          // Number of simultaneous browser tabs
     maxDepth: 3,                // Maximum recursion depth (0 = starting profile, 1 = first level hosts, etc.)
-    maxAccountsPerLevel: 50,    // Maximum accounts to process per recursion level
+    maxAccountsPerLevel: 500,    // Maximum accounts to process per recursion level
 
     delays: {
         pageLoad: 3000,         // Wait for page to load
         modalLoad: 2000,        // Wait for modal to open
-        loadMore: 1000,         // Wait between "Mehr Likes laden" clicks (faster for bulk)
-        extraction: 200,        // Wait between account extractions (faster)
-        betweenModals: 1500,    // Wait between host and target scraping
-        tabDelay: 500          // Delay between starting new tabs
+        loadMore: 1200,         // Wait between "Mehr Likes laden" clicks (from working scraper)
+        extraction: 300,        // Wait between account extractions (from working scraper)
+        betweenModals: 2000,    // Wait between host and target scraping (from working scraper)
+        tabDelay: 500,          // Delay between starting new tabs
+        cookieConsent: 1500     // Wait for cookie dialog to appear
     },
 
     limits: {
-        maxPaginationClicks: 30,    // Maximum "Mehr Likes laden" clicks per modal
-        maxAccountsPerModal: 300,   // Maximum accounts to extract per modal
-        accountTimeout: 120000,     // Maximum time per account (2 minutes)
-        navigationTimeout: 30000    // Page navigation timeout
+        maxPaginationClicks: 9999,   // Maximum "Mehr Likes laden" clicks per modal (from working scraper)
+        maxAccountsPerModal: 9999,   // Maximum accounts to extract per modal
+        navigationTimeout: 30000,   // Page navigation timeout
+        maxRetries: 2              // Maximum retries per account
     },
 
     selectors: {
@@ -65,12 +74,12 @@ const CONFIG = {
         targetFilename: './marktde/target_accounts.csv',
         processedFilename: './marktde/processed_accounts.csv',
         queueFilename: './marktde/queue_accounts.csv',
-        batchSize: 15  // Save every 15 accounts for faster processing
+        batchSize: 20  // Save every 20 accounts (from working scraper)
     },
 
     browser: {
-        headless: false,        // Set to true to run without GUI
-        slowMo: 100,           // Faster for bulk processing
+        headless: true,        // Set to true to run without GUI
+        slowMo: 500,           // From working scraper
         viewport: { width: 1280, height: 720 }
     }
 };
@@ -98,6 +107,20 @@ class Utils {
     static buildProfileUrl(name, userId) {
         const cleanName = name.replace(/\s+/g, '+').toLowerCase();
         return `https://www.markt.de/${cleanName}/userId,${userId}/profile.htm`;
+    }
+
+    static sanitizeForCSV(text) {
+        if (!text) return '';
+        
+        // Remove any existing quotes and escape special characters
+        let sanitized = text.replace(/"/g, '""');
+        
+        // Wrap in quotes if contains comma, newline, or quote
+        if (sanitized.includes(',') || sanitized.includes('\n') || sanitized.includes('"')) {
+            sanitized = `"${sanitized}"`;
+        }
+        
+        return sanitized;
     }
 }
 
@@ -223,6 +246,8 @@ class CSVManager {
     }
 
     markAsProcessed(account, depth, status = 'completed') {
+        this.processedIds.add(account.userId);
+        
         const processedEntry = {
             ...account,
             depth: depth,
@@ -247,28 +272,28 @@ class CSVManager {
             case 'host':
                 filename = CONFIG.csv.hostFilename;
                 csvRows = accounts.map(account =>
-                    `${this.escapeCSVField(account.name)},${account.userId},"${account.link}"`
+                    `${Utils.sanitizeForCSV(account.name)},${account.userId},"${account.link}"`
                 ).join('\n') + '\n';
                 break;
 
             case 'target':
                 filename = CONFIG.csv.targetFilename;
                 csvRows = accounts.map(account =>
-                    `${this.escapeCSVField(account.name)},${account.userId},"${account.link}"`
+                    `${Utils.sanitizeForCSV(account.name)},${account.userId},"${account.link}"`
                 ).join('\n') + '\n';
                 break;
 
             case 'processed':
                 filename = CONFIG.csv.processedFilename;
                 csvRows = accounts.map(account =>
-                    `${this.escapeCSVField(account.name)},${account.userId},"${account.link}",${account.depth},${account.timestamp},${account.status}`
+                    `${Utils.sanitizeForCSV(account.name)},${account.userId},"${account.link}",${account.depth},${account.timestamp},${account.status}`
                 ).join('\n') + '\n';
                 break;
 
             case 'queue':
                 filename = CONFIG.csv.queueFilename;
                 csvRows = accounts.map(account =>
-                    `${this.escapeCSVField(account.name)},${account.userId},"${account.link}",${account.depth},${account.added_timestamp}`
+                    `${Utils.sanitizeForCSV(account.name)},${account.userId},"${account.link}",${account.depth},${account.added_timestamp}`
                 ).join('\n') + '\n';
                 break;
 
@@ -372,16 +397,9 @@ class CSVManager {
         result.push(current.trim().replace(/^"|"$/g, '')); // Remove surrounding quotes
         return result;
     }
-
-    escapeCSVField(field) {
-        if (field && (field.includes(',') || field.includes('"') || field.includes('\n'))) {
-            return `"${field.replace(/"/g, '""')}"`;
-        }
-        return field;
-    }
 }
 
-// Data Extractor Class
+// Data Extractor Class - Using proven logic from working scraper
 class DataExtractor {
     static parseProfileUrl(href) {
         try {
@@ -392,60 +410,69 @@ class DataExtractor {
         }
     }
 
-    static async extractAccountsFromModal(page, tabId) {
-        try {
-            const accountBoxes = await page.$$(CONFIG.selectors.accountBox);
+    // Using the proven extraction logic from the working automated scraper
+    static async extractAccountsFromPage(page) {
+        return await page.evaluate((selectors) => {
             const accounts = [];
-
-            for (const box of accountBoxes) {
+            const accountBoxes = document.querySelectorAll(selectors.accountBox);
+            
+            accountBoxes.forEach((box, index) => {
                 try {
-                    const nameElement = await box.$('.clsy-c-userbox__name a');
-                    const linkElement = await box.$('.clsy-c-userbox__name a');
-
-                    if (nameElement && linkElement) {
-                        const name = await nameElement.textContent();
-                        const href = await linkElement.getAttribute('href');
-                        const userId = DataExtractor.parseProfileUrl(href);
-
-                        if (name && userId && href) {
-                            const fullUrl = href.startsWith('http') ? href : `https://www.markt.de${href}`;
-                            accounts.push({
-                                name: name.trim(),
-                                userId: userId,
-                                link: fullUrl
-                            });
+                    const link = box.getAttribute('href');
+                    
+                    // Skip anonymous accounts
+                    if (!link || link === '#') {
+                        return;
+                    }
+                    
+                    const nameElement = box.querySelector('.clsy-c-userbox__profile-name');
+                    if (!nameElement) {
+                        return;
+                    }
+                    
+                    const name = nameElement.textContent.trim();
+                    const userIdMatch = link.match(/userId,(\d+)/);
+                    const userId = userIdMatch ? userIdMatch[1] : null;
+                    
+                    if (userId && name) {
+                        // Sanitize name for CSV
+                        let sanitizedName = name.replace(/"/g, '""');
+                        if (sanitizedName.includes(',') || sanitizedName.includes('\n') || sanitizedName.includes('"')) {
+                            sanitizedName = `"${sanitizedName}"`;
                         }
+                        
+                        const fullUrl = link.startsWith('http') ? link : `https://www.markt.de${link}`;
+                        
+                        accounts.push({
+                            name: sanitizedName,
+                            userId: userId,
+                            link: fullUrl
+                        });
                     }
                 } catch (error) {
-                    // Skip individual account extraction errors
-                    continue;
+                    console.log(`Error extracting account at index ${index}:`, error);
                 }
-            }
-
+            });
+            
             return accounts;
-        } catch (error) {
-            Utils.log(`Account extraction error: ${error.message}`, 'error', tabId);
-            return [];
-        }
+        }, CONFIG.selectors);
     }
 }
 
-// Modal Handler Class
+// Modal Handler Class - Enhanced with working scraper logic
 class ModalHandler {
     static async openModal(page, buttonSelector, modalType, tabId) {
         try {
             Utils.log(`Opening ${modalType} modal...`, 'info', tabId);
             
-            const button = await page.$(buttonSelector);
-            if (!button) {
-                throw new Error(`${modalType} button not found`);
-            }
-
-            await button.click();
-            await Utils.sleep(CONFIG.delays.modalLoad);
-
-            // Wait for modal to be visible
+            // Wait for button to be visible and click it
+            await page.waitForSelector(buttonSelector, { timeout: 10000 });
+            await page.click(buttonSelector);
+            
+            // Wait for modal to appear
             await page.waitForSelector(CONFIG.selectors.modal, { timeout: 10000 });
+            await Utils.sleep(CONFIG.delays.modalLoad);
+            
             Utils.log(`${modalType} modal opened successfully`, 'info', tabId);
             
         } catch (error) {
@@ -453,80 +480,115 @@ class ModalHandler {
         }
     }
 
+    // Using the proven pagination logic from the working automated scraper
     static async loadAllAccounts(page, csvManager, filename, modalType, tabId) {
-        const allAccounts = [];
+        let allAccounts = [];
         let loadMoreClicks = 0;
         let consecutiveNoNewAccounts = 0;
-        let consecutiveClickFailures = 0;
+        let consecutiveFailedClicks = 0;
         const type = modalType.toLowerCase();
 
         Utils.log(`Starting ${modalType} account extraction...`, 'info', tabId);
 
-        while (loadMoreClicks < CONFIG.limits.maxPaginationClicks && allAccounts.length < CONFIG.limits.maxAccountsPerModal) {
-            try {
-                // Extract accounts from current page
-                const newAccounts = await DataExtractor.extractAccountsFromModal(page, tabId);
-                const addedCount = csvManager.addAccountsToBatch(newAccounts, type);
-                
-                if (addedCount > 0) {
-                    allAccounts.push(...newAccounts.slice(0, addedCount));
-                    consecutiveNoNewAccounts = 0;
-                    Utils.log(`📊 Extracted ${addedCount} new accounts (total: ${allAccounts.length})`, 'info', tabId);
-                } else {
-                    consecutiveNoNewAccounts++;
-                }
-
-                // Check for load more button
-                const loadMoreButton = await page.$(CONFIG.selectors.loadMoreButton);
-                if (!loadMoreButton) {
-                    Utils.log('✅ Pagination complete - no more button', 'info', tabId);
-                    break;
-                }
-
-                // Stop if no new accounts for too long
-                if (consecutiveNoNewAccounts >= 5) {
-                    Utils.log('⚠️ No new accounts in 5 attempts, stopping pagination', 'warning', tabId);
-                    break;
-                }
-
-                // Stop if too many click failures
-                if (consecutiveClickFailures >= 3) {
-                    Utils.log('⚠️ Too many consecutive click failures, stopping pagination', 'warning', tabId);
-                    break;
-                }
-
-                try {
-                    Utils.log(`🔄 Clicking "Mehr Likes laden" button (click #${loadMoreClicks + 1})...`, 'info', tabId);
-                    await loadMoreButton.click();
-                    loadMoreClicks++;
-                    consecutiveClickFailures = 0;
-                    await Utils.sleep(CONFIG.delays.loadMore);
-
-                    if (loadMoreClicks % 10 === 0) {
-                        Utils.log(`📈 Progress: ${loadMoreClicks} clicks, ${allAccounts.length} accounts`, 'info', tabId);
-                    }
-
-                } catch (error) {
-                    consecutiveClickFailures++;
-                    Utils.log(`❌ Click failed (attempt ${consecutiveClickFailures}): ${error.message}`, 'warning', tabId);
-                    
-                    if (consecutiveClickFailures >= 3) {
-                        Utils.log('⚠️ Too many click failures, stopping pagination', 'warning', tabId);
-                        break;
-                    }
-                    
-                    // Wait a bit longer before retrying
-                    await Utils.sleep(CONFIG.delays.loadMore * 2);
-                }
-
-            } catch (extractionError) {
-                Utils.log(`Extraction error in ${modalType}: ${extractionError.message}`, 'error', tabId);
+        while (true) {
+            // Extract current accounts using proven logic
+            const currentAccounts = await DataExtractor.extractAccountsFromPage(page);
+            
+            // Filter out accounts we already have in this session
+            const newAccounts = currentAccounts.filter(account => 
+                !allAccounts.some(existing => existing.userId === account.userId)
+            );
+            
+            allAccounts.push(...newAccounts);
+            
+            Utils.log(`📊 Extracted ${newAccounts.length} new accounts (session total: ${allAccounts.length})`, 'info', tabId);
+            
+            // Add to batch for saving
+            if (newAccounts.length > 0) {
+                csvManager.addAccountsToBatch(newAccounts, type);
+                consecutiveNoNewAccounts = 0;
+            } else {
+                consecutiveNoNewAccounts++;
+            }
+            
+            // Look for "Mehr Likes laden" button with multiple selectors (from working scraper)
+            let loadMoreButton = await page.$(CONFIG.selectors.loadMoreButton);
+            
+            // Try alternative selectors if primary doesn't work
+            if (!loadMoreButton) {
+                loadMoreButton = await page.$('.clsy-c-endlessScrolling span');
+            }
+            if (!loadMoreButton) {
+                loadMoreButton = await page.$('[class*="endlessScrolling"] span');
+            }
+            if (!loadMoreButton) {
+                loadMoreButton = await page.$('span:has-text("Mehr Likes laden")');
+            }
+            
+            if (!loadMoreButton) {
+                Utils.log('✅ No "Mehr Likes laden" button found - pagination complete', 'info', tabId);
                 break;
+            }
+            
+            // Check if button is visible and clickable
+            const isVisible = await loadMoreButton.isVisible().catch(() => false);
+            const isEnabled = await loadMoreButton.isEnabled().catch(() => false);
+            
+            if (!isVisible || !isEnabled) {
+                Utils.log('✅ "Mehr Likes laden" button not clickable - pagination complete', 'info', tabId);
+                break;
+            }
+            
+            // Stop if we haven't found new accounts in many attempts
+            if (consecutiveNoNewAccounts >= 5) {
+                Utils.log('⚠️ No new accounts found in 5 consecutive attempts, stopping pagination', 'warning', tabId);
+                break;
+            }
+            
+            // Click load more button with retry logic
+            Utils.log(`🔄 Clicking "Mehr Likes laden" button (click #${loadMoreClicks + 1})...`, 'info', tabId);
+            
+            try {
+                await loadMoreButton.click();
+                consecutiveFailedClicks = 0;
+                loadMoreClicks++;
+                
+                // Wait for new content to load
+                await Utils.sleep(CONFIG.delays.loadMore);
+                
+                // Additional wait if we've clicked many times
+                if (loadMoreClicks > 20) {
+                    await Utils.sleep(1000);
+                }
+                
+            } catch (error) {
+                consecutiveFailedClicks++;
+                Utils.log(`❌ Failed to click "Mehr Likes laden" button (attempt ${consecutiveFailedClicks}): ${error.message}`, 'warning', tabId);
+                
+                if (consecutiveFailedClicks >= 3) {
+                    Utils.log('❌ Failed to click button 3 times in a row, stopping pagination', 'warning', tabId);
+                    break;
+                }
+                
+                // Wait longer before retry
+                await Utils.sleep(2000);
+            }
+            
+            // Use the higher limit from working scraper
+            if (loadMoreClicks >= CONFIG.limits.maxPaginationClicks) {
+                Utils.log(`⚠️ Reached maximum pagination clicks (${CONFIG.limits.maxPaginationClicks}), stopping`, 'warning', tabId);
+                break;
+            }
+            
+            // Progress update every 10 clicks
+            if (loadMoreClicks % 10 === 0) {
+                Utils.log(`📈 Progress: ${loadMoreClicks} clicks, ${allAccounts.length} accounts extracted so far`, 'info', tabId);
             }
         }
 
         // Save any remaining accounts
         csvManager.saveBatch(type);
+        
         Utils.log(`✅ ${modalType} complete: ${allAccounts.length} accounts after ${loadMoreClicks} clicks`, 'success', tabId);
         return allAccounts;
     }
@@ -539,47 +601,18 @@ class ModalHandler {
                 return;
             }
 
-            // Try multiple methods to close modal
-            let modalClosed = false;
-
-            // Method 1: Close button
-            try {
-                const closeButton = await page.$(CONFIG.selectors.closeButton);
-                if (closeButton) {
-                    const isVisible = await closeButton.isVisible().catch(() => false);
-                    if (isVisible) {
-                        await closeButton.click();
-                        modalClosed = true;
-                        Utils.log('Modal closed using close button', 'info', tabId);
-                    }
-                }
-            } catch (error) {
-                Utils.log(`Close button method failed: ${error.message}`, 'warning', tabId);
+            // Try to find and click close button
+            const closeButton = await page.$(CONFIG.selectors.closeButton);
+            if (closeButton) {
+                await closeButton.click();
+                Utils.log('Modal closed with close button', 'info', tabId);
+            } else {
+                // Try pressing Escape key
+                await page.keyboard.press('Escape');
+                Utils.log('Modal closed with Escape key', 'info', tabId);
             }
-
-            // Method 2: Escape key
-            if (!modalClosed) {
-                try {
-                    await page.keyboard.press('Escape');
-                    modalClosed = true;
-                    Utils.log('Modal closed using Escape key', 'info', tabId);
-                } catch (error) {
-                    Utils.log(`Escape key method failed: ${error.message}`, 'warning', tabId);
-                }
-            }
-
-            // Method 3: Click outside modal
-            if (!modalClosed) {
-                try {
-                    await page.click('body', { position: { x: 10, y: 10 } });
-                    Utils.log('Modal closed by clicking outside', 'info', tabId);
-                } catch (error) {
-                    Utils.log(`Click outside method failed: ${error.message}`, 'warning', tabId);
-                }
-            }
-
-            await Utils.sleep(1500); // Give time for modal to close
-
+            
+            await Utils.sleep(1000);
         } catch (error) {
             Utils.log(`Error closing modal: ${error.message}`, 'warning', tabId);
         }
@@ -602,29 +635,32 @@ class TabScraper {
     async scrapeAccount(page, account, depth) {
         let hostAccounts = [];
         let targetAccounts = [];
-        let accountCompleted = false;
-        const startTime = Date.now();
+        let retryCount = 0;
 
-        try {
-            // Set up timeout for the entire account scraping
-            const timeoutPromise = new Promise((_, reject) => {
-                setTimeout(() => reject(new Error('Account timeout after 2 minutes')), CONFIG.limits.accountTimeout);
-            });
-
-            // Wrap the scraping logic in a timeout
-            await Promise.race([
-                this.scrapeAccountCore(page, account, depth, hostAccounts, targetAccounts),
-                timeoutPromise
-            ]);
-
-            accountCompleted = true;
-
-        } catch (error) {
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-            Utils.log(`❌ Failed to scrape ${account.name} after ${elapsed}s: ${error.message}`, 'error', this.tabId);
-            this.csvManager.markAsProcessed(account, depth, 'failed');
-            this.stats.errors++;
-            return;
+        while (retryCount <= CONFIG.limits.maxRetries) {
+            try {
+                const startTime = Date.now();
+                
+                // No timeout - let it run as long as needed
+                await this.scrapeAccountCore(page, account, depth, hostAccounts, targetAccounts);
+                
+                // Success - break out of retry loop
+                break;
+                
+            } catch (error) {
+                retryCount++;
+                const elapsed = ((Date.now() - Date.now()) / 1000).toFixed(1);
+                
+                if (retryCount <= CONFIG.limits.maxRetries) {
+                    Utils.log(`❌ Attempt ${retryCount} failed for ${account.name}: ${error.message}. Retrying...`, 'warning', this.tabId);
+                    await Utils.sleep(5000); // Wait before retry
+                } else {
+                    Utils.log(`❌ Failed to scrape ${account.name} after ${CONFIG.limits.maxRetries} retries: ${error.message}`, 'error', this.tabId);
+                    this.csvManager.markAsProcessed(account, depth, 'failed');
+                    this.stats.errors++;
+                    return;
+                }
+            }
         }
 
         // Add host accounts to queue for recursive scraping (if within depth limit)
@@ -640,8 +676,8 @@ class TabScraper {
         this.stats.hostAccountsFound += hostAccounts.length;
         this.stats.targetAccountsFound += targetAccounts.length;
 
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        Utils.log(`✅ Completed: ${account.name} | H:${hostAccounts.length} T:${targetAccounts.length} (${elapsed}s)`, 'success', this.tabId);
+        const elapsed = ((Date.now() - Date.now()) / 1000).toFixed(1);
+        Utils.log(`✅ Completed: ${account.name} | H:${hostAccounts.length} T:${targetAccounts.length}`, 'success', this.tabId);
     }
 
     async scrapeAccountCore(page, account, depth, hostAccounts, targetAccounts) {
@@ -671,7 +707,7 @@ class TabScraper {
 
         await Utils.sleep(CONFIG.delays.pageLoad);
 
-        // Handle cookie consent
+        // Handle cookie consent with comprehensive logic from working scraper
         await this.handleCookieConsent(page);
 
         // Scrape host accounts with robust error handling
@@ -701,16 +737,93 @@ class TabScraper {
         }
     }
 
+    // Comprehensive cookie consent handling from working automated scraper
     async handleCookieConsent(page) {
+        Utils.log('🍪 Checking for cookie consent dialog...', 'info', this.tabId);
+        
         try {
-            const cookieButton = await page.$('button[data-testid="uc-accept-all-button"]');
-            if (cookieButton) {
-                await cookieButton.click();
-                await Utils.sleep(1000);
-                Utils.log('Cookie consent accepted', 'info', this.tabId);
+            // Common cookie consent selectors for German websites (from working scraper)
+            const cookieSelectors = [
+                // Markt.de specific cookie button (exact match - priority)
+                'div[role="button"].cmp_button.cmp_button_bg.cmp_button_font_color.cmp-button-accept-all',
+                'div.cmp-button-accept-all[role="button"]',
+                '.cmp-button-accept-all',
+                'div[role="button"]:has-text("AKZEPTIEREN UND WEITER")',
+                '[class*="cmp-button-accept-all"]',
+                
+                // Alternative markt.de patterns
+                'div[role="button"].cmp_button_bg',
+                '.cmp_button.cmp-button-accept-all',
+                'div:has-text("AKZEPTIEREN UND WEITER")',
+                
+                // Generic accept buttons
+                'button:has-text("Akzeptieren")',
+                'button:has-text("AKZEPTIEREN UND WEITER")',
+                'button:has-text("Alle akzeptieren")',
+                'button:has-text("Accept")',
+                'button:has-text("Zustimmen")',
+                'button:has-text("Einverstanden")',
+                'button:has-text("OK")',
+                
+                // Common CSS classes
+                '.cookie-accept',
+                '.cookie-consent-accept',
+                '.accept-cookies',
+                '[data-accept="cookies"]',
+                '[id*="cookie"][id*="accept"]',
+                '[class*="cookie"][class*="accept"]'
+            ];
+            
+            // Wait a bit for cookie dialog to appear
+            await Utils.sleep(CONFIG.delays.cookieConsent);
+            
+            // Try each selector
+            for (const selector of cookieSelectors) {
+                try {
+                    const cookieButton = await page.$(selector);
+                    if (cookieButton) {
+                        const isVisible = await cookieButton.isVisible().catch(() => false);
+                        if (isVisible) {
+                            Utils.log(`🍪 Found cookie consent button: ${selector}`, 'info', this.tabId);
+                            await cookieButton.click();
+                            Utils.log('✅ Cookie consent accepted', 'success', this.tabId);
+                            await Utils.sleep(1000);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    // Continue to next selector
+                    continue;
+                }
             }
+            
+            // Try to find any dialog/modal and look for accept buttons inside
+            const dialogs = await page.$$('div[role="dialog"], .modal, .popup, [class*="dialog"], [class*="consent"], [class*="cookie"]');
+            
+            for (const dialog of dialogs) {
+                try {
+                    const isVisible = await dialog.isVisible().catch(() => false);
+                    if (isVisible) {
+                        // Look for accept button inside this dialog
+                        const acceptButton = await dialog.$('button:has-text("Akzeptieren"), button:has-text("Accept"), button:has-text("OK"), button:has-text("Zustimmen")');
+                        if (acceptButton) {
+                            Utils.log('🍪 Found cookie consent in dialog', 'info', this.tabId);
+                            await acceptButton.click();
+                            Utils.log('✅ Cookie consent accepted from dialog', 'success', this.tabId);
+                            await Utils.sleep(1000);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    continue;
+                }
+            }
+            
+            Utils.log('ℹ️ No cookie consent dialog found or already accepted', 'info', this.tabId);
+            
         } catch (error) {
-            // Cookie consent is optional, don't fail if it's not found
+            Utils.log(`⚠️ Error handling cookie consent: ${error.message}`, 'warning', this.tabId);
+            // Continue anyway - not critical for scraping
         }
     }
 }
@@ -753,19 +866,57 @@ class RecursiveNetworkScraper {
     }
 
     async seedInitialAccount() {
-        // Add the starting account to the queue
-        const startingAccount = {
-            name: 'dinademona',
-            userId: '19354400',
-            link: CONFIG.startingProfileUrl
-        };
+        // Check if we need to seed the initial account
+        const existingQueue = this.csvManager.getNextAccountsFromQueue(1, 0);
+        if (existingQueue.length > 0) {
+            Utils.log('🌱 Initial account already in queue, skipping seed', 'network');
+            return;
+        }
 
-        const addedCount = this.csvManager.addToQueue([startingAccount], 0);
-        Utils.log(`🌱 Seeded initial account to queue: ${addedCount} accounts added`, 'network');
+        // Add the starting account to the queue only if dinademona hasn't been processed yet
+        if (!this.csvManager.processedIds.has('19354400')) {
+            const startingAccount = {
+                name: 'dinademona',
+                userId: '19354400',
+                link: CONFIG.startingProfileUrl
+            };
 
-        // Force save the queue to ensure it's written
-        this.csvManager.saveBatch('queue');
-        Utils.log('💾 Forced save of initial queue', 'network');
+            const addedCount = this.csvManager.addToQueue([startingAccount], 0);
+            Utils.log(`🌱 Seeded initial account to queue: ${addedCount} accounts added`, 'network');
+
+            // Force save the queue to ensure it's written
+            this.csvManager.saveBatch('queue');
+            Utils.log('💾 Forced save of initial queue', 'network');
+        } else {
+            Utils.log('🌱 Initial account already processed, checking for host accounts to queue', 'network');
+            
+            // If dinademona was processed but no host accounts were queued, we need to queue them
+            // Read the host accounts and add unprocessed ones to queue for depth 1
+            if (fs.existsSync(CONFIG.csv.hostFilename)) {
+                const hostContent = fs.readFileSync(CONFIG.csv.hostFilename, 'utf8');
+                const hostLines = hostContent.split('\n').slice(1).filter(line => line.trim());
+                
+                const hostAccountsToQueue = [];
+                hostLines.forEach(line => {
+                    const parts = this.csvManager.parseCSVLine(line);
+                    if (parts.length >= 3) {
+                        const name = parts[0];
+                        const userId = parts[1];
+                        const link = parts[2];
+                        
+                        if (!this.csvManager.processedIds.has(userId) && !this.csvManager.queuedIds.has(userId)) {
+                            hostAccountsToQueue.push({ name, userId, link });
+                        }
+                    }
+                });
+                
+                if (hostAccountsToQueue.length > 0) {
+                    const queuedCount = this.csvManager.addToQueue(hostAccountsToQueue, 1);
+                    Utils.log(`🔄 Queued ${queuedCount} existing host accounts for depth 1`, 'network');
+                    this.csvManager.saveBatch('queue');
+                }
+            }
+        }
     }
 
     async runRecursiveScraping() {
@@ -788,7 +939,7 @@ class RecursiveNetworkScraper {
             // Distribute accounts across tabs
             const accountChunks = this.distributeAccountsAcrossTabs(accountsToProcess);
 
-            // Run all tabs concurrently
+            // Run all tabs concurrently - NO PREMATURE CLOSURES
             const tabPromises = accountChunks.map(async (chunk, index) => {
                 if (chunk.length === 0) {
                     Utils.log(`Tab ${index + 1}: No accounts assigned`, 'info', index + 1);
@@ -807,6 +958,7 @@ class RecursiveNetworkScraper {
                 } catch (error) {
                     Utils.log(`Tab ${index + 1} error: ${error.message}`, 'error', index + 1);
                 } finally {
+                    // Only close page when all work is complete
                     await page.close();
                     Utils.log(`Tab ${index + 1}: Completed`, 'success', index + 1);
                 }

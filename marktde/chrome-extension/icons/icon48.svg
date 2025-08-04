@@ -1,0 +1,26 @@
+
+<svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2196F3;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="24" cy="24" r="22" fill="url(#grad)" stroke="#fff" stroke-width="2"/>
+  
+  <!-- Message icon -->
+  <g transform="translate(9.600000000000001, 12)">
+    <!-- Message bubble -->
+    <rect x="0" y="0" width="28.799999999999997" height="19.200000000000003" rx="2.4000000000000004" fill="#fff" opacity="0.9"/>
+    <!-- Message lines -->
+    <line x1="4.800000000000001" y1="7.199999999999999" x2="24" y2="7.199999999999999" stroke="#333" stroke-width="2" opacity="0.7"/>
+    <line x1="4.800000000000001" y1="12" x2="19.200000000000003" y2="12" stroke="#333" stroke-width="2" opacity="0.7"/>
+    <!-- Send arrow -->
+    <polygon points="21.6,21.6 26.400000000000002,24 21.6,26.400000000000002" fill="#fff" opacity="0.9"/>
+  </g>
+  
+  <!-- Markt.de indicator -->
+  <circle cx="38.400000000000006" cy="9.600000000000001" r="3.84" fill="#FF5722"/>
+</svg>
