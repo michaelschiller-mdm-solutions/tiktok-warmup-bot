@@ -17,7 +17,7 @@ load_dotenv()
 
 # Login credentials
 X_EMAIL = "chickenxd7@gmail.com"
-X_PASSWORD = ".ACMilan.7"
+X_PASSWORD = ""
 X_USERNAME = "chicckkken"  # In case X.com asks for username due to suspicious activity
 
 def setup_gemini_2_flash_lite():

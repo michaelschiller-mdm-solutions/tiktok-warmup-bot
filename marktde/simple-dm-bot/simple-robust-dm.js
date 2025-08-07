@@ -1,0 +1,1008 @@
+/*
+ * SIMPLE ROBUST DM AUTOMATION - FIXED VERSION
+ * Fixed infinite reload bug and added mobile responsiveness
+ * Handles navigation, sends DMs, tracks progress with proper state management
+ */
+
+console.log('🚀 SIMPLE ROBUST DM AUTOMATION LOADED - FIXED VERSION');
+
+// Simple state management using localStorage (survives page reloads)
+class SimpleState {
+    static save(key, data) {
+        try {
+            localStorage.setItem(`dm_bot_${key}`, JSON.stringify(data));
+            return true;
+        } catch (error) {
+            console.error('Failed to save state:', error);
+            return false;
+        }
+    }
+
+    static load(key, defaultValue = null) {
+        try {
+            const data = localStorage.getItem(`dm_bot_${key}`);
+            return data ? JSON.parse(data) : defaultValue;
+        } catch (error) {
+            console.error('Failed to load state:', error);
+            return defaultValue;
+        }
+    }
+
+    static clear(key) {
+        try {
+            localStorage.removeItem(`dm_bot_${key}`);
+            return true;
+        } catch (error) {
+            console.error('Failed to clear state:', error);
+            return false;
+        }
+    }
+}
+
+// Simple DM automation class
+class SimpleDMBot {
+    constructor() {
+        this.campaign = null;
+        this.isRunning = false;
+        this.isNavigating = false; // Prevent multiple navigation attempts
+        this.navigationTimeout = null;
+        this.messageTemplate = 'Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findest und mich kennenlerenen willst schreib mir doch auf Telegrm @xxcherry12 oder auf instagrm @notAnnaFae';
+        this.delay = 8000; // 8 seconds between accounts
+
+        this.init();
+    }
+
+    init() {
+        console.log('🔧 Initializing Simple DM Bot...');
+
+        // Check if we have an ongoing campaign
+        this.campaign = SimpleState.load('campaign');
+
+        // AUTO-RESUME: If campaign is running, automatically continue
+        if (this.campaign && this.campaign.isRunning) {
+            console.log('📋 Found ongoing campaign, AUTO-RESUMING...');
+            this.isRunning = true;
+            
+            // Wait a moment for page to fully load, then continue
+            setTimeout(() => {
+                this.autoResumeAfterPageLoad();
+            }, 2000);
+        } else {
+            console.log('✅ Ready for new campaign');
+        }
+
+        this.createUI();
+        
+        // Add navigation state tracking
+        this.trackNavigationState();
+    }
+
+    trackNavigationState() {
+        // Clear any existing navigation flags on page load
+        this.isNavigating = false;
+        if (this.navigationTimeout) {
+            clearTimeout(this.navigationTimeout);
+            this.navigationTimeout = null;
+        }
+    }
+
+    async autoResumeAfterPageLoad() {
+        if (!this.campaign || !this.campaign.isRunning || !this.isRunning) {
+            console.log('❌ No active campaign to resume');
+            return;
+        }
+
+        console.log('🔄 AUTO-RESUMING after page load...');
+        this.updateActionStatus('🔄 Auto-resuming campaign...');
+
+        // Check if we're on the correct profile page
+        const currentAccount = this.campaign.accounts[this.campaign.currentIndex];
+        if (!currentAccount) {
+            console.log('✅ No more accounts, completing campaign');
+            await this.completeCampaign();
+            return;
+        }
+
+        console.log(`🔍 Checking if on correct page for: ${currentAccount.name}`);
+        
+        // Check if this is a private/unavailable account
+        if (this.isAccountUnavailable()) {
+            console.log(`🔒 Account appears to be private/unavailable: ${currentAccount.name}`);
+            this.updateActionStatus(`🔒 Account private/unavailable: ${currentAccount.name}`);
+            
+            // Mark as failed and move to next
+            currentAccount.status = 'private_unavailable';
+            this.campaign.stats.failed++;
+            this.campaign.currentIndex++;
+            this.campaign.stats.processed++;
+            
+            SimpleState.save('campaign', this.campaign);
+            this.updateUI();
+            
+            // Continue with next account after delay
+            console.log(`⏭️ Moving to next account after ${this.delay / 1000} seconds...`);
+            await this.sleep(this.delay);
+            await this.navigateToNextAccount();
+            return;
+        }
+        
+        if (this.isOnCorrectProfilePage(currentAccount)) {
+            console.log('✅ On correct page, processing current account');
+            try {
+                await this.processCurrentAccount();
+                
+                // After successful processing, move to next account
+                this.campaign.currentIndex++;
+                this.campaign.stats.processed++;
+                SimpleState.save('campaign', this.campaign);
+                this.updateUI();
+                
+                // Continue with next account after delay
+                console.log(`⏭️ Moving to next account after ${this.delay / 1000} seconds...`);
+                await this.sleep(this.delay);
+                await this.navigateToNextAccount();
+                
+            } catch (error) {
+                console.error(`❌ Failed to process ${currentAccount.name}:`, error);
+                currentAccount.status = 'failed';
+                this.campaign.stats.failed++;
+                this.campaign.currentIndex++;
+                this.campaign.stats.processed++;
+                
+                SimpleState.save('campaign', this.campaign);
+                this.updateUI();
+                
+                // Continue with next account even after failure
+                console.log(`⏭️ Moving to next account after failure in ${this.delay / 1000} seconds...`);
+                await this.sleep(this.delay);
+                await this.navigateToNextAccount();
+            }
+        } else {
+            console.log('🔗 Not on correct page, navigating to current account');
+            await this.navigateToNextAccount();
+        }
+    }
+
+    isAccountUnavailable() {
+        // Check for common indicators that an account is private or unavailable
+        const indicators = [
+            'Profil nicht gefunden',
+            'Account nicht verfügbar',
+            'Dieser Nutzer ist nicht verfügbar',
+            'Profil wurde nicht gefunden',
+            'Seite nicht gefunden',
+            '404',
+            'nicht gefunden'
+        ];
+        
+        const pageText = document.body.textContent.toLowerCase();
+        const pageTitle = document.title.toLowerCase();
+        
+        for (const indicator of indicators) {
+            if (pageText.includes(indicator.toLowerCase()) || pageTitle.includes(indicator.toLowerCase())) {
+                console.log(`🔒 Found unavailable indicator: "${indicator}"`);
+                return true;
+            }
+        }
+        
+        // Check if the contact button is missing or disabled (might indicate private profile or disabled DMs)
+        const dmButton = document.querySelector('a.clsy-profile__toolbar-open-contact-dialog.clsy-c-pwa-toolbar__action.clsy-c-btn.clsy-c-btn--icon');
+        if (!dmButton && this.isOnProfilePage()) {
+            console.log('🔒 No contact button found on profile page - likely private');
+            return true;
+        }
+        
+        if (dmButton && dmButton.classList.contains('clsy-clickable-disabled') && this.isOnProfilePage()) {
+            console.log('🔒 Contact button is disabled - user has disabled profile messages');
+            return true;
+        }
+        
+        return false;
+    }
+
+    createUI() {
+        // Remove existing UI if present
+        const existingUI = document.getElementById('simple-dm-ui');
+        if (existingUI) {
+            existingUI.remove();
+        }
+
+        const ui = document.createElement('div');
+        ui.id = 'simple-dm-ui';
+        ui.innerHTML = `
+            <div style="
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                width: min(350px, calc(100vw - 20px));
+                max-height: calc(100vh - 20px);
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border-radius: 15px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                z-index: 10000;
+                font-family: Arial, sans-serif;
+                font-size: 14px;
+                overflow-y: auto;
+                overflow-x: hidden;
+            ">
+                <div style="padding: 15px;">
+                    <div style="text-align: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0; color: #fff; font-size: 16px;">🚀 Simple DM Bot</h3>
+                        <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 11px;">Upload CSV → Send DMs → Done!</p>
+                    </div>
+                    
+                    <!-- Automation Status Section -->
+                    <div id="automation-status" style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 2px solid rgba(255,255,255,0.3);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <div style="font-weight: bold; font-size: 12px;">🤖 Automation Status</div>
+                            <div id="status-indicator" style="width: 12px; height: 12px; border-radius: 50%; background: #666; animation: pulse 2s infinite;"></div>
+                        </div>
+                        <div id="current-action" style="font-size: 11px; margin-bottom: 4px;">Ready to start</div>
+                        <div id="current-url" style="font-size: 10px; opacity: 0.8;">Current: Loading...</div>
+                    </div>
+                    
+                    <!-- CSV Upload Section -->
+                    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold; font-size: 12px;">📁 Upload CSV File:</label>
+                        <input type="file" id="csv-upload" accept=".csv" style="width: 100%; padding: 6px; border: none; border-radius: 5px; margin-bottom: 8px; font-size: 12px;">
+                        <button id="load-csv" style="width: 100%; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 12px;">📋 Load Accounts</button>
+                    </div>
+                    
+                    <!-- Message Template Section -->
+                    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold; font-size: 12px;">💬 Message Template:</label>
+                        <textarea id="message-template" style="width: 100%; height: 50px; padding: 6px; border: none; border-radius: 5px; resize: vertical; font-size: 11px;" placeholder="Your DM message...">${this.messageTemplate}</textarea>
+                    </div>
+                    
+                    <!-- Delay Section -->
+                    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold; font-size: 12px;">⏱️ Delay Between Accounts:</label>
+                        <input type="range" id="delay-slider" min="3" max="30" value="8" style="width: 100%; margin-bottom: 5px;">
+                        <div style="text-align: center; font-size: 11px;"><span id="delay-value">8</span> seconds</div>
+                    </div>
+                    
+                    <!-- Account Info Section -->
+                    <div id="account-info" style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; margin-bottom: 12px; display: none;">
+                        <div style="font-weight: bold; margin-bottom: 8px; font-size: 12px;">📊 Campaign Status:</div>
+                        <div id="progress-info" style="font-size: 11px;">No accounts loaded</div>
+                    </div>
+                    
+                    <!-- Control Buttons -->
+                    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                        <button id="start-campaign" style="flex: 1; padding: 10px; background: #FF6B6B; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 11px;" disabled>🚀 START</button>
+                        <button id="stop-campaign" style="flex: 1; padding: 10px; background: #FFA500; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 11px;" disabled>⏹️ STOP</button>
+                    </div>
+                    
+                    <!-- Manual Controls -->
+                    <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                        <button id="process-current" style="flex: 1; padding: 8px; background: #9C27B0; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 10px;" disabled>📤 Process Current</button>
+                        <button id="skip-current" style="flex: 1; padding: 8px; background: #607D8B; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 10px;" disabled>⏭️ Skip</button>
+                    </div>
+                    
+                    <!-- Emergency Controls -->
+                    <div style="display: flex; gap: 8px;">
+                        <button id="clear-state" style="flex: 1; padding: 6px; background: #F44336; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 10px;">🗑️ Clear State</button>
+                        <button id="resume-campaign" style="flex: 1; padding: 6px; background: #2196F3; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 10px;" disabled>🔄 Resume</button>
+                    </div>
+                    
+                    <div style="margin-top: 10px; text-align: center; font-size: 9px; opacity: 0.8;">
+                        Fixed: No More Infinite Loops!
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(ui);
+        this.setupEventListeners();
+        this.updateUI();
+        this.updateDebugInfo();
+    }
+
+    setupEventListeners() {
+        document.getElementById('load-csv').onclick = () => this.loadCSV();
+        document.getElementById('start-campaign').onclick = () => this.startCampaign();
+        document.getElementById('stop-campaign').onclick = () => this.stopCampaign();
+        document.getElementById('process-current').onclick = () => this.processCurrentAccount();
+        document.getElementById('skip-current').onclick = () => this.skipCurrentAccount();
+        document.getElementById('clear-state').onclick = () => this.clearState();
+        document.getElementById('resume-campaign').onclick = () => this.resumeCampaign();
+
+        const delaySlider = document.getElementById('delay-slider');
+        const delayValue = document.getElementById('delay-value');
+
+        delaySlider.oninput = () => {
+            this.delay = parseInt(delaySlider.value) * 1000;
+            delayValue.textContent = delaySlider.value;
+        };
+
+        const messageTemplate = document.getElementById('message-template');
+        messageTemplate.onchange = () => {
+            this.messageTemplate = messageTemplate.value;
+        };
+    }
+
+    updateDebugInfo() {
+        const currentUrlEl = document.getElementById('current-url');
+        const currentActionEl = document.getElementById('current-action');
+        const statusIndicatorEl = document.getElementById('status-indicator');
+        
+        if (currentUrlEl) {
+            currentUrlEl.textContent = `Current: ${window.location.href.substring(0, 50)}...`;
+        }
+        
+        if (currentActionEl && statusIndicatorEl) {
+            let action = 'Ready to start';
+            let indicatorColor = '#666';
+            let indicatorAnimation = 'none';
+            
+            if (this.isNavigating) {
+                action = '🔗 Navigating to next account...';
+                indicatorColor = '#FFA500';
+                indicatorAnimation = 'pulse 1s infinite';
+            } else if (this.isRunning) {
+                const currentAccount = this.campaign?.accounts[this.campaign?.currentIndex];
+                if (currentAccount) {
+                    action = `📤 Processing: ${currentAccount.name}`;
+                } else {
+                    action = '🚀 Campaign running...';
+                }
+                indicatorColor = '#4CAF50';
+                indicatorAnimation = 'pulse 2s infinite';
+            } else if (this.campaign && this.campaign.isRunning) {
+                action = '⏸️ Campaign paused - Use Resume';
+                indicatorColor = '#FF9800';
+                indicatorAnimation = 'pulse 3s infinite';
+            }
+            
+            currentActionEl.textContent = action;
+            statusIndicatorEl.style.background = indicatorColor;
+            statusIndicatorEl.style.animation = indicatorAnimation;
+        }
+    }
+
+    updateActionStatus(message) {
+        const currentActionEl = document.getElementById('current-action');
+        if (currentActionEl) {
+            currentActionEl.textContent = message;
+        }
+        console.log(`🤖 ${message}`);
+    }
+
+    async loadCSV() {
+        const fileInput = document.getElementById('csv-upload');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            alert('❌ Please select a CSV file first!');
+            return;
+        }
+
+        try {
+            console.log('📋 Loading CSV file...');
+            const text = await file.text();
+            const lines = text.split('\n').filter(line => line.trim());
+
+            // Parse CSV (skip header if present) - Handle quoted fields properly
+            const accounts = lines.map((line, index) => {
+                // Skip header row if it contains 'name' or 'link'
+                if (index === 0 && (line.toLowerCase().includes('name') || line.toLowerCase().includes('link'))) {
+                    return null;
+                }
+                
+                const fields = this.parseCSVLine(line);
+                const name = fields[0] || `Account_${index + 1}`;
+                const id = fields[1] || `unknown_${index + 1}`;
+                const link = fields[2] || '';
+                
+                console.log(`📋 Parsed account: ${name}, ID: ${id}, Link: ${link}`);
+                
+                return {
+                    name: name,
+                    userId: id,
+                    link: link,
+                    status: 'pending'
+                };
+            }).filter(account => account && account.link && account.link.includes('markt.de'));
+
+            if (accounts.length === 0) {
+                alert('❌ No valid markt.de accounts found in CSV!');
+                return;
+            }
+
+            // Initialize campaign
+            this.campaign = {
+                accounts: accounts,
+                currentIndex: 0,
+                isRunning: false,
+                isPaused: false,
+                stats: {
+                    total: accounts.length,
+                    processed: 0,
+                    successful: 0,
+                    failed: 0
+                }
+            };
+
+            SimpleState.save('campaign', this.campaign);
+
+            console.log(`✅ Loaded ${accounts.length} accounts`);
+            alert(`✅ Loaded ${accounts.length} accounts successfully!`);
+
+            this.updateUI();
+
+        } catch (error) {
+            console.error('❌ Error loading CSV:', error);
+            alert('❌ Error loading CSV file. Please check the format.');
+        }
+    }
+
+    async startCampaign() {
+        if (!this.campaign || this.campaign.accounts.length === 0) {
+            alert('❌ Please load a CSV file first!');
+            return;
+        }
+
+        if (this.isRunning) {
+            alert('❌ Campaign is already running!');
+            return;
+        }
+
+        console.log('🚀 Starting campaign...');
+        this.campaign.isRunning = true;
+        this.isRunning = true;
+
+        SimpleState.save('campaign', this.campaign);
+        this.updateUI();
+        this.updateDebugInfo();
+
+        // Start processing
+        await this.processCampaign();
+    }
+
+    async stopCampaign() {
+        console.log('⏹️ Stopping campaign...');
+        this.campaign.isRunning = false;
+        this.isRunning = false;
+        this.isNavigating = false;
+
+        if (this.navigationTimeout) {
+            clearTimeout(this.navigationTimeout);
+            this.navigationTimeout = null;
+        }
+
+        SimpleState.save('campaign', this.campaign);
+        this.updateUI();
+        this.updateDebugInfo();
+    }
+
+    async resumeCampaign() {
+        if (!this.campaign || !this.campaign.isRunning) {
+            alert('❌ No campaign to resume!');
+            return;
+        }
+
+        console.log('🔄 Manually resuming campaign...');
+        this.isRunning = true;
+        this.updateUI();
+        this.updateDebugInfo();
+
+        // Check if we're on the correct profile page
+        const currentAccount = this.campaign.accounts[this.campaign.currentIndex];
+        if (currentAccount && this.isOnCorrectProfilePage(currentAccount)) {
+            console.log('✅ On correct page, processing current account');
+            await this.processCurrentAccount();
+        } else {
+            console.log('🔗 Not on correct page, navigating to next account');
+            await this.navigateToNextAccount();
+        }
+    }
+
+    async skipCurrentAccount() {
+        if (!this.campaign || this.campaign.currentIndex >= this.campaign.accounts.length) {
+            alert('❌ No account to skip!');
+            return;
+        }
+
+        const account = this.campaign.accounts[this.campaign.currentIndex];
+        console.log(`⏭️ Skipping account: ${account.name}`);
+        
+        account.status = 'skipped';
+        this.campaign.currentIndex++;
+        this.campaign.stats.processed++;
+
+        SimpleState.save('campaign', this.campaign);
+        this.updateUI();
+
+        if (this.isRunning) {
+            await this.navigateToNextAccount();
+        }
+    }
+
+    clearState() {
+        if (confirm('🗑️ Clear all campaign data? This cannot be undone!')) {
+            SimpleState.clear('campaign');
+            this.campaign = null;
+            this.isRunning = false;
+            this.isNavigating = false;
+            
+            if (this.navigationTimeout) {
+                clearTimeout(this.navigationTimeout);
+                this.navigationTimeout = null;
+            }
+            
+            this.updateUI();
+            this.updateDebugInfo();
+            console.log('🗑️ State cleared');
+        }
+    }
+
+    async navigateToNextAccount() {
+        if (this.isNavigating) {
+            console.log('🔄 Already navigating, skipping...');
+            return;
+        }
+
+        if (!this.campaign || this.campaign.currentIndex >= this.campaign.accounts.length) {
+            console.log('✅ No more accounts to process');
+            await this.completeCampaign();
+            return;
+        }
+
+        const account = this.campaign.accounts[this.campaign.currentIndex];
+        console.log(`🔗 Navigating to account ${this.campaign.currentIndex + 1}/${this.campaign.accounts.length}: ${account.name}`);
+        console.log(`🔗 Target URL: ${account.link}`);
+
+        // Set navigation flag to prevent multiple attempts
+        this.isNavigating = true;
+        this.updateDebugInfo();
+
+        // Save current state before navigation
+        SimpleState.save('campaign', this.campaign);
+
+        // Set timeout to clear navigation flag if navigation fails
+        this.navigationTimeout = setTimeout(() => {
+            console.log('⚠️ Navigation timeout, clearing flag');
+            this.isNavigating = false;
+            this.updateDebugInfo();
+        }, 10000); // 10 second timeout
+
+        // Navigate directly to the account URL
+        window.location.href = account.link;
+    }
+
+    async processCampaign() {
+        while (this.isRunning && this.campaign.currentIndex < this.campaign.accounts.length) {
+            const account = this.campaign.accounts[this.campaign.currentIndex];
+
+            console.log(`📧 Processing account ${this.campaign.currentIndex + 1}/${this.campaign.accounts.length}: ${account.name}`);
+            console.log(`🔗 Target URL: ${account.link}`);
+            console.log(`🌐 Current URL: ${window.location.href}`);
+
+            try {
+                // If we're not on the right profile page, navigate to it
+                if (!this.isOnCorrectProfilePage(account)) {
+                    console.log(`🔗 Not on correct page, navigating to: ${account.link}`);
+                    await this.navigateToNextAccount();
+                    return; // Navigation will reload page and resume
+                }
+
+                console.log(`✅ On correct page: ${account.link}`);
+
+                // Process current account
+                await this.processCurrentAccount();
+
+            } catch (error) {
+                console.error(`❌ Failed to process ${account.name}:`, error);
+                this.campaign.accounts[this.campaign.currentIndex].status = 'failed';
+                this.campaign.stats.failed++;
+                
+                // CRITICAL: Continue to next account even if current one fails
+                console.log(`⏭️ Moving to next account after failure...`);
+            }
+
+            // Always move to next account (whether success or failure)
+            this.campaign.currentIndex++;
+            this.campaign.stats.processed++;
+
+            SimpleState.save('campaign', this.campaign);
+            this.updateUI();
+
+            // Check if campaign is complete
+            if (this.campaign.currentIndex >= this.campaign.accounts.length) {
+                await this.completeCampaign();
+                return;
+            }
+
+            // Wait before next account
+            console.log(`⏱️ Waiting ${this.delay / 1000} seconds before next account...`);
+            await this.sleep(this.delay);
+        }
+    }
+
+    async processCurrentAccount() {
+        if (!this.campaign || this.campaign.currentIndex >= this.campaign.accounts.length) {
+            console.log('❌ No current account to process');
+            return;
+        }
+
+        const account = this.campaign.accounts[this.campaign.currentIndex];
+
+        console.log(`📤 Sending DM to ${account.name}...`);
+        console.log(`🌐 Current URL: ${window.location.href}`);
+        console.log(`📊 Campaign progress: ${this.campaign.currentIndex + 1}/${this.campaign.accounts.length}`);
+
+        try {
+            // Step 1: Wait for page to load
+            this.updateActionStatus('⏱️ Waiting for page to load...');
+            await this.sleep(3000);
+            
+            // Debug: Check page state
+            console.log(`📋 Page title: ${document.title}`);
+            console.log(`📋 Page ready state: ${document.readyState}`);
+            console.log(`📋 Profile elements found: ${document.querySelectorAll('.clsy-profile__toolbar-open-contact-dialog').length}`);
+
+            // Step 2: Find and click the "Nachricht" button with multiple strategies
+            this.updateActionStatus('🔍 Looking for Nachricht button...');
+            const dmButton = await this.findDMButtonRobust();
+            
+            if (!dmButton) {
+                throw new Error('Nachricht button not found with any detection strategy');
+            }
+
+            // Check if the button is disabled (user has disabled profile messages)
+            if (dmButton.classList.contains('clsy-clickable-disabled')) {
+                const errorMessage = dmButton.getAttribute('data-error-message');
+                let reason = 'User has disabled profile messages';
+                
+                if (errorMessage) {
+                    try {
+                        const parsed = JSON.parse(errorMessage.replace(/&quot;/g, '"'));
+                        reason = parsed.plain || reason;
+                    } catch (e) {
+                        // Use default reason if parsing fails
+                    }
+                }
+                
+                throw new Error(`Cannot send DM: ${reason}`);
+            }
+
+            this.updateActionStatus('✅ Found active Nachricht button, clicking...');
+            
+            // Scroll button into view to ensure it's clickable
+            dmButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            await this.sleep(500); // Wait for scroll to complete
+            
+            // Try clicking with multiple methods
+            try {
+                dmButton.click();
+            } catch (clickError) {
+                console.log('⚠️ Regular click failed, trying alternative methods...');
+                
+                // Alternative click method 1: Dispatch click event
+                try {
+                    dmButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                } catch (dispatchError) {
+                    // Alternative click method 2: Focus and trigger
+                    dmButton.focus();
+                    dmButton.click();
+                }
+            }
+
+            // Step 3: Wait for modal to load
+            this.updateActionStatus('⏱️ Waiting for modal to load...');
+            await this.sleep(3000);
+
+            // Step 4: Find the exact textarea and enter text
+            this.updateActionStatus('🔍 Looking for message textarea...');
+            const textarea = document.querySelector('textarea#clsy-c-contactPopup-message.clsy-c-form__smartLabeledField');
+            if (!textarea) {
+                throw new Error('Message textarea not found with exact selector');
+            }
+
+            this.updateActionStatus('✅ Found textarea, typing message...');
+            textarea.value = this.messageTemplate;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            textarea.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // Step 5: Wait a moment then find and click send button
+            await this.sleep(1000);
+
+            this.updateActionStatus('🔍 Looking for send button...');
+            const sendButton = document.querySelector('button.clsy-c-contactPopup-submit.clsy-c-btn.clsy-c-btn--cta.clsy-c-prevent-double-click');
+            if (!sendButton) {
+                throw new Error('Send button not found with exact selector');
+            }
+
+            this.updateActionStatus('✅ Found send button, clicking...');
+            sendButton.click();
+
+            // Step 6: Wait 1.5 seconds as specified
+            this.updateActionStatus('⏱️ Waiting 1.5 seconds after sending...');
+            await this.sleep(1500);
+
+            // Mark as successful
+            account.status = 'contacted';
+            this.campaign.stats.successful++;
+
+            this.updateActionStatus(`✅ Successfully sent DM to ${account.name}`);
+            console.log(`✅ Successfully sent DM to ${account.name}`);
+
+        } catch (error) {
+            this.updateActionStatus(`❌ Failed to send DM to ${account.name}`);
+            console.error(`❌ Failed to send DM to ${account.name}:`, error);
+            account.status = 'failed';
+            this.campaign.stats.failed++;
+            throw error;
+        }
+    }
+
+
+    isOnProfilePage() {
+        return window.location.pathname.includes('/userId,') ||
+            window.location.pathname.includes('/profil/') ||
+            document.querySelector('.clsy-profile__toolbar-open-contact-dialog') !== null;
+    }
+
+    isOnCorrectProfilePage(account) {
+        // More flexible URL matching to handle redirects and variations
+        const currentUrl = window.location.href;
+        const targetUrl = account.link;
+        
+        console.log(`🔍 URL Comparison:`);
+        console.log(`   Current: "${currentUrl}"`);
+        console.log(`   Target:  "${targetUrl}"`);
+        
+        // Exact match first
+        if (currentUrl === targetUrl) {
+            console.log(`   ✅ Exact match`);
+            return true;
+        }
+        
+        // Extract user ID from both URLs for comparison
+        const currentUserId = this.extractUserIdFromUrl(currentUrl);
+        const targetUserId = this.extractUserIdFromUrl(targetUrl);
+        
+        console.log(`   Current ID: "${currentUserId}"`);
+        console.log(`   Target ID:  "${targetUserId}"`);
+        
+        if (currentUserId && targetUserId && currentUserId === targetUserId) {
+            console.log(`   ✅ User ID match`);
+            return true;
+        }
+        
+        console.log(`   ❌ No match`);
+        return false;
+    }
+
+    extractUserIdFromUrl(url) {
+        // Extract user ID from markt.de URLs
+        const match = url.match(/userId,(\d+)/);
+        return match ? match[1] : null;
+    }
+
+    async completeCampaign() {
+        console.log('🎉 Campaign completed!');
+
+        this.campaign.isRunning = false;
+        this.isRunning = false;
+        this.isNavigating = false;
+
+        if (this.navigationTimeout) {
+            clearTimeout(this.navigationTimeout);
+            this.navigationTimeout = null;
+        }
+
+        const { successful, failed, total } = this.campaign.stats;
+
+        alert(`🎉 Campaign completed!\n\n✅ Successful: ${successful}\n❌ Failed: ${failed}\n📊 Total: ${total}`);
+
+        SimpleState.clear('campaign');
+        this.campaign = null;
+        this.updateUI();
+        this.updateDebugInfo();
+    }
+
+    updateUI() {
+        const accountInfo = document.getElementById('account-info');
+        const progressInfo = document.getElementById('progress-info');
+        const startButton = document.getElementById('start-campaign');
+        const stopButton = document.getElementById('stop-campaign');
+        const processCurrentButton = document.getElementById('process-current');
+        const skipCurrentButton = document.getElementById('skip-current');
+        const resumeButton = document.getElementById('resume-campaign');
+
+        if (!this.campaign) {
+            accountInfo.style.display = 'none';
+            startButton.disabled = true;
+            stopButton.disabled = true;
+            processCurrentButton.disabled = true;
+            skipCurrentButton.disabled = true;
+            resumeButton.disabled = true;
+            return;
+        }
+
+        accountInfo.style.display = 'block';
+
+        const { stats, currentIndex, accounts } = this.campaign;
+        const currentAccount = accounts[currentIndex];
+
+        progressInfo.innerHTML = `
+            <div style="margin-bottom: 6px;">
+                <strong>Progress:</strong> ${stats.processed}/${stats.total} accounts
+            </div>
+            <div style="margin-bottom: 6px;">
+                <strong>Success:</strong> ${stats.successful} | <strong>Failed:</strong> ${stats.failed}
+            </div>
+            ${currentAccount ? `<div style="margin-bottom: 6px;"><strong>Current:</strong> ${currentAccount.name}</div>` : ''}
+            <div style="background: rgba(255,255,255,0.2); border-radius: 10px; height: 6px; margin-top: 6px;">
+                <div style="background: #4CAF50; height: 100%; border-radius: 10px; width: ${(stats.processed / stats.total) * 100}%;"></div>
+            </div>
+        `;
+
+        startButton.disabled = this.isRunning || this.campaign.isRunning;
+        stopButton.disabled = !this.isRunning && !this.campaign.isRunning;
+        processCurrentButton.disabled = !currentAccount;
+        skipCurrentButton.disabled = !currentAccount;
+        resumeButton.disabled = !this.campaign.isRunning || this.isRunning;
+    }
+
+    // Robust DM button detection with multiple fallback strategies
+    async findDMButtonRobust() {
+        console.log('🔍 Starting robust DM button detection...');
+        
+        // Strategy 1: Exact selector (current method)
+        let dmButton = document.querySelector('a.clsy-profile__toolbar-open-contact-dialog.clsy-c-pwa-toolbar__action.clsy-c-btn.clsy-c-btn--icon');
+        if (dmButton && this.isElementClickable(dmButton)) {
+            console.log('✅ Found DM button with exact selector');
+            return dmButton;
+        }
+        
+        // Strategy 2: Partial class matching
+        dmButton = document.querySelector('a.clsy-profile__toolbar-open-contact-dialog');
+        if (dmButton && this.isElementClickable(dmButton)) {
+            console.log('✅ Found DM button with partial selector');
+            return dmButton;
+        }
+        
+        // Strategy 3: Text-based search
+        const allLinks = document.querySelectorAll('a');
+        for (const link of allLinks) {
+            if (link.textContent.trim().toLowerCase() === 'nachricht' && this.isElementClickable(link)) {
+                console.log('✅ Found DM button by text content');
+                return link;
+            }
+        }
+        
+        // Strategy 4: Wait and retry (maybe page is still loading)
+        console.log('⏳ Button not found, waiting 2 seconds and retrying...');
+        await this.sleep(2000);
+        
+        dmButton = document.querySelector('a.clsy-profile__toolbar-open-contact-dialog.clsy-c-pwa-toolbar__action.clsy-c-btn.clsy-c-btn--icon');
+        if (dmButton && this.isElementClickable(dmButton)) {
+            console.log('✅ Found DM button after retry');
+            return dmButton;
+        }
+        
+        // Strategy 5: Look for any button with "nachricht" in class or data attributes
+        const allButtons = document.querySelectorAll('a, button');
+        for (const button of allButtons) {
+            const className = button.className.toLowerCase();
+            const dataAttrs = Array.from(button.attributes).map(attr => attr.name + '=' + attr.value).join(' ').toLowerCase();
+            
+            if ((className.includes('contact') || className.includes('nachricht') || dataAttrs.includes('contact')) 
+                && this.isElementClickable(button)) {
+                console.log('✅ Found DM button by attribute matching');
+                return button;
+            }
+        }
+        
+        console.log('❌ No DM button found with any strategy');
+        return null;
+    }
+    
+    // Check if element is actually clickable
+    isElementClickable(element) {
+        if (!element) return false;
+        
+        // Check if element is visible
+        const rect = element.getBoundingClientRect();
+        const isVisible = rect.width > 0 && rect.height > 0 && 
+                         window.getComputedStyle(element).visibility !== 'hidden' &&
+                         window.getComputedStyle(element).display !== 'none';
+        
+        // Check if element is not disabled
+        const isNotDisabled = !element.classList.contains('clsy-clickable-disabled') &&
+                             !element.disabled &&
+                             !element.hasAttribute('disabled');
+        
+        const clickable = isVisible && isNotDisabled;
+        
+        if (!clickable) {
+            console.log(`🔍 Element not clickable: visible=${isVisible}, notDisabled=${isNotDisabled}`);
+        }
+        
+        return clickable;
+    }
+
+    // Enhanced CSV parsing that handles URLs with commas
+    parseCSVLine(line) {
+        const fields = [];
+        let current = '';
+        let inQuotes = false;
+        
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            
+            if (char === '"') {
+                inQuotes = !inQuotes;
+            } else if (char === ',' && !inQuotes) {
+                fields.push(current.trim());
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        
+        // Add the last field
+        fields.push(current.trim());
+        
+        // Remove quotes from fields
+        const cleanFields = fields.map(field => {
+            if (field.startsWith('"') && field.endsWith('"')) {
+                return field.slice(1, -1);
+            }
+            return field;
+        });
+        
+        // Special handling for markt.de URLs with commas
+        // If we have more than 3 fields, it means the URL was split by commas
+        if (cleanFields.length > 3) {
+            // Reconstruct the URL by joining everything from index 2 onwards
+            const name = cleanFields[0];
+            const id = cleanFields[1];
+            const urlParts = cleanFields.slice(2);
+            const fullUrl = urlParts.join(',');
+            
+            console.log(`🔧 Reconstructed URL: ${fullUrl} (was split into ${urlParts.length} parts)`);
+            
+            return [name, id, fullUrl];
+        }
+        
+        return cleanFields;
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
+
+// Initialize the bot
+const dmBot = new SimpleDMBot();
+
+console.log(`
+🚀 SIMPLE ROBUST DM BOT READY - FIXED VERSION!
+
+✅ FIXES APPLIED:
+- ❌ No more infinite reload loops
+- 📱 Mobile responsive and scrollable UI
+- 🔧 Manual controls for stuck situations
+- 🔍 Debug info to track state
+- ⚡ Better error handling and navigation
+
+✅ Features:
+- Upload CSV files with account data
+- Automatic navigation between profiles
+- Robust DM sending with multiple fallbacks
+- Progress tracking and statistics
+- Survives page reloads and navigation
+- Emergency controls to fix stuck states
+
+📋 How to Use:
+1. Upload your CSV file (name,ID,link format)
+2. Adjust message template and timing
+3. Click "START CAMPAIGN"
+4. Use manual controls if needed
+
+🔧 The bot is now ready in the top-right corner!
+`);

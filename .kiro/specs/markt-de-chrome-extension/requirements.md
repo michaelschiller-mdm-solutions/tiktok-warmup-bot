@@ -14,7 +14,7 @@ This feature involves converting the existing markt.de DM bot from a Playwright-
 
 1. WHEN the extension is installed THEN it SHALL appear in the Chrome extensions toolbar with a recognizable icon
 2. WHEN the user clicks the extension icon THEN it SHALL open a popup interface with login configuration options
-3. WHEN the user enters valid markt.de credentials (jodie@kodo-marketing.de / PW%xZ,kjb5CF_R*) THEN the extension SHALL store them securely using Chrome storage API
+3. WHEN the user enters valid markt.de credentials (Acc2@kodo-marketing.de / ##/FT6jRyvuxa_6*) THEN the extension SHALL store them securely using Chrome storage API
 4. WHEN the extension attempts login THEN it SHALL navigate to https://www.markt.de/nichtangemeldet.htm and fill the login form automatically
 5. WHEN login is successful THEN it SHALL capture and store session cookies (__ssid, __rtbh.lid, __spdt) for future use
 6. WHEN the "remember me" checkbox is available THEN it SHALL check it automatically during login
@@ -53,7 +53,7 @@ This feature involves converting the existing markt.de DM bot from a Playwright-
 1. WHEN the extension processes a target account THEN it SHALL navigate to the account's profile link
 2. WHEN on a profile page THEN it SHALL click the "Nachricht" button to open the DM dialog
 3. WHEN the DM dialog opens THEN it SHALL wait for the textarea to be available
-4. WHEN the textarea is ready THEN it SHALL type the configured message: "Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findestund mich kennenlerenen willst schreib mir doch auf Telegram @"
+4. WHEN the textarea is ready THEN it SHALL type the configured message: "Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findest und mich kennenlerenen willst schreib mir doch auf Telegrm @xxcherry12 oder auf instagrm @notAnnaFae"
 5. WHEN the message is typed THEN it SHALL click the "Nachricht abschicken" button to send
 6. WHEN the message is sent THEN it SHALL wait the configured delay before processing the next account
 

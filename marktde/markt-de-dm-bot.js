@@ -28,11 +28,11 @@ const path = require('path');
 const CONFIG = {
     // Login credentials
     loginUrl: 'https://www.markt.de/nichtangemeldet.htm',
-    email: 'jodie@kodo-marketing.de',
-    password: 'PW%xZ,kjb5CF_R*',
+    email: 'Acc2@kodo-marketing.de',
+    password: '##/FT6jRyvuxa_6',
 
     // DM content
-    dmMessage: 'Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findestund mich kennenlerenen willst schreib mir doch auf Telegram @',
+    dmMessage: 'Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findest und mich kennenlerenen willst schreib mir doch auf Telegrm @xxcherry12 oder auf instagrm @notAnnaFae',
 
     // File paths
     targetAccountsFile: './marktde/target_accounts.csv',

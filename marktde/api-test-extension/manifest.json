@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Markt.de API Test Extension",
+  "version": "1.0.0",
+  "description": "Test extension for verifying markt.de API calls and data extraction",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.markt.de/*"
+  ],
+  "content_scripts": [{
+    "matches": ["https://*.markt.de/*"],
+    "js": ["api-test.js"],
+    "run_at": "document_end"
+  }],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "API Test Extension"
+  }
+}

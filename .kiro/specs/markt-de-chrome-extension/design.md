@@ -284,7 +284,7 @@ class HumanBehavior {
         Delay between accounts (seconds):
         <input type="number" id="accountDelay" value="5" min="3" max="30">
       </label>
-      <textarea id="messageTemplate" placeholder="DM message template">Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findestund mich kennenlerenen willst schreib mir doch auf Telegram @</textarea>
+      <textarea id="messageTemplate" placeholder="DM message template">Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findest und mich kennenlerenen willst schreib mir doch auf Telegrm @xxcherry12 oder auf instagrm @notAnnaFae</textarea>
     </div>
     
     <!-- Logs Section -->

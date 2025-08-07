@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            width: 400px;
+            padding: 15px;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+        .section {
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .section h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 14px;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 5px;
+            margin: 3px 0;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+        button {
+            padding: 8px 12px;
+            margin: 3px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        .btn-primary { background: #007cba; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-warning { background: #ffc107; color: black; }
+        .btn-danger { background: #dc3545; color: white; }
+        .result {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 3px;
+            padding: 8px;
+            margin: 5px 0;
+            font-family: monospace;
+            font-size: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .success { background: #d4edda; border-color: #c3e6cb; }
+        .error { background: #f8d7da; border-color: #f5c6cb; }
+        .info { background: #d1ecf1; border-color: #bee5eb; }
+    </style>
+</head>
+<body>
+    <h2>🧪 Markt.de API Test Extension</h2>
+    
+    <!-- Current Page Info -->
+    <div class="section">
+        <h3>📍 Current Page Info</h3>
+        <button class="btn-primary" id="extractPageInfo">Extract Page Data</button>
+        <div id="pageInfoResult" class="result"></div>
+    </div>
+
+    <!-- API Test Section -->
+    <div class="section">
+        <h3>🔧 API Test Parameters</h3>
+        <label>Thread ID:</label>
+        <input type="text" id="threadId" placeholder="e.g., 2193521669" value="2193521669">
+        
+        <label>User ID:</label>
+        <input type="text" id="userId" placeholder="e.g., 39826031" value="39826031">
+        
+        <label>Other User ID:</label>
+        <input type="text" id="otherUserId" placeholder="e.g., 39793847" value="39793847">
+    </div>
+
+    <!-- API Calls -->
+    <div class="section">
+        <h3>📡 API Calls</h3>
+        <button class="btn-success" id="getMessages">Get Messages</button>
+        <button class="btn-success" id="getThreads">Get Threads</button>
+        <button class="btn-success" id="checkUpdates">Check Updates</button>
+        <div id="apiResult" class="result"></div>
+    </div>
+
+    <!-- Message Sending -->
+    <div class="section">
+        <h3>📤 Send Message Test</h3>
+        <label>Message Text:</label>
+        <textarea id="messageText" placeholder="Enter test message..." rows="2">API Test Message</textarea>
+        
+        <div style="margin: 5px 0; font-size: 10px;">
+            <strong>Test Patterns:</strong><br>
+            • Text only: Enter message, leave File ID empty<br>
+            • Image only: Leave message empty, enter File ID<br>
+            • Text + Image: Enter both message and File ID
+        </div>
+        
+        <label>File ID (optional):</label>
+        <input type="text" id="fileId" placeholder="e.g., 486190cd-995e-4190-86aa-964ec377d48a">
+        <small style="font-size: 9px; color: #666;">Latest: 486190cd-995e-4190-86aa-964ec377d48a</small>
+        
+        <button class="btn-warning" id="sendMessage">Send Message</button>
+        <div id="sendResult" class="result"></div>
+    </div>
+
+    <!-- Data Extraction -->
+    <div class="section">
+        <h3>🔍 DOM Data Extraction</h3>
+        <button class="btn-primary" id="extractChatData">Extract Chat Elements</button>
+        <button class="btn-primary" id="extractUserIds">Extract User IDs</button>
+        <div id="extractResult" class="result"></div>
+    </div>
+
+    <!-- Session Info -->
+    <div class="section">
+        <h3>🔐 Session Info</h3>
+        <button class="btn-primary" id="getSessionInfo">Get Session Data</button>
+        <div id="sessionResult" class="result"></div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>    <!
+-- Debug Controls -->
+    <div class="section">
+        <h3>🐛 Debug Controls</h3>
+        <div style="display: flex; gap: 8px;">
+            <button id="viewLogs" class="btn-primary" style="flex: 1; padding: 6px; font-size: 10px;">📋 View Logs</button>
+            <button id="clearLogs" class="btn-danger" style="flex: 1; padding: 6px; font-size: 10px;">🗑️ Clear Logs</button>
+        </div>
+        <div id="debugResult" class="result"></div>
+    </div>

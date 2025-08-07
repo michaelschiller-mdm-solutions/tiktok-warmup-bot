@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Markt.de API Interceptor",
+  "version": "1.0.0",
+  "description": "Intercepts and logs markt.de API calls to understand chat system structure",
+  "permissions": [
+    "webRequest",
+    "storage",
+    "activeTab",
+    "debugger"
+  ],
+  "host_permissions": [
+    "https://*.markt.de/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [{
+    "matches": ["https://*.markt.de/*"],
+    "js": ["content-script.js"],
+    "run_at": "document_start"
+  }],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Markt.de API Interceptor"
+  },
+  "web_accessible_resources": [{
+    "resources": ["inject.js"],
+    "matches": ["https://*.markt.de/*"]
+  }]
+}

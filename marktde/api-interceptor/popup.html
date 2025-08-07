@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            width: 400px;
+            min-height: 300px;
+            padding: 15px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #ff6b6b;
+        }
+        
+        .header h1 {
+            margin: 0;
+            color: #ff6b6b;
+            font-size: 18px;
+        }
+        
+        .stats {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        
+        .stats-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+        
+        .controls {
+            margin-bottom: 15px;
+        }
+        
+        .btn {
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            font-size: 12px;
+        }
+        
+        .btn:hover {
+            background: #ff5252;
+        }
+        
+        .btn-secondary {
+            background: #666;
+        }
+        
+        .btn-secondary:hover {
+            background: #555;
+        }
+        
+        .calls-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .call-item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            font-size: 11px;
+        }
+        
+        .call-item:last-child {
+            border-bottom: none;
+        }
+        
+        .call-method {
+            font-weight: bold;
+            color: #ff6b6b;
+        }
+        
+        .call-url {
+            color: #666;
+            word-break: break-all;
+            margin: 2px 0;
+        }
+        
+        .call-time {
+            color: #999;
+            font-size: 10px;
+        }
+        
+        .no-calls {
+            text-align: center;
+            color: #999;
+            padding: 20px;
+        }
+        
+        .export-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 Markt.de API Interceptor</h1>
+        <p>Capturing chat-related API calls</p>
+    </div>
+    
+    <div class="stats">
+        <div class="stats-item">
+            <span>Total Calls Captured:</span>
+            <span id="totalCalls">0</span>
+        </div>
+        <div class="stats-item">
+            <span>Relevant Calls:</span>
+            <span id="relevantCalls">0</span>
+        </div>
+        <div class="stats-item">
+            <span>Last Updated:</span>
+            <span id="lastUpdated">Never</span>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button class="btn" id="refreshBtn">🔄 Refresh</button>
+        <button class="btn btn-secondary" id="clearBtn">🗑️ Clear</button>
+        <button class="btn btn-secondary" id="exportBtn">📥 Export</button>
+    </div>
+    
+    <div class="calls-list" id="callsList">
+        <div class="no-calls">No API calls captured yet</div>
+    </div>
+    
+    <div class="export-section">
+        <h3>Instructions:</h3>
+        <ol style="font-size: 12px; color: #666;">
+            <li>Navigate to markt.de inbox/chat</li>
+            <li>Send/receive messages</li>
+            <li>Check captured API calls here</li>
+            <li>Export data for analysis</li>
+        </ol>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

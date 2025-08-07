@@ -14,7 +14,7 @@ export interface Account {
   account_code?: string;
   display_name?: string;
   bio?: string;
-  status: 'active' | 'banned' | 'suspended' | 'inactive';
+  status: 'active' | 'banned' | 'suspended' | 'inactive' | 'transferred';
   creation_date?: string;
   device_info: Record<string, any>;
   profile_picture_url?: string;
@@ -69,6 +69,7 @@ export interface Account {
   
   // Phase-specific fields for warmup pipeline
   new_username?: string;
+  assigned_username?: string;
   assigned_content?: string;
   phase_status?: string;
   
@@ -120,7 +121,7 @@ export interface UpdateAccountRequest {
   account_code?: string;
   display_name?: string;
   bio?: string;
-  status?: 'active' | 'banned' | 'suspended' | 'inactive';
+  status?: 'active' | 'banned' | 'suspended' | 'inactive' | 'transferred';
   content_type?: string;
   campus?: string;
   niche?: string;
@@ -276,4 +277,4 @@ export interface AccountListResponse {
   total_pages: number;
   filters?: AccountFilters;
   sort?: AccountSort;
-} 
+}
