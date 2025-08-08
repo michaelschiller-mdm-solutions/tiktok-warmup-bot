@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Account Feature Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .test-section {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { border-color: #4CAF50; background: #f8fff8; }
+        .info { border-color: #2196F3; background: #f8f9ff; }
+        .warning { border-color: #FF9800; background: #fff8f0; }
+        code {
+            background: #f0f0f0;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        pre {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .csv-example {
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Premium Account Feature Test Guide</h1>
+        <p>This guide helps you test the premium account feature in the DM Bot extension.</p>
+    </div>
+
+    <div class="container">
+        <h2>📋 Test Data Setup</h2>
+        
+        <div class="test-section info">
+            <h3>1. Create Test Target Accounts CSV</h3>
+            <p>Create a file called <code>test-targets.csv</code> with this content:</p>
+            <div class="csv-example">
+name,ID,link<br>
+Xlyeds,38826864,https://www.markt.de/xlyeds/userId,38826864/profile.htm<br>
+DavidH31,13251843,https://www.markt.de/davidh31/userId,13251843/profile.htm<br>
+Looper32,27764107,https://www.markt.de/looper32/userId,27764107/profile.htm
+            </div>
+        </div>
+
+        <div class="test-section info">
+            <h3>2. Create Test Premium Followed Data CSV</h3>
+            <p>Create a file called <code>test-premium-data.csv</code> with this content:</p>
+            <div class="csv-example">
+target_account,target_account_id,followed_account,followed_account_id,is_premium,profile_image_url,profile_link<br>
+Xlyeds,38826864,Beheo,31787572,true,https://static.markt.de/bundles/test.svg,"https://www.markt.de/beheo/userId,31787572/profile.htm"<br>
+Xlyeds,38826864,schneehasee,39308753,true,https://imagecache.markt.de/test.jpg,"https://www.markt.de/schneehasee/userId,39308753/profile.htm"<br>
+DavidH31,13251843,Lady Sassy99,26005535,true,https://imagecache.markt.de/test2.jpg,"https://www.markt.de/lady+sassy99/userId,26005535/profile.htm"<br>
+DavidH31,13251843,Lolacleo,34727504,false,https://imagecache.markt.de/test3.jpg,"https://www.markt.de/lolacleo/userId,34727504/profile.htm"<br>
+Looper32,27764107,NO_FOLLOWS,N/A,false,,N/A
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>🧪 Testing Steps</h2>
+        
+        <div class="test-section success">
+            <h3>Step 1: Load Extension</h3>
+            <ol>
+                <li>Open Chrome and navigate to any markt.de page</li>
+                <li>The DM Bot UI should appear in the top-right corner</li>
+                <li>Verify you see the "👥 Upload Premium Followed Data CSV" section</li>
+            </ol>
+        </div>
+
+        <div class="test-section success">
+            <h3>Step 2: Upload Premium Data</h3>
+            <ol>
+                <li>Click "Choose File" in the Premium Followed Data section</li>
+                <li>Select your <code>test-premium-data.csv</code> file</li>
+                <li>Click "👥 Load Premium Data"</li>
+                <li>You should see: "✅ Loaded premium data: 4 relationships for 2 accounts!"</li>
+                <li>The status should show: "✅ 4 relationships loaded for 2 accounts"</li>
+            </ol>
+        </div>
+
+        <div class="test-section success">
+            <h3>Step 3: Upload Target Accounts</h3>
+            <ol>
+                <li>Click "Choose File" in the Target Accounts section</li>
+                <li>Select your <code>test-targets.csv</code> file</li>
+                <li>Click "📋 Load Target Accounts"</li>
+                <li>You should see: "✅ Loaded 3 target accounts successfully!"</li>
+                <li>The Campaign Status should show premium data coverage</li>
+            </ol>
+        </div>
+
+        <div class="test-section success">
+            <h3>Step 4: Test Message Template</h3>
+            <ol>
+                <li>In the Message Template field, enter:</li>
+                <div class="csv-example">
+Hey ich habe gesehen, dass du {premium_account1} auch folgst 🫣 Falls du mich auch ganz süß findest und mich kennenlerenen willst schreib mir doch auf Telegrm @xxcherry12
+                </div>
+                <li>Set fallback text to: <code>einer Freundin von mir</code></li>
+                <li>The tooltip (ℹ️) should explain placeholder usage</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>✅ Expected Results</h2>
+        
+        <div class="test-section success">
+            <h3>For Xlyeds (has premium accounts):</h3>
+            <p>Message should become:</p>
+            <div class="csv-example">
+Hey ich habe gesehen, dass du Beheo auch folgst 🫣 Falls du mich auch ganz süß findest...
+            </div>
+            <p><em>or</em></p>
+            <div class="csv-example">
+Hey ich habe gesehen, dass du schneehasee auch folgst 🫣 Falls du mich auch ganz süß findest...
+            </div>
+        </div>
+
+        <div class="test-section success">
+            <h3>For DavidH31 (has mixed accounts):</h3>
+            <p>Message should become (premium first):</p>
+            <div class="csv-example">
+Hey ich habe gesehen, dass du Lady Sassy99 auch folgst 🫣 Falls du mich auch ganz süß findest...
+            </div>
+        </div>
+
+        <div class="test-section warning">
+            <h3>For Looper32 (no follows):</h3>
+            <p>Message should become (fallback):</p>
+            <div class="csv-example">
+Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findest...
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>🔍 Debugging</h2>
+        
+        <div class="test-section info">
+            <h3>Console Logs to Check</h3>
+            <p>Open browser Developer Tools (F12) and look for these logs:</p>
+            <ul>
+                <li><code>👥 Loaded premium data for X accounts</code></li>
+                <li><code>👥 Found X premium and Y regular followed accounts for [target]</code></li>
+                <li><code>👥 Replaced {premium_account1} with: [account] (premium/regular/fallback)</code></li>
+                <li><code>💬 Original message: [template]</code></li>
+                <li><code>💬 Processed message: [final message]</code></li>
+            </ul>
+        </div>
+
+        <div class="test-section info">
+            <h3>UI Elements to Verify</h3>
+            <ul>
+                <li>Premium data status shows green checkmark when loaded</li>
+                <li>Campaign Status shows premium data coverage percentage</li>
+                <li>Tooltip (ℹ️) explains placeholder usage</li>
+                <li>Fallback text field is editable</li>
+                <li>Message template accepts placeholders</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>🚨 Troubleshooting</h2>
+        
+        <div class="test-section warning">
+            <h3>Common Issues</h3>
+            <ul>
+                <li><strong>CSV not loading:</strong> Check file format and column headers</li>
+                <li><strong>Placeholders not replaced:</strong> Verify target account names match exactly</li>
+                <li><strong>Always using fallback:</strong> Check if premium data was loaded successfully</li>
+                <li><strong>Extension not visible:</strong> Make sure you're on a markt.de page</li>
+            </ul>
+        </div>
+
+        <div class="test-section info">
+            <h3>Data Persistence</h3>
+            <p>The premium data is saved in browser storage. To test persistence:</p>
+            <ol>
+                <li>Load premium data and target accounts</li>
+                <li>Refresh the page</li>
+                <li>Check that premium data status still shows loaded data</li>
+                <li>Campaign Status should still show coverage statistics</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>🎯 Advanced Testing</h2>
+        
+        <div class="test-section info">
+            <h3>Multiple Placeholders</h3>
+            <p>Test with multiple placeholders in one message:</p>
+            <div class="csv-example">
+Hey! Ich sehe du folgst {premium_account1} und {premium_account2}. Das ist cool! 😊
+            </div>
+            <p>Should use different accounts for each placeholder.</p>
+        </div>
+
+        <div class="test-section info">
+            <h3>Edge Cases</h3>
+            <ul>
+                <li>Target with only regular accounts (no premium)</li>
+                <li>Target with many followed accounts (randomization)</li>
+                <li>Empty CSV files</li>
+                <li>Malformed CSV data</li>
+                <li>Very long account names</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="container">
+        <p><strong>Note:</strong> This is a test environment. The actual DM sending functionality requires being on real markt.de profile pages.</p>
+    </div>
+</body>
+</html>

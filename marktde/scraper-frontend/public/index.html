@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marktde Premium Scraper</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 Marktde Premium Scraper</h1>
+            <div class="status-indicator">
+                <span id="status-text">Ready</span>
+                <div id="status-dot" class="status-dot idle"></div>
+            </div>
+        </header>
+
+        <main>
+            <!-- File Upload Section -->
+            <section class="card">
+                <h2>📁 Upload Target Accounts</h2>
+                <div class="upload-area" id="upload-area">
+                    <input type="file" id="file-input" accept=".csv" style="display: none;">
+                    <div class="upload-content">
+                        <div class="upload-icon">📄</div>
+                        <p>Drop your target_accounts.csv file here or <span class="upload-link">click to browse</span></p>
+                        <small>CSV format: name, userId, profileUrl</small>
+                    </div>
+                </div>
+                <div id="upload-status" class="upload-status"></div>
+            </section>
+
+            <!-- Scraper Controls -->
+            <section class="card">
+                <h2>⚙️ Scraper Settings</h2>
+                <div class="settings-grid">
+                    <div class="setting-group">
+                        <label for="headless-mode">
+                            <input type="checkbox" id="headless-mode" checked>
+                            Run in background (headless)
+                        </label>
+                    </div>
+                    <div class="setting-group">
+                        <label for="max-accounts">Max accounts to process:</label>
+                        <input type="number" id="max-accounts" placeholder="Leave empty for all" min="1">
+                    </div>
+                    <div class="setting-group">
+                        <label for="session-size">Accounts per session:</label>
+                        <input type="number" id="session-size" value="50" min="1" max="100">
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="start-btn" class="btn btn-primary" disabled>Start Scraping</button>
+                    <button id="stop-btn" class="btn btn-danger" disabled>Stop Scraping</button>
+                </div>
+            </section>
+
+            <!-- Progress Section -->
+            <section class="card">
+                <h2>📊 Progress</h2>
+                <div id="progress-content">
+                    <div class="progress-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Total Targets:</span>
+                            <span id="total-targets">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Processed:</span>
+                            <span id="processed-count">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Remaining:</span>
+                            <span id="remaining-count">-</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Premium Found:</span>
+                            <span id="premium-count">-</span>
+                        </div>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar">
+                            <div id="progress-fill" class="progress-fill"></div>
+                        </div>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <button id="refresh-progress" class="btn btn-secondary">Refresh Progress</button>
+                </div>
+            </section>
+
+            <!-- Logs Section -->
+            <section class="card">
+                <h2>📝 Live Logs</h2>
+                <div class="logs-container">
+                    <div id="logs" class="logs"></div>
+                    <div class="logs-controls">
+                        <button id="clear-logs" class="btn btn-secondary">Clear Logs</button>
+                        <button id="auto-scroll" class="btn btn-secondary active">Auto Scroll</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Files Section -->
+            <section class="card">
+                <h2>📥 Download Results</h2>
+                <div id="files-list" class="files-list">
+                    <div class="loading">Loading files...</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

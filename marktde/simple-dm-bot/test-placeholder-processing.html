@@ -1,0 +1,180 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Test Premium Account Placeholder Processing</title>
+  </head>
+  <body>
+    <h1>Test Premium Account Placeholder Processing</h1>
+    <div id="results"></div>
+
+    <script>
+      // Simplified version of the placeholder processing logic for testing
+      class TestDMBot {
+        constructor() {
+          this.fallbackText = "einer Freundin von mir";
+          this.followedAccountsMap = new Map();
+
+          // Test data
+          this.followedAccountsMap.set("Xlyeds", [
+            { followedAccount: "Beheo", isPremium: true },
+            { followedAccount: "schneehasee", isPremium: true },
+            { followedAccount: "Julieta.Hotbutt", isPremium: true },
+            { followedAccount: "Lolacleo", isPremium: true },
+            { followedAccount: "Wonderbell", isPremium: true },
+          ]);
+
+          this.followedAccountsMap.set("DavidH31", [
+            { followedAccount: "Lady Sassy99", isPremium: true },
+            { followedAccount: "Lolacleo", isPremium: true },
+            { followedAccount: "MadameFranziska", isPremium: true },
+            { followedAccount: "Sweet apple 2025", isPremium: true },
+            { followedAccount: "Sarsusu", isPremium: true },
+            { followedAccount: "Doggyistmeinhobby24", isPremium: true },
+            { followedAccount: "Hotmum_Cora", isPremium: true },
+            { followedAccount: "RollenspielerinX", isPremium: true },
+          ]);
+
+          this.followedAccountsMap.set("Moeper96", [
+            { followedAccount: "DinaDemona", isPremium: false },
+            { followedAccount: "Aline97", isPremium: false },
+            { followedAccount: "Ilenchen", isPremium: false },
+            { followedAccount: "Your.Fantasy.Girl", isPremium: false },
+            { followedAccount: "xHannahx", isPremium: false },
+          ]);
+        }
+
+        processMessageTemplate(targetAccountName, messageTemplate) {
+          let processedMessage = messageTemplate;
+
+          // Get followed accounts for this target
+          const followedAccounts =
+            this.followedAccountsMap.get(targetAccountName) || [];
+
+          if (followedAccounts.length === 0) {
+            console.log(
+              `👥 No followed accounts found for ${targetAccountName}, using fallback text`
+            );
+            // Replace all placeholders with fallback text
+            processedMessage = processedMessage
+              .replace(/{premium_account1}/g, this.fallbackText)
+              .replace(/{premium_account2}/g, this.fallbackText)
+              .replace(/{premium_account3}/g, this.fallbackText);
+            return processedMessage;
+          }
+
+          // Separate premium and regular accounts
+          const premiumAccounts = followedAccounts.filter(
+            (acc) => acc.isPremium
+          );
+          const regularAccounts = followedAccounts.filter(
+            (acc) => !acc.isPremium
+          );
+
+          console.log(
+            `👥 Found ${premiumAccounts.length} premium and ${regularAccounts.length} regular followed accounts for ${targetAccountName}`
+          );
+
+          // Create a pool of accounts to use (premium first, then regular)
+          const accountPool = [...premiumAccounts, ...regularAccounts];
+
+          // Shuffle the pool for randomness
+          for (let i = accountPool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [accountPool[i], accountPool[j]] = [accountPool[j], accountPool[i]];
+          }
+
+          // Process each placeholder
+          const placeholders = [
+            "premium_account1",
+            "premium_account2",
+            "premium_account3",
+          ];
+          const usedAccounts = new Set(); // Prevent using the same account twice
+
+          for (let i = 0; i < placeholders.length; i++) {
+            const placeholder = placeholders[i];
+            const regex = new RegExp(`{${placeholder}}`, "g");
+
+            if (processedMessage.includes(`{${placeholder}}`)) {
+              // Find an unused account from the pool
+              let selectedAccount = null;
+              for (const account of accountPool) {
+                if (!usedAccounts.has(account.followedAccount)) {
+                  selectedAccount = account;
+                  usedAccounts.add(account.followedAccount);
+                  break;
+                }
+              }
+
+              const replacementText = selectedAccount
+                ? selectedAccount.followedAccount
+                : this.fallbackText;
+              processedMessage = processedMessage.replace(
+                regex,
+                replacementText
+              );
+
+              console.log(
+                `👥 Replaced {${placeholder}} with: ${replacementText} (${selectedAccount ? (selectedAccount.isPremium ? "premium" : "regular") : "fallback"})`
+              );
+            }
+          }
+
+          return processedMessage;
+        }
+      }
+
+      // Run tests
+      function runTests() {
+        const bot = new TestDMBot();
+        const results = document.getElementById("results");
+
+        const testCases = [
+          {
+            target: "Xlyeds",
+            template:
+              "Hey ich habe gesehen, dass du {premium_account1} auch folgst 🫣",
+            description: "Single placeholder with premium accounts available",
+          },
+          {
+            target: "DavidH31",
+            template:
+              "Hey {premium_account1} und {premium_account2} folgen dir auch!",
+            description: "Multiple placeholders with premium accounts",
+          },
+          {
+            target: "Moeper96",
+            template:
+              "Hey ich sehe du folgst {premium_account1}, {premium_account2} und {premium_account3}!",
+            description: "Multiple placeholders with only regular accounts",
+          },
+          {
+            target: "UnknownUser",
+            template:
+              "Hey ich habe gesehen, dass du {premium_account1} auch folgst 🫣",
+            description: "Unknown target (should use fallback)",
+          },
+        ];
+
+        testCases.forEach((testCase, index) => {
+          const result = bot.processMessageTemplate(
+            testCase.target,
+            testCase.template
+          );
+
+          results.innerHTML += `
+                    <div style="margin: 20px 0; padding: 15px; border: 1px solid #ccc; border-radius: 5px;">
+                        <h3>Test ${index + 1}: ${testCase.description}</h3>
+                        <p><strong>Target:</strong> ${testCase.target}</p>
+                        <p><strong>Original:</strong> ${testCase.template}</p>
+                        <p><strong>Processed:</strong> ${result}</p>
+                    </div>
+                `;
+        });
+      }
+
+      // Run tests when page loads
+      window.onload = runTests;
+    </script>
+  </body>
+</html>

@@ -4,12 +4,16 @@
  * This script uses Playwright to automatically open a browser, navigate to markt.de profiles,
  * and scrape user data from both "mir gefallen" and "ich gefalle" modals.
  * 
+ * Changes made:
+ * - Added optional multi-tab mode controlled via --max-tabs/--tabs/-t CLI or MAX_TABS env.
+ *   When >= 2, host and target scraping run in parallel across two tabs.
+ * 
  * Installation:
  * npm install playwright
  * npx playwright install chromium
  * 
  * Usage:
- * node markt-de-scraper-automated.js
+ * node markt-de-scraper-automated.js [--max-tabs=2]
  */
 
 const { chromium } = require('playwright');
@@ -449,6 +453,26 @@ class MarktDeScraper {
             Utils.log('Starting automated markt.de profile scraping...');
             Utils.log(`Target URL: ${CONFIG.profileUrl}`);
             
+            // Determine desired max tabs (via --max-tabs / --tabs / -t CLI arg or MAX_TABS env). Defaults to 1.
+            const maxTabs = (() => {
+                const env = parseInt(process.env.MAX_TABS || '', 10);
+                if (Number.isFinite(env) && env > 0) return env;
+                const argv = process.argv || [];
+                const key = argv.find(a => a === '--max-tabs' || a === '--tabs' || a === '-t' || a.startsWith('--max-tabs=') || a.startsWith('--tabs='));
+                if (key) {
+                    let val = null;
+                    if (key.includes('=')) {
+                        val = parseInt(key.split('=')[1], 10);
+                    } else {
+                        const idx = argv.indexOf(key);
+                        if (idx >= 0 && argv[idx + 1]) val = parseInt(argv[idx + 1], 10);
+                    }
+                    if (Number.isFinite(val) && val > 0) return val;
+                }
+                return 1;
+            })();
+            Utils.log(`Using up to ${maxTabs} tab(s)`);
+            
             // Launch browser
             browser = await chromium.launch({
                 headless: CONFIG.browser.headless,
@@ -459,24 +483,47 @@ class MarktDeScraper {
                 viewport: CONFIG.browser.viewport
             });
             
-            const page = await context.newPage();
-            
-            // Navigate to profile page
-            Utils.log('Navigating to profile page...');
-            await page.goto(CONFIG.profileUrl, { waitUntil: 'networkidle' });
-            await Utils.sleep(CONFIG.delays.pageLoad);
-            
-            // Handle cookie consent
-            await this.handleCookieConsent(page);
-            
-            // Scrape host accounts ("mir gefallen")
-            await this.scrapeHostAccounts(page);
-            
-            // Wait between modals
-            await Utils.sleep(CONFIG.delays.betweenModals);
-            
-            // Scrape target accounts ("ich gefalle")
-            await this.scrapeTargetAccounts(page);
+            if (maxTabs >= 2) {
+                // Parallelize host and target scraping using two tabs
+                const hostPage = await context.newPage();
+                const targetPage = await context.newPage();
+                
+                Utils.log('Navigating both tabs to profile page...');
+                await Promise.all([
+                    hostPage.goto(CONFIG.profileUrl, { waitUntil: 'networkidle' }),
+                    targetPage.goto(CONFIG.profileUrl, { waitUntil: 'networkidle' })
+                ]);
+                await Utils.sleep(CONFIG.delays.pageLoad);
+                
+                await Promise.all([
+                    this.handleCookieConsent(hostPage),
+                    this.handleCookieConsent(targetPage)
+                ]);
+                
+                await Promise.all([
+                    this.scrapeHostAccounts(hostPage),
+                    this.scrapeTargetAccounts(targetPage)
+                ]);
+            } else {
+                const page = await context.newPage();
+                
+                // Navigate to profile page
+                Utils.log('Navigating to profile page...');
+                await page.goto(CONFIG.profileUrl, { waitUntil: 'networkidle' });
+                await Utils.sleep(CONFIG.delays.pageLoad);
+                
+                // Handle cookie consent
+                await this.handleCookieConsent(page);
+                
+                // Scrape host accounts ("mir gefallen")
+                await this.scrapeHostAccounts(page);
+                
+                // Wait between modals
+                await Utils.sleep(CONFIG.delays.betweenModals);
+                
+                // Scrape target accounts ("ich gefalle")
+                await this.scrapeTargetAccounts(page);
+            }
             
             // Save any remaining batches
             this.csvManager.saveAllPendingBatches();

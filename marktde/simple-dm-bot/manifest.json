@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Simple Markt.de DM Bot",
-  "version": "2.0.0",
-  "description": "Simple and robust DM automation for markt.de",
+  "version": "3.0.0",
+  "description": "Enhanced DM automation with premium account integration for personalized messages",
   "permissions": [
     "activeTab"
   ],

@@ -1,7 +1,7 @@
 /*
  * Fixed Markt.de Recursive Network Scraper - Multi-Tab Version
  * 
- * This advanced scraper runs 5 browser tabs simultaneously and recursively
+ * This advanced scraper runs N browser tabs simultaneously and recursively
  * scrapes through host accounts to build a massive network of accounts.
  * 
  * Key Fixes Applied:
@@ -11,9 +11,11 @@
  * - Added 2-retry system for failed accounts
  * - Improved modal interaction to prevent click interception
  * - Enhanced account extraction logic
+ * - Enhanced pagination: scroll-into-view, scroll fallback, and wait-for-increase to capture all accounts
+ * - Optional recursion of target accounts via --queue-targets or env QUEUE_TARGETS=1
  * 
  * Features:
- * - 5 concurrent browser tabs (no premature closures)
+ * - Configurable concurrent browser tabs via --max-tabs, --tabs, -t or env MAX_TABS (default 10)
  * - Recursive scraping (each host account gets scraped)
  * - No time limits - accounts can take 10+ minutes if needed
  * - 2-retry system for failed accounts
@@ -26,7 +28,7 @@
  * npx playwright install chromium
  * 
  * Usage:
- * node markt-de-scraper-recursive-fixed.js
+ * node markt-de-scraper-recursive-fixed.js [--max-tabs=5]
  */
 
 const { chromium } = require('playwright');
@@ -39,9 +41,57 @@ const CONFIG = {
     startingProfileUrl: 'https://www.markt.de/lehrerinpam/userId,23305704/profile.htm',
 
     // Multi-tab configuration
-    concurrentTabs: 10,          // Number of simultaneous browser tabs
-    maxDepth: 3,                // Maximum recursion depth (0 = starting profile, 1 = first level hosts, etc.)
-    maxAccountsPerLevel: 500,    // Maximum accounts to process per recursion level
+    concurrentTabs: (() => {
+        const env = parseInt(process.env.MAX_TABS || '', 10);
+        if (Number.isFinite(env) && env > 0) return env;
+        const argv = process.argv || [];
+        const key = argv.find(a => a === '--max-tabs' || a === '--tabs' || a === '-t' || a.startsWith('--max-tabs=') || a.startsWith('--tabs='));
+        if (key) {
+            let val = null;
+            if (key.includes('=')) {
+                val = parseInt(key.split('=')[1], 10);
+            } else {
+                const idx = argv.indexOf(key);
+                if (idx >= 0 && argv[idx + 1]) val = parseInt(argv[idx + 1], 10);
+            }
+            if (Number.isFinite(val) && val > 0) return val;
+        }
+        return 10;
+    })(),          // Number of simultaneous browser tabs (overridable via --max-tabs or MAX_TABS)
+    maxDepth: (() => {
+        const env = parseInt(process.env.MAX_DEPTH || '', 10);
+        if (Number.isFinite(env) && env >= 0) return env;
+        const argv = process.argv || [];
+        const key = argv.find(a => a === '--max-depth' || a === '-d' || a.startsWith('--max-depth='));
+        if (key) {
+            let val = null;
+            if (key.includes('=')) {
+                val = parseInt(key.split('=')[1], 10);
+            } else {
+                const idx = argv.indexOf(key);
+                if (idx >= 0 && argv[idx + 1]) val = parseInt(argv[idx + 1], 10);
+            }
+            if (Number.isFinite(val) && val >= 0) return val;
+        }
+        return 3;
+    })(),                // Maximum recursion depth (0 = starting profile, 1 = first level hosts, etc.)
+    maxAccountsPerLevel: (() => {
+        const env = parseInt(process.env.MAX_PER_LEVEL || '', 10);
+        if (Number.isFinite(env) && env > 0) return env;
+        const argv = process.argv || [];
+        const key = argv.find(a => a === '--max-per-level' || a.startsWith('--max-per-level='));
+        if (key) {
+            let val = null;
+            if (key.includes('=')) {
+                val = parseInt(key.split('=')[1], 10);
+            } else {
+                const idx = argv.indexOf(key);
+                if (idx >= 0 && argv[idx + 1]) val = parseInt(argv[idx + 1], 10);
+            }
+            if (Number.isFinite(val) && val > 0) return val;
+        }
+        return Number.MAX_SAFE_INTEGER; // default to ALL
+    })(),    // Maximum accounts to process per recursion level
 
     delays: {
         pageLoad: 3000,         // Wait for page to load
@@ -50,14 +100,15 @@ const CONFIG = {
         extraction: 300,        // Wait between account extractions (from working scraper)
         betweenModals: 2000,    // Wait between host and target scraping (from working scraper)
         tabDelay: 500,          // Delay between starting new tabs
-        cookieConsent: 1500     // Wait for cookie dialog to appear
+        cookieConsent: 1500,    // Wait for cookie dialog to appear
+        postScroll: 800         // Wait after scroll fallback for new items to render
     },
 
     limits: {
-        maxPaginationClicks: 9999,   // Maximum "Mehr Likes laden" clicks per modal (from working scraper)
-        maxAccountsPerModal: 9999,   // Maximum accounts to extract per modal
-        navigationTimeout: 30000,   // Page navigation timeout
-        maxRetries: 2              // Maximum retries per account
+        maxPaginationClicks: 20000,   // Very high to avoid premature stop
+        maxAccountsPerModal: 200000,  // Very high cap per modal
+        navigationTimeout: 45000,     // Slightly higher navigation timeout
+        maxRetries: 3                 // Allow one more retry
     },
 
     selectors: {
@@ -66,14 +117,15 @@ const CONFIG = {
         modal: '.clsy-c-dialog__body',
         loadMoreButton: '.clsy-c-endlessScrolling--hasMore',
         accountBox: '.clsy-c-userbox',
+        accountListScrollContainer: '.clsy-c-dialog__body .clsy-c-dialog__content, .clsy-c-dialog__body',
         closeButton: '.clsy-c-dialog__close, [aria-label="Close"]'
     },
 
     csv: {
-        hostFilename: './marktde/host_accounts.csv',
-        targetFilename: './marktde/target_accounts.csv',
-        processedFilename: './marktde/processed_accounts.csv',
-        queueFilename: './marktde/queue_accounts.csv',
+        hostFilename: path.join(__dirname, 'host_accounts.csv'),
+        targetFilename: path.join(__dirname, 'target_accounts.csv'),
+        processedFilename: path.join(__dirname, 'processed_accounts.csv'),
+        queueFilename: path.join(__dirname, 'queue_accounts.csv'),
         batchSize: 20  // Save every 20 accounts (from working scraper)
     },
 
@@ -150,6 +202,11 @@ class CSVManager {
         ];
 
         files.forEach(file => {
+            const dir = path.dirname(file.path);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+                Utils.log(`Created directory: ${path.resolve(dir)}`);
+            }
             if (!fs.existsSync(file.path)) {
                 fs.writeFileSync(file.path, file.header);
                 Utils.log(`Created ${path.basename(file.path)}`);
@@ -179,17 +236,20 @@ class CSVManager {
                 });
             }
 
-            // Load existing host/target accounts to avoid duplicates in CSV files
-            [CONFIG.csv.hostFilename, CONFIG.csv.targetFilename].forEach(filename => {
-                if (fs.existsSync(filename)) {
-                    const content = fs.readFileSync(filename, 'utf8');
-                    const lines = content.split('\n').slice(1);
-                    lines.forEach(line => {
-                        const match = line.match(/,(\d+),/);
-                        if (match) this.foundIds.add(match[1]);
-                    });
-                }
-            });
+                    // Load existing host/target accounts to avoid duplicates in CSV files
+        [CONFIG.csv.hostFilename, CONFIG.csv.targetFilename].forEach(filename => {
+            if (fs.existsSync(filename)) {
+                const content = fs.readFileSync(filename, 'utf8');
+                const lines = content.split('\n').slice(1);
+                lines.forEach(line => {
+                    const parts = this.parseCSVLine(line);
+                    if (parts.length >= 3) {
+                        const id = parts[1];
+                        if (id) this.foundIds.add(id);
+                    }
+                });
+            }
+        });
 
             Utils.log(`Loaded ${this.processedIds.size} processed accounts, ${this.queuedIds.size} queued accounts, and ${this.foundIds.size} found accounts`);
         } catch (error) {
@@ -301,7 +361,24 @@ class CSVManager {
                 return 0;
         }
 
-        fs.appendFileSync(filename, csvRows);
+        const needsHeader = !fs.existsSync(filename) || fs.statSync(filename).size === 0;
+        let csvContent = '';
+        if (needsHeader) {
+            switch (type) {
+                case 'host':
+                case 'target':
+                    csvContent += 'name,ID,link\n';
+                    break;
+                case 'processed':
+                    csvContent += 'name,ID,link,depth,timestamp,status\n';
+                    break;
+                case 'queue':
+                    csvContent += 'name,ID,link,depth,added_timestamp\n';
+                    break;
+            }
+        }
+        csvContent += csvRows;
+        fs.appendFileSync(filename, csvContent);
         Utils.log(`💾 Batch saved: ${accounts.length} ${type} accounts to ${path.basename(filename)}`, 'success');
 
         const savedCount = accounts.length;
@@ -413,12 +490,13 @@ class DataExtractor {
     // Using the proven extraction logic from the working automated scraper
     static async extractAccountsFromPage(page) {
         return await page.evaluate((selectors) => {
+            const modalBody = document.querySelector(selectors.modal) || document;
             const accounts = [];
-            const accountBoxes = document.querySelectorAll(selectors.accountBox);
+            const accountBoxes = modalBody.querySelectorAll(selectors.accountBox);
             
             accountBoxes.forEach((box, index) => {
                 try {
-                    const link = box.getAttribute('href');
+                    let link = box.getAttribute('href') || (box.querySelector('a') && box.querySelector('a').getAttribute('href'));
                     
                     // Skip anonymous accounts
                     if (!link || link === '#') {
@@ -526,7 +604,27 @@ class ModalHandler {
             }
             
             if (!loadMoreButton) {
-                Utils.log('✅ No "Mehr Likes laden" button found - pagination complete', 'info', tabId);
+                Utils.log('⚠️ No "Mehr Likes laden" button found - trying infinite scroll fallback', 'warning', tabId);
+                let noGrowthAttempts = 0;
+                for (let i = 0; i < 50; i++) {
+                    const beforeLen = (await DataExtractor.extractAccountsFromPage(page)).length;
+                    await page.evaluate((selectors) => {
+                        const container = document.querySelector(selectors.accountListScrollContainer) || document.scrollingElement;
+                        if (container) container.scrollTop = container.scrollHeight;
+                    }, CONFIG.selectors);
+                    await Utils.sleep(CONFIG.delays.postScroll);
+                    const afterLen = (await DataExtractor.extractAccountsFromPage(page)).length;
+                    if (afterLen > beforeLen) {
+                        noGrowthAttempts = 0;
+                        Utils.log(`📥 Infinite scroll loaded ${afterLen - beforeLen} new accounts (total now ${afterLen})`, 'info', tabId);
+                    } else {
+                        noGrowthAttempts++;
+                        if (noGrowthAttempts >= 3) {
+                            Utils.log('✅ No growth after 3 scroll attempts - pagination complete', 'info', tabId);
+                            break;
+                        }
+                    }
+                }
                 break;
             }
             
@@ -535,46 +633,70 @@ class ModalHandler {
             const isEnabled = await loadMoreButton.isEnabled().catch(() => false);
             
             if (!isVisible || !isEnabled) {
-                Utils.log('✅ "Mehr Likes laden" button not clickable - pagination complete', 'info', tabId);
-                break;
-            }
-            
-            // Stop if we haven't found new accounts in many attempts
-            if (consecutiveNoNewAccounts >= 5) {
-                Utils.log('⚠️ No new accounts found in 5 consecutive attempts, stopping pagination', 'warning', tabId);
-                break;
-            }
-            
-            // Click load more button with retry logic
-            Utils.log(`🔄 Clicking "Mehr Likes laden" button (click #${loadMoreClicks + 1})...`, 'info', tabId);
-            
-            try {
-                await loadMoreButton.click();
-                consecutiveFailedClicks = 0;
-                loadMoreClicks++;
-                
-                // Wait for new content to load
-                await Utils.sleep(CONFIG.delays.loadMore);
-                
-                // Additional wait if we've clicked many times
-                if (loadMoreClicks > 20) {
-                    await Utils.sleep(1000);
-                }
-                
-            } catch (error) {
-                consecutiveFailedClicks++;
-                Utils.log(`❌ Failed to click "Mehr Likes laden" button (attempt ${consecutiveFailedClicks}): ${error.message}`, 'warning', tabId);
-                
-                if (consecutiveFailedClicks >= 3) {
-                    Utils.log('❌ Failed to click button 3 times in a row, stopping pagination', 'warning', tabId);
+                // Try to scroll container to load more items if button fails
+                Utils.log('Attempting scroll fallback because load more button not clickable', 'warning', tabId);
+                await page.evaluate((selectors) => {
+                    const container = document.querySelector(selectors.accountListScrollContainer) || document.scrollingElement;
+                    if (container) container.scrollTop = container.scrollHeight;
+                }, CONFIG.selectors);
+                await Utils.sleep(CONFIG.delays.postScroll);
+            } else {
+                // Stop if we haven't found new accounts in many attempts
+                if (consecutiveNoNewAccounts >= 8) {
+                    Utils.log('⚠️ No new accounts found in 8 consecutive attempts, stopping pagination', 'warning', tabId);
                     break;
                 }
+
+                // Ensure button visible on screen
+                await page.evaluate((el) => el.scrollIntoView({ block: 'center', behavior: 'instant' }), loadMoreButton).catch(() => {});
+
+                // Click load more button with retry logic
+                Utils.log(`🔄 Clicking "Mehr Likes laden" button (click #${loadMoreClicks + 1})...`, 'info', tabId);
                 
-                // Wait longer before retry
-                await Utils.sleep(2000);
+                try {
+                    const prevCount = allAccounts.length;
+                    await loadMoreButton.click();
+                    consecutiveFailedClicks = 0;
+                    loadMoreClicks++;
+
+                    // Wait for new content to load then verify more elements appeared
+                    await Utils.sleep(CONFIG.delays.loadMore);
+                    const afterAccounts = await DataExtractor.extractAccountsFromPage(page);
+                    const grew = afterAccounts.length > currentAccounts.length;
+                    if (!grew) {
+                        // Try scroll fallback to trigger lazy load
+                        await page.evaluate((selectors) => {
+                            const container = document.querySelector(selectors.accountListScrollContainer) || document.scrollingElement;
+                            if (container) container.scrollTop = container.scrollHeight;
+                        }, CONFIG.selectors);
+                        await Utils.sleep(CONFIG.delays.postScroll);
+                    }
+                    
+                    // Additional wait if we've clicked many times
+                    if (loadMoreClicks > 20) {
+                        await Utils.sleep(1000);
+                    }
+                    
+                } catch (error) {
+                    consecutiveFailedClicks++;
+                    Utils.log(`❌ Failed to click "Mehr Likes laden" button (attempt ${consecutiveFailedClicks}): ${error.message}`, 'warning', tabId);
+                    
+                    if (consecutiveFailedClicks >= 5) {
+                        Utils.log('❌ Failed to click button 5 times in a row, attempting final scroll fallback then stopping', 'warning', tabId);
+                        await page.evaluate((selectors) => {
+                            const container = document.querySelector(selectors.accountListScrollContainer) || document.scrollingElement;
+                            if (container) container.scrollTop = container.scrollHeight;
+                        }, CONFIG.selectors);
+                        await Utils.sleep(CONFIG.delays.postScroll);
+                        break;
+                    }
+                    
+                    // Wait longer before retry
+                    await Utils.sleep(2000);
+                }
             }
             
-            // Use the higher limit from working scraper
+            // Use the higher limit
             if (loadMoreClicks >= CONFIG.limits.maxPaginationClicks) {
                 Utils.log(`⚠️ Reached maximum pagination clicks (${CONFIG.limits.maxPaginationClicks}), stopping`, 'warning', tabId);
                 break;
@@ -663,10 +785,22 @@ class TabScraper {
             }
         }
 
-        // Add host accounts to queue for recursive scraping (if within depth limit)
-        if (depth < CONFIG.maxDepth && hostAccounts.length > 0) {
-            const queuedCount = this.csvManager.addToQueue(hostAccounts.slice(0, CONFIG.maxAccountsPerLevel), depth + 1);
-            Utils.log(`🔄 Queued ${queuedCount} host accounts for depth ${depth + 1}`, 'network', this.tabId);
+        // Add host (and optional target) accounts to queue for recursive scraping (if within depth limit)
+        const shouldQueueTargets = (() => {
+            if ((process.env.QUEUE_TARGETS || '').toString() === '1') return true;
+            const argv = process.argv || [];
+            return argv.includes('--queue-targets');
+        })();
+
+        if (depth < CONFIG.maxDepth) {
+            if (hostAccounts.length > 0) {
+                const queuedCount = this.csvManager.addToQueue(hostAccounts.slice(0, CONFIG.maxAccountsPerLevel), depth + 1);
+                Utils.log(`🔄 Queued ${queuedCount} host accounts for depth ${depth + 1}`, 'network', this.tabId);
+            }
+            if (shouldQueueTargets && targetAccounts.length > 0) {
+                const queuedTargets = this.csvManager.addToQueue(targetAccounts.slice(0, CONFIG.maxAccountsPerLevel), depth + 1);
+                Utils.log(`🔄 Queued ${queuedTargets} target accounts for depth ${depth + 1}`, 'network', this.tabId);
+            }
         }
 
         // Mark this account as processed
@@ -683,6 +817,9 @@ class TabScraper {
     async scrapeAccountCore(page, account, depth, hostAccounts, targetAccounts) {
         const profileUrl = Utils.buildProfileUrl(account.name.replace(/"/g, ''), account.userId);
         Utils.log(`🎯 Scraping: ${account.name} (depth: ${depth})`, 'network', this.tabId);
+        
+        // Ensure a clean state by closing any open modals from previous runs
+        try { await ModalHandler.closeModal(page, this.tabId); } catch (_) {}
 
         // Navigate with timeout and retry logic
         let navigationSuccess = false;
@@ -720,6 +857,11 @@ class TabScraper {
             await ModalHandler.closeModal(page, this.tabId);
         } catch (hostError) {
             Utils.log(`⚠️ Host extraction failed: ${hostError.message}`, 'warning', this.tabId);
+            // If opening the host modal failed, try clicking the profile tab that might show the list
+            try {
+                await page.click('text=mir gefallen, Mir gefallen', { timeout: 1500 }).catch(() => {});
+                await Utils.sleep(800);
+            } catch (_) {}
         }
 
         await Utils.sleep(CONFIG.delays.betweenModals);
@@ -734,6 +876,10 @@ class TabScraper {
             await ModalHandler.closeModal(page, this.tabId);
         } catch (targetError) {
             Utils.log(`⚠️ Target extraction failed: ${targetError.message}`, 'warning', this.tabId);
+            try {
+                await page.click('text=ich gefalle, Ich gefalle', { timeout: 1500 }).catch(() => {});
+                await Utils.sleep(800);
+            } catch (_) {}
         }
     }
 
@@ -776,6 +922,12 @@ class TabScraper {
             
             // Wait a bit for cookie dialog to appear
             await Utils.sleep(CONFIG.delays.cookieConsent);
+
+            // Early exit if cookie is already accepted and buttons are hidden
+            const hasCmp = await page.$('.cmp-button-accept-all, [class*="cmp-button-accept-all"]');
+            if (!hasCmp) {
+                Utils.log('ℹ️ Cookie banner likely absent or already handled', 'info', this.tabId);
+            }
             
             // Try each selector
             for (const selector of cookieSelectors) {
@@ -783,18 +935,16 @@ class TabScraper {
                     const cookieButton = await page.$(selector);
                     if (cookieButton) {
                         const isVisible = await cookieButton.isVisible().catch(() => false);
-                        if (isVisible) {
+                        const isEnabled = await cookieButton.isEnabled().catch(() => false);
+                        if (isVisible && isEnabled) {
                             Utils.log(`🍪 Found cookie consent button: ${selector}`, 'info', this.tabId);
-                            await cookieButton.click();
+                            await cookieButton.click({ timeout: 1000 }).catch(() => {});
                             Utils.log('✅ Cookie consent accepted', 'success', this.tabId);
-                            await Utils.sleep(1000);
-                            return;
+                            await Utils.sleep(500);
+                            break;
                         }
                     }
-                } catch (error) {
-                    // Continue to next selector
-                    continue;
-                }
+                } catch (_) { /* continue */ }
             }
             
             // Try to find any dialog/modal and look for accept buttons inside
@@ -808,18 +958,16 @@ class TabScraper {
                         const acceptButton = await dialog.$('button:has-text("Akzeptieren"), button:has-text("Accept"), button:has-text("OK"), button:has-text("Zustimmen")');
                         if (acceptButton) {
                             Utils.log('🍪 Found cookie consent in dialog', 'info', this.tabId);
-                            await acceptButton.click();
+                            await acceptButton.click({ timeout: 1000 }).catch(() => {});
                             Utils.log('✅ Cookie consent accepted from dialog', 'success', this.tabId);
-                            await Utils.sleep(1000);
-                            return;
+                            await Utils.sleep(500);
+                            break;
                         }
                     }
-                } catch (error) {
-                    continue;
-                }
+                } catch (_) { /* continue */ }
             }
             
-            Utils.log('ℹ️ No cookie consent dialog found or already accepted', 'info', this.tabId);
+            Utils.log('ℹ️ Cookie consent check complete', 'info', this.tabId);
             
         } catch (error) {
             Utils.log(`⚠️ Error handling cookie consent: ${error.message}`, 'warning', this.tabId);

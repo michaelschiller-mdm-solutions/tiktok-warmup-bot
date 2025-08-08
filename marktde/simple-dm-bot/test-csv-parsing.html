@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Parsing Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .results {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 CSV Parsing Test</h1>
+    
+    <div class="test-section">
+        <h3>Test Premium CSV Line Parsing</h3>
+        <button onclick="testParsing()">Run Test</button>
+        <div id="results" class="results">Click "Run Test" to see results...</div>
+    </div>
+
+    <script>
+        // Copy of the parseCSVLine function from the extension
+        function parseCSVLine(line) {
+            const fields = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    fields.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            
+            // Add the last field
+            fields.push(current.trim());
+            
+            // Remove quotes from fields
+            const cleanFields = fields.map(field => {
+                if (field.startsWith('"') && field.endsWith('"')) {
+                    return field.slice(1, -1);
+                }
+                return field;
+            });
+            
+            return cleanFields;
+        }
+
+        function testParsing() {
+            const testLines = [
+                // Header
+                'target_account,target_account_id,followed_account,followed_account_id,is_premium,profile_image_url,profile_link',
+                
+                // Simple case
+                'Xlyeds,38826864,Beheo,31787572,true,https://static.markt.de/bundles/test.svg,"https://www.markt.de/beheo/userId,31787572/profile.htm"',
+                
+                // Complex case with commas in URL
+                'DavidH31,13251843,Lady Sassy99,26005535,true,https://imagecache.markt.de/test.jpg,"https://www.markt.de/lady+sassy99/userId,26005535/profile.htm"',
+                
+                // NO_FOLLOWS case
+                'Looper32,27764107,NO_FOLLOWS,N/A,false,,N/A',
+                
+                // Account name with spaces
+                'TestAccount,12345,Sweet apple 2025,67890,true,https://test.com/img.jpg,"https://www.markt.de/sweet+apple+2025/userId,67890/profile.htm"'
+            ];
+
+            let results = 'CSV PARSING TEST RESULTS\n';
+            results += '========================\n\n';
+
+            testLines.forEach((line, index) => {
+                results += `Line ${index + 1}: ${line.substring(0, 80)}${line.length > 80 ? '...' : ''}\n`;
+                
+                try {
+                    const fields = parseCSVLine(line);
+                    results += `  ✅ Parsed into ${fields.length} fields:\n`;
+                    
+                    fields.forEach((field, i) => {
+                        results += `    [${i}] "${field}"\n`;
+                    });
+                    
+                    // Test premium data extraction
+                    if (index > 0 && fields.length >= 5) { // Skip header
+                        const targetAccount = fields[0];
+                        const followedAccount = fields[2];
+                        const isPremium = fields[4] === 'true';
+                        
+                        results += `  📊 Extracted: "${targetAccount}" follows "${followedAccount}" (premium: ${isPremium})\n`;
+                    }
+                    
+                } catch (error) {
+                    results += `  ❌ Error: ${error.message}\n`;
+                }
+                
+                results += '\n';
+            });
+
+            // Test the actual premium data format
+            results += 'REAL DATA TEST\n';
+            results += '==============\n';
+            
+            const realLine = 'Xlyeds,38826864,schneehasee,39308753,true,https://imagecache.markt.de/65xd4tFHnLKD-EJowX-fi5c4tJY=/fit-in/150x200/images_profile/95/7f/ac8e-f86b-4590-b4b3-6881c6c275a0/image,"https://www.markt.de/schneehasee/userId,39308753/profile.htm"';
+            
+            results += `Real line: ${realLine}\n\n`;
+            
+            try {
+                const fields = parseCSVLine(realLine);
+                results += `✅ Parsed into ${fields.length} fields:\n`;
+                
+                fields.forEach((field, i) => {
+                    results += `  [${i}] "${field}"\n`;
+                });
+                
+                if (fields.length >= 5) {
+                    const targetAccount = fields[0];
+                    const followedAccount = fields[2];
+                    const isPremium = fields[4] === 'true';
+                    
+                    results += `\n📊 Final result: "${targetAccount}" follows "${followedAccount}" (premium: ${isPremium})\n`;
+                    
+                    if (fields.length === 7) {
+                        results += '✅ Correct number of fields (7) - parsing should work!\n';
+                    } else {
+                        results += `⚠️ Expected 7 fields, got ${fields.length}\n`;
+                    }
+                }
+                
+            } catch (error) {
+                results += `❌ Error parsing real data: ${error.message}\n`;
+            }
+
+            document.getElementById('results').textContent = results;
+        }
+    </script>
+</body>
+</html>

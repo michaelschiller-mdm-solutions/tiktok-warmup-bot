@@ -1,6 +1,10 @@
 /*
  * Markt.de Profile Scraper - Console Script
  * 
+ * Note:
+ * - This in-page console script runs in the current browser tab only.
+ *   A "max tabs" setting is not applicable here.
+ * 
  * Usage:
  * 1. Navigate to a markt.de profile page (e.g., https://www.markt.de/dinademona/userId,19354400/profile.htm)
  * 2. Open browser developer console (F12)

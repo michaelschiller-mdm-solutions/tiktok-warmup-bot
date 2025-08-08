@@ -1,0 +1,155 @@
+<!-- Created popup UI for Markt.de AI Chat Bot (Preview): Start/Stop, Config, Adverts, Test (preview-only) -->
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Markt.de AI Chat Bot</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Markt.de AI Chat Bot</h1>
+
+    <section>
+      <h2>Status</h2>
+      <div class="row">
+        <button id="btnStart">Start (Preview)</button>
+        <button id="btnStop">Stop</button>
+      </div>
+      <div class="row small">Senden ist deaktiviert (nur Vorschau). Aktiviere später in den Einstellungen.</div>
+      <div class="row" id="ownUserIdRow">Eigene User-ID: <span id="ownUserId">-</span></div>
+    </section>
+
+    <section>
+      <h2>Einstellungen</h2>
+      <div class="grid">
+        <label title="Standard-Antwortsprache (Deutsch empfohlen)">Sprache
+          <select id="language">
+            <option value="de" selected>Deutsch</option>
+          </select>
+        </label>
+        <label title="Provider wählen: Eigener HTTP-Endpunkt oder lokales Ollama">Provider
+          <select id="aiProvider">
+            <option value="custom">Custom HTTP</option>
+            <option value="ollama">Ollama (lokal)</option>
+          </select>
+        </label>
+        <label title="Optional: AI Endpoint (wird bei Provider=Custom benutzt). Best Practice: klare, spezifische Prompts.">AI Endpoint
+          <input id="aiEndpoint" type="text" placeholder="https://api.example.com/generate" />
+        </label>
+        <label title="API-Key (nur bei Provider=Custom; wird sicher lokal gespeichert)">API Key
+          <input id="aiKey" type="password" placeholder="••••••" />
+        </label>
+        <label title="Modellname bei Provider=Custom (z. B. gemini-pro)">Modell
+          <input id="aiModel" type="text" value="gemini-pro" />
+        </label>
+        <label title="Ollama Base URL (z. B. http://localhost:11434)">Ollama URL
+          <input id="ollamaBase" type="text" value="http://localhost:11434" />
+        </label>
+        <label title="Ollama Modell (z. B. gpt-oss:20b)">Ollama Modell
+          <input id="ollamaModel" type="text" value="gpt-oss:20b" />
+        </label>
+        <label title="Minimale Antwort-Verzögerung (menschlich wirken)">Min Delay (ms)
+          <input id="minDelay" type="number" value="4500" />
+        </label>
+        <label title="Maximale Antwort-Verzögerung (menschlich wirken)">Max Delay (ms)
+          <input id="maxDelay" type="number" value="18000" />
+        </label>
+        <label title="Vermeide Sofort-Antworten nach User-Message">Avoid Instant (ms)
+          <input id="avoidInstant" type="number" value="25000" />
+        </label>
+        <label title="Kleine Zufallsschwankungen (jitter)">Jitter (ms)
+          <input id="jitter" type="number" value="2000" />
+        </label>
+        <label title="Senden aktivieren (nur wenn gewünscht)" class="disabled">
+          <input id="sendingEnabled" type="checkbox" disabled /> Senden aktivieren (später)
+        </label>
+      </div>
+      <div class="row">
+        <button id="btnSaveCfg">Speichern</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Aktive Anzeigen (Basis)</h2>
+      <div id="advertsList"></div>
+      <div class="grid">
+        <label title="Exakter Anzeigentitel – wird zum Matchen benutzt">Titel
+          <input id="advTitle" type="text" placeholder="Anzeigentitel" />
+        </label>
+        <label title="Kurztext/Beschreibung – Kontext für Antworten">Text
+          <input id="advText" type="text" placeholder="Kurzbeschreibung" />
+        </label>
+        <label title="Persona/Stilhinweise – z. B. frech, verspielt, dominant">Persona
+          <input id="advPersona" type="text" placeholder="Persona" />
+        </label>
+      </div>
+      <div class="row">
+        <button id="btnAddAdvert">Hinzufügen</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Test (Vorschau)</h2>
+      <div class="grid">
+        <label title="Thread-ID aus der Inbox oder URL">Thread ID
+          <input id="testThreadId" type="text" placeholder="2193521669" />
+        </label>
+        <label title="Eigene User-ID (wird automatisch ermittelt)">User ID
+          <input id="testUserId" type="text" placeholder="39826031" />
+        </label>
+        <label title="Chat-Typ: Basis = Anzeige, Premium = allgemeiner Chat">Chat-Typ
+          <select id="testChatType">
+            <option value="premium">Premium</option>
+            <option value="basis">Basis</option>
+          </select>
+        </label>
+        <label title="Nur bei Basis: Exakter Anzeigentitel für Matching">
+          Anzeigentitel (optional)
+          <input id="testAdvertTitle" type="text" placeholder="Exakter Anzeigentitel" />
+        </label>
+      </div>
+      <div class="row">
+        <button id="btnPreview">Vorschau anzeigen</button>
+      </div>
+      <pre id="previewBox" class="preview"></pre>
+    </section>
+
+    <section>
+      <h2>Protokoll</h2>
+      <pre id="logBox" class="log"></pre>
+      <div class="row">
+        <button id="btnRefreshLog">Neu laden</button>
+        <button id="btnClearLog">Leeren</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Threads Inspector (Top 5)</h2>
+      <div class="row">
+        <label class="small" title="Alle 10–15s aktualisieren, wenn aktiv">
+          <input type="checkbox" id="autoRefresh" /> Auto-Refresh
+        </label>
+        <button id="btnRefresh">Jetzt aktualisieren</button>
+      </div>
+      <div id="threadsContainer"></div>
+    </section>
+
+    <section>
+      <h2>Letzte API Calls</h2>
+      <pre id="apiLogBox" class="log"></pre>
+      <div class="row">
+        <button id="btnRefreshApiLog">Neu laden</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="utils/storage.js"></script>
+  <script src="utils/models.js"></script>
+  <script src="utils/humanizer.js"></script>
+  <script src="utils/marktDeApiClient.js"></script>
+  <script src="utils/aiService.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html> 

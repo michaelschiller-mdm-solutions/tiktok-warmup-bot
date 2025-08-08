@@ -1,0 +1,24 @@
+{
+  "name": "elevenlabs-voice-message-tool",
+  "version": "1.0.0",
+  "description": "Simple web interface for generating voice messages using ElevenLabs API",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8080",
+    "serve": "npx http-server -p 8080 -o",
+    "dev": "npx live-server --port=8080"
+  },
+  "keywords": [
+    "elevenlabs",
+    "text-to-speech",
+    "voice-generation",
+    "ai",
+    "audio"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "live-server": "^1.2.2"
+  }
+}

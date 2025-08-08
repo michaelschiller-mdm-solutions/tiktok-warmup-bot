@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Matching Debug Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .upload-section {
+            border: 2px dashed #ddd;
+            padding: 20px;
+            text-align: center;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .results {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .match { color: #4CAF50; }
+        .no-match { color: #F44336; }
+        .info { color: #2196F3; }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+        input[type="file"] {
+            margin: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 CSV Matching Debug Tool</h1>
+        <p>This tool helps debug why the DM Bot isn't finding relationships between target accounts and premium followed data.</p>
+    </div>
+
+    <div class="container">
+        <h2>📁 Upload CSV Files</h2>
+        
+        <div class="upload-section">
+            <h3>Target Accounts CSV</h3>
+            <input type="file" id="target-csv" accept=".csv">
+            <button onclick="loadTargetCSV()">Load Target Accounts</button>
+        </div>
+
+        <div class="upload-section">
+            <h3>Premium Followed Data CSV</h3>
+            <input type="file" id="premium-csv" accept=".csv">
+            <button onclick="loadPremiumCSV()">Load Premium Data</button>
+        </div>
+
+        <button onclick="analyzeMatching()" style="background: #4CAF50; font-size: 16px; padding: 15px 30px;">🔍 Analyze Matching</button>
+    </div>
+
+    <div class="container">
+        <h2>📊 Analysis Results</h2>
+        <div id="results" class="results">Upload both CSV files and click "Analyze Matching" to see results...</div>
+    </div>
+
+    <script>
+        let targetAccounts = [];
+        let premiumData = [];
+        let followedAccountsMap = new Map();
+
+        function parseCSVLine(line) {
+            const fields = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    fields.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            
+            fields.push(current.trim());
+            
+            // Remove quotes from fields
+            return fields.map(field => {
+                if (field.startsWith('"') && field.endsWith('"')) {
+                    return field.slice(1, -1);
+                }
+                return field;
+            });
+        }
+
+        async function loadTargetCSV() {
+            const fileInput = document.getElementById('target-csv');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a target accounts CSV file first!');
+                return;
+            }
+
+            try {
+                const text = await file.text();
+                const lines = text.split('\n').filter(line => line.trim());
+                
+                targetAccounts = [];
+                
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    
+                    // Skip header row
+                    if (i === 0 && (line.toLowerCase().includes('name') || line.toLowerCase().includes('link'))) {
+                        continue;
+                    }
+                    
+                    const fields = parseCSVLine(line);
+                    const name = fields[0] || `Account_${i + 1}`;
+                    const id = fields[1] || `unknown_${i + 1}`;
+                    const link = fields[2] || '';
+                    
+                    if (name && link && link.includes('markt.de')) {
+                        targetAccounts.push({
+                            name: name,
+                            userId: id,
+                            link: link
+                        });
+                    }
+                }
+                
+                document.getElementById('results').textContent = `✅ Loaded ${targetAccounts.length} target accounts\n\nFirst 10 accounts:\n` + 
+                    targetAccounts.slice(0, 10).map(acc => `"${acc.name}" (ID: ${acc.userId})`).join('\n');
+                
+            } catch (error) {
+                alert('Error loading target accounts CSV: ' + error.message);
+            }
+        }
+
+        async function loadPremiumCSV() {
+            const fileInput = document.getElementById('premium-csv');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Please select a premium followed data CSV file first!');
+                return;
+            }
+
+            try {
+                const text = await file.text();
+                const lines = text.split('\n').filter(line => line.trim());
+                
+                premiumData = [];
+                followedAccountsMap.clear();
+                
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    
+                    // Skip header row
+                    if (i === 0 && line.toLowerCase().includes('target_account')) {
+                        continue;
+                    }
+                    
+                    const fields = parseCSVLine(line);
+                    if (fields.length < 5) continue;
+                    
+                    const targetAccount = fields[0];
+                    const targetAccountId = fields[1];
+                    const followedAccount = fields[2];
+                    const followedAccountId = fields[3];
+                    const isPremium = fields[4] === 'true';
+                    
+                    // Skip entries with NO_FOLLOWS
+                    if (followedAccount === 'NO_FOLLOWS') {
+                        continue;
+                    }
+                    
+                    const followedEntry = {
+                        targetAccount,
+                        targetAccountId,
+                        followedAccount,
+                        followedAccountId,
+                        isPremium
+                    };
+                    
+                    premiumData.push(followedEntry);
+                    
+                    // Build map for quick lookup
+                    if (!followedAccountsMap.has(targetAccount)) {
+                        followedAccountsMap.set(targetAccount, []);
+                    }
+                    followedAccountsMap.get(targetAccount).push(followedEntry);
+                }
+                
+                document.getElementById('results').textContent = `✅ Loaded ${premiumData.length} premium relationships for ${followedAccountsMap.size} target accounts\n\nTargets with premium data:\n` + 
+                    Array.from(followedAccountsMap.keys()).slice(0, 10).map(name => `"${name}" (${followedAccountsMap.get(name).length} follows)`).join('\n');
+                
+            } catch (error) {
+                alert('Error loading premium data CSV: ' + error.message);
+            }
+        }
+
+        function analyzeMatching() {
+            if (targetAccounts.length === 0) {
+                alert('Please load target accounts CSV first!');
+                return;
+            }
+            
+            if (premiumData.length === 0) {
+                alert('Please load premium data CSV first!');
+                return;
+            }
+
+            let results = `🔍 MATCHING ANALYSIS\n`;
+            results += `===================\n\n`;
+            results += `Target Accounts: ${targetAccounts.length}\n`;
+            results += `Premium Data Entries: ${premiumData.length}\n`;
+            results += `Unique Targets with Premium Data: ${followedAccountsMap.size}\n\n`;
+
+            results += `📋 TARGET ACCOUNTS vs PREMIUM DATA:\n`;
+            results += `=====================================\n`;
+
+            let matchCount = 0;
+            let noMatchCount = 0;
+
+            for (const target of targetAccounts.slice(0, 20)) { // Show first 20 for readability
+                const premiumFollows = followedAccountsMap.get(target.name) || [];
+                
+                if (premiumFollows.length > 0) {
+                    matchCount++;
+                    results += `✅ "${target.name}" → ${premiumFollows.length} follows (${premiumFollows.filter(f => f.isPremium).length} premium)\n`;
+                    
+                    // Show first few follows
+                    const firstFew = premiumFollows.slice(0, 3);
+                    for (const follow of firstFew) {
+                        results += `    └─ "${follow.followedAccount}" ${follow.isPremium ? '👑' : '👤'}\n`;
+                    }
+                    if (premiumFollows.length > 3) {
+                        results += `    └─ ... and ${premiumFollows.length - 3} more\n`;
+                    }
+                } else {
+                    noMatchCount++;
+                    results += `❌ "${target.name}" → No premium data found\n`;
+                }
+            }
+
+            if (targetAccounts.length > 20) {
+                results += `\n... and ${targetAccounts.length - 20} more accounts\n`;
+            }
+
+            results += `\n📊 SUMMARY:\n`;
+            results += `============\n`;
+            results += `Matches: ${matchCount}\n`;
+            results += `No Matches: ${noMatchCount}\n`;
+            results += `Match Rate: ${Math.round((matchCount / (matchCount + noMatchCount)) * 100)}%\n\n`;
+
+            // Check for exact name mismatches
+            results += `🔍 POTENTIAL ISSUES:\n`;
+            results += `====================\n`;
+
+            const targetNames = new Set(targetAccounts.map(t => t.name));
+            const premiumTargetNames = new Set(Array.from(followedAccountsMap.keys()));
+
+            const targetOnlyNames = [...targetNames].filter(name => !premiumTargetNames.has(name));
+            const premiumOnlyNames = [...premiumTargetNames].filter(name => !targetNames.has(name));
+
+            if (targetOnlyNames.length > 0) {
+                results += `\n❌ Target accounts with NO premium data:\n`;
+                targetOnlyNames.slice(0, 10).forEach(name => {
+                    results += `   "${name}"\n`;
+                });
+                if (targetOnlyNames.length > 10) {
+                    results += `   ... and ${targetOnlyNames.length - 10} more\n`;
+                }
+            }
+
+            if (premiumOnlyNames.length > 0) {
+                results += `\n⚠️ Premium data for accounts NOT in target list:\n`;
+                premiumOnlyNames.slice(0, 10).forEach(name => {
+                    results += `   "${name}"\n`;
+                });
+                if (premiumOnlyNames.length > 10) {
+                    results += `   ... and ${premiumOnlyNames.length - 10} more\n`;
+                }
+            }
+
+            // Check for case sensitivity issues
+            const caseIssues = [];
+            for (const targetName of targetNames) {
+                for (const premiumName of premiumTargetNames) {
+                    if (targetName.toLowerCase() === premiumName.toLowerCase() && targetName !== premiumName) {
+                        caseIssues.push(`"${targetName}" vs "${premiumName}"`);
+                    }
+                }
+            }
+
+            if (caseIssues.length > 0) {
+                results += `\n🔤 CASE SENSITIVITY ISSUES:\n`;
+                caseIssues.forEach(issue => {
+                    results += `   ${issue}\n`;
+                });
+            }
+
+            document.getElementById('results').textContent = results;
+        }
+    </script>
+</body>
+</html>

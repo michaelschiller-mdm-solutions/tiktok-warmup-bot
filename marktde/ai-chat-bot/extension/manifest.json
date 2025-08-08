@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Markt.de AI Chat Bot (Preview)",
+  "version": "0.1.0",
+  "description": "AI-powered chat assistant for markt.de with preview-only reply mode. Text-only MVP, German default, Basis/Premium aware.",
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://*.markt.de/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Markt.de AI Chat Bot",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.markt.de/benutzer/postfach.htm*"
+      ],
+      "run_at": "document_idle",
+      "js": [
+        "utils/storage.js",
+        "utils/models.js",
+        "utils/humanizer.js",
+        "utils/marktDeApiClient.js",
+        "utils/aiService.js",
+        "content-script.js"
+      ]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["page-bridge.js"],
+      "matches": ["https://*.markt.de/*"]
+    }
+  ]
+} 

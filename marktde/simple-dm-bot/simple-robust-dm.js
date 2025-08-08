@@ -1,10 +1,11 @@
 /*
- * SIMPLE ROBUST DM AUTOMATION - FIXED VERSION
+ * SIMPLE ROBUST DM AUTOMATION - ENHANCED VERSION WITH PREMIUM ACCOUNT INTEGRATION
  * Fixed infinite reload bug and added mobile responsiveness
  * Handles navigation, sends DMs, tracks progress with proper state management
+ * NEW: Premium account placeholder support with fallback functionality
  */
 
-console.log('🚀 SIMPLE ROBUST DM AUTOMATION LOADED - FIXED VERSION');
+console.log('🚀 SIMPLE ROBUST DM AUTOMATION LOADED - ENHANCED VERSION');
 
 // Simple state management using localStorage (survives page reloads)
 class SimpleState {
@@ -46,8 +47,13 @@ class SimpleDMBot {
         this.isRunning = false;
         this.isNavigating = false; // Prevent multiple navigation attempts
         this.navigationTimeout = null;
-        this.messageTemplate = 'Hey ich habe gesehen, dass du einer Freundin von mir auch folgst 🫣 Falls du mich auch ganz süß findest und mich kennenlerenen willst schreib mir doch auf Telegrm @xxcherry12 oder auf instagrm @notAnnaFae';
+        this.messageTemplate = 'Hey ich habe gesehen, dass du {premium_account1} auch folgst 🫣 Falls du mich auch ganz süß findest und mich kennenlerenen willst schreib mir doch auf Telegrm @xxcherry12 oder auf instagrm @notAnnaFae';
+        this.fallbackText = 'einer Freundin von mir';
         this.delay = 8000; // 8 seconds between accounts
+        
+        // Premium account data
+        this.premiumFollowedData = null; // Will store the premium followed relationships
+        this.followedAccountsMap = new Map(); // Map of target_account -> array of followed accounts
 
         this.init();
     }
@@ -57,6 +63,14 @@ class SimpleDMBot {
 
         // Check if we have an ongoing campaign
         this.campaign = SimpleState.load('campaign');
+
+        // Load premium followed data if available
+        this.premiumFollowedData = SimpleState.load('premiumFollowedData');
+        const savedFollowedMap = SimpleState.load('followedAccountsMap');
+        if (savedFollowedMap) {
+            this.followedAccountsMap = new Map(savedFollowedMap);
+            console.log(`👥 Loaded premium data for ${this.followedAccountsMap.size} accounts`);
+        }
 
         // AUTO-RESUME: If campaign is running, automatically continue
         if (this.campaign && this.campaign.isRunning) {
@@ -244,15 +258,36 @@ class SimpleDMBot {
                     
                     <!-- CSV Upload Section -->
                     <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
-                        <label style="display: block; margin-bottom: 8px; font-weight: bold; font-size: 12px;">📁 Upload CSV File:</label>
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold; font-size: 12px;">📁 Upload Target Accounts CSV:</label>
                         <input type="file" id="csv-upload" accept=".csv" style="width: 100%; padding: 6px; border: none; border-radius: 5px; margin-bottom: 8px; font-size: 12px;">
-                        <button id="load-csv" style="width: 100%; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 12px;">📋 Load Accounts</button>
+                        <button id="load-csv" style="width: 100%; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 12px;">📋 Load Target Accounts</button>
+                    </div>
+                    
+                    <!-- Premium Followed Data Upload Section -->
+                    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold; font-size: 12px;">👥 Upload Premium Followed Data CSV:</label>
+                        <input type="file" id="premium-csv-upload" accept=".csv" style="width: 100%; padding: 6px; border: none; border-radius: 5px; margin-bottom: 8px; font-size: 12px;">
+                        <button id="load-premium-csv" style="width: 100%; padding: 8px; background: #9C27B0; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 12px;">👥 Load Premium Data</button>
+                        <div id="premium-data-status" style="font-size: 10px; margin-top: 5px; opacity: 0.8;">No premium data loaded</div>
                     </div>
                     
                     <!-- Message Template Section -->
                     <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
-                        <label style="display: block; margin-bottom: 8px; font-weight: bold; font-size: 12px;">💬 Message Template:</label>
-                        <textarea id="message-template" style="width: 100%; height: 50px; padding: 6px; border: none; border-radius: 5px; resize: vertical; font-size: 11px;" placeholder="Your DM message...">${this.messageTemplate}</textarea>
+                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <label style="font-weight: bold; font-size: 12px; margin-right: 8px;">💬 Message Template:</label>
+                            <div style="position: relative;">
+                                <span style="cursor: help; font-size: 14px;" title="Use placeholders: {premium_account1}, {premium_account2}, {premium_account3} - These will be replaced with accounts the target is following. Premium accounts are used first, then regular accounts, then fallback text if none available.">ℹ️</span>
+                            </div>
+                        </div>
+                        <textarea id="message-template" style="width: 100%; height: 60px; padding: 6px; border: none; border-radius: 5px; resize: vertical; font-size: 11px;" placeholder="Your DM message with placeholders like {premium_account1}...">${this.messageTemplate}</textarea>
+                        <div style="font-size: 9px; opacity: 0.7; margin-top: 4px;">💡 Use: {premium_account1}, {premium_account2}, {premium_account3}</div>
+                    </div>
+                    
+                    <!-- Fallback Text Section -->
+                    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: bold; font-size: 12px;">🔄 Fallback Text:</label>
+                        <input type="text" id="fallback-text" style="width: 100%; padding: 6px; border: none; border-radius: 5px; font-size: 11px;" placeholder="Text to use when no followed accounts found..." value="${this.fallbackText}">
+                        <div style="font-size: 9px; opacity: 0.7; margin-top: 4px;">Used when target has no followed accounts or data not available</div>
                     </div>
                     
                     <!-- Delay Section -->
@@ -266,6 +301,9 @@ class SimpleDMBot {
                     <div id="account-info" style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; margin-bottom: 12px; display: none;">
                         <div style="font-weight: bold; margin-bottom: 8px; font-size: 12px;">📊 Campaign Status:</div>
                         <div id="progress-info" style="font-size: 11px;">No accounts loaded</div>
+                        <div id="premium-stats" style="font-size: 10px; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.2);">
+                            <div>👥 Premium data: <span id="premium-coverage">Not loaded</span></div>
+                        </div>
                     </div>
                     
                     <!-- Control Buttons -->
@@ -301,6 +339,7 @@ class SimpleDMBot {
 
     setupEventListeners() {
         document.getElementById('load-csv').onclick = () => this.loadCSV();
+        document.getElementById('load-premium-csv').onclick = () => this.loadPremiumCSV();
         document.getElementById('start-campaign').onclick = () => this.startCampaign();
         document.getElementById('stop-campaign').onclick = () => this.stopCampaign();
         document.getElementById('process-current').onclick = () => this.processCurrentAccount();
@@ -319,6 +358,11 @@ class SimpleDMBot {
         const messageTemplate = document.getElementById('message-template');
         messageTemplate.onchange = () => {
             this.messageTemplate = messageTemplate.value;
+        };
+
+        const fallbackText = document.getElementById('fallback-text');
+        fallbackText.onchange = () => {
+            this.fallbackText = fallbackText.value;
         };
     }
 
@@ -379,7 +423,7 @@ class SimpleDMBot {
         }
 
         try {
-            console.log('📋 Loading CSV file...');
+            console.log('📋 Loading target accounts CSV file...');
             const text = await file.text();
             const lines = text.split('\n').filter(line => line.trim());
 
@@ -395,7 +439,7 @@ class SimpleDMBot {
                 const id = fields[1] || `unknown_${index + 1}`;
                 const link = fields[2] || '';
                 
-                console.log(`📋 Parsed account: ${name}, ID: ${id}, Link: ${link}`);
+                console.log(`📋 Parsed target account: "${name}", ID: ${id}, Link: ${link}`);
                 
                 return {
                     name: name,
@@ -426,14 +470,129 @@ class SimpleDMBot {
 
             SimpleState.save('campaign', this.campaign);
 
-            console.log(`✅ Loaded ${accounts.length} accounts`);
-            alert(`✅ Loaded ${accounts.length} accounts successfully!`);
+            console.log(`✅ Loaded ${accounts.length} target accounts`);
+            alert(`✅ Loaded ${accounts.length} target accounts successfully!`);
 
             this.updateUI();
 
         } catch (error) {
-            console.error('❌ Error loading CSV:', error);
-            alert('❌ Error loading CSV file. Please check the format.');
+            console.error('❌ Error loading target accounts CSV:', error);
+            alert('❌ Error loading target accounts CSV file. Please check the format.');
+        }
+    }
+
+    async loadPremiumCSV() {
+        const fileInput = document.getElementById('premium-csv-upload');
+        const file = fileInput.files[0];
+
+        if (!file) {
+            alert('❌ Please select a premium followed data CSV file first!');
+            return;
+        }
+
+        try {
+            console.log('👥 Loading premium followed data CSV file...');
+            const text = await file.text();
+            const lines = text.split('\n').filter(line => line.trim());
+
+            // Parse premium followed data CSV
+            const followedData = [];
+            this.followedAccountsMap.clear();
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                
+                // Skip header row
+                if (i === 0 && line.toLowerCase().includes('target_account')) {
+                    continue;
+                }
+                
+                try {
+                    const fields = this.parseCSVLine(line);
+                    if (fields.length < 5) {
+                        console.log(`⚠️ Skipping line ${i + 1} with insufficient fields (${fields.length}): ${line.substring(0, 100)}...`);
+                        continue;
+                    }
+                    
+                    const targetAccount = fields[0]?.trim();
+                    const targetAccountId = fields[1]?.trim();
+                    const followedAccount = fields[2]?.trim();
+                    const followedAccountId = fields[3]?.trim();
+                    const isPremium = fields[4]?.trim() === 'true';
+                    
+                    // Validate required fields
+                    if (!targetAccount || !followedAccount) {
+                        console.log(`⚠️ Skipping line ${i + 1} with empty required fields: target="${targetAccount}", followed="${followedAccount}"`);
+                        continue;
+                    }
+                
+                    // Skip entries with NO_FOLLOWS
+                    if (followedAccount === 'NO_FOLLOWS') {
+                        continue;
+                    }
+                    
+                    const followedEntry = {
+                        targetAccount,
+                        targetAccountId,
+                        followedAccount,
+                        followedAccountId,
+                        isPremium
+                    };
+                    
+                    // Only log first few entries to avoid spam
+                    if (followedData.length < 5) {
+                        console.log(`👥 Parsed premium relationship: "${targetAccount}" follows "${followedAccount}" (premium: ${isPremium})`);
+                    }
+                    
+                    followedData.push(followedEntry);
+                    
+                    // Build map for quick lookup
+                    if (!this.followedAccountsMap.has(targetAccount)) {
+                        this.followedAccountsMap.set(targetAccount, []);
+                    }
+                    this.followedAccountsMap.get(targetAccount).push(followedEntry);
+                    
+                } catch (lineError) {
+                    console.error(`❌ Error parsing line ${i + 1}: ${lineError.message}`);
+                    console.log(`📄 Problematic line: ${line}`);
+                    continue;
+                }
+            }
+
+            this.premiumFollowedData = followedData;
+            
+            // Save to localStorage
+            SimpleState.save('premiumFollowedData', this.premiumFollowedData);
+            SimpleState.save('followedAccountsMap', Array.from(this.followedAccountsMap.entries()));
+
+            console.log(`✅ Loaded ${followedData.length} followed relationships for ${this.followedAccountsMap.size} target accounts`);
+            
+            // Show summary of premium data
+            const premiumCount = followedData.filter(f => f.isPremium).length;
+            const regularCount = followedData.filter(f => !f.isPremium).length;
+            console.log(`👥 Premium data summary: ${premiumCount} premium, ${regularCount} regular relationships`);
+            console.log(`👥 Target accounts with data: ${Array.from(this.followedAccountsMap.keys()).slice(0, 10).join(', ')}${this.followedAccountsMap.size > 10 ? ` and ${this.followedAccountsMap.size - 10} more` : ''}`);
+            
+            // Update UI status
+            const statusEl = document.getElementById('premium-data-status');
+            if (statusEl) {
+                statusEl.textContent = `✅ ${followedData.length} relationships loaded for ${this.followedAccountsMap.size} accounts`;
+                statusEl.style.color = '#4CAF50';
+            }
+
+            alert(`✅ Loaded premium data: ${followedData.length} relationships for ${this.followedAccountsMap.size} accounts!`);
+
+            this.updateUI();
+
+        } catch (error) {
+            console.error('❌ Error loading premium followed data CSV:', error);
+            alert('❌ Error loading premium followed data CSV file. Please check the format.');
+            
+            const statusEl = document.getElementById('premium-data-status');
+            if (statusEl) {
+                statusEl.textContent = '❌ Failed to load premium data';
+                statusEl.style.color = '#F44336';
+            }
         }
     }
 
@@ -522,7 +681,12 @@ class SimpleDMBot {
     clearState() {
         if (confirm('🗑️ Clear all campaign data? This cannot be undone!')) {
             SimpleState.clear('campaign');
+            SimpleState.clear('premiumFollowedData');
+            SimpleState.clear('followedAccountsMap');
+            
             this.campaign = null;
+            this.premiumFollowedData = null;
+            this.followedAccountsMap.clear();
             this.isRunning = false;
             this.isNavigating = false;
             
@@ -535,6 +699,72 @@ class SimpleDMBot {
             this.updateDebugInfo();
             console.log('🗑️ State cleared');
         }
+    }
+
+
+
+    // Process message template with premium account placeholders
+    processMessageTemplate(targetAccountName, messageTemplate) {
+        let processedMessage = messageTemplate;
+        
+        console.log(`🔍 Looking up premium data for target: "${targetAccountName}"`);
+        console.log(`🔍 Available targets in map:`, Array.from(this.followedAccountsMap.keys()));
+        
+        // Get followed accounts for this target
+        const followedAccounts = this.followedAccountsMap.get(targetAccountName) || [];
+        
+        if (followedAccounts.length === 0) {
+            console.log(`👥 No followed accounts found for "${targetAccountName}", using fallback text`);
+            // Replace all placeholders with fallback text
+            processedMessage = processedMessage
+                .replace(/{premium_account1}/g, this.fallbackText)
+                .replace(/{premium_account2}/g, this.fallbackText)
+                .replace(/{premium_account3}/g, this.fallbackText);
+            return processedMessage;
+        }
+
+        // Separate premium and regular accounts
+        const premiumAccounts = followedAccounts.filter(acc => acc.isPremium);
+        const regularAccounts = followedAccounts.filter(acc => !acc.isPremium);
+        
+        console.log(`👥 Found ${premiumAccounts.length} premium and ${regularAccounts.length} regular followed accounts for ${targetAccountName}`);
+
+        // Create a pool of accounts to use (premium first, then regular)
+        const accountPool = [...premiumAccounts, ...regularAccounts];
+        
+        // Shuffle the pool for randomness
+        for (let i = accountPool.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [accountPool[i], accountPool[j]] = [accountPool[j], accountPool[i]];
+        }
+
+        // Process each placeholder
+        const placeholders = ['premium_account1', 'premium_account2', 'premium_account3'];
+        const usedAccounts = new Set(); // Prevent using the same account twice
+        
+        for (let i = 0; i < placeholders.length; i++) {
+            const placeholder = placeholders[i];
+            const regex = new RegExp(`{${placeholder}}`, 'g');
+            
+            if (processedMessage.includes(`{${placeholder}}`)) {
+                // Find an unused account from the pool
+                let selectedAccount = null;
+                for (const account of accountPool) {
+                    if (!usedAccounts.has(account.followedAccount)) {
+                        selectedAccount = account;
+                        usedAccounts.add(account.followedAccount);
+                        break;
+                    }
+                }
+                
+                const replacementText = selectedAccount ? selectedAccount.followedAccount : this.fallbackText;
+                processedMessage = processedMessage.replace(regex, replacementText);
+                
+                console.log(`👥 Replaced {${placeholder}} with: ${replacementText} (${selectedAccount ? (selectedAccount.isPremium ? 'premium' : 'regular') : 'fallback'})`);
+            }
+        }
+
+        return processedMessage;
     }
 
     async navigateToNextAccount() {
@@ -700,8 +930,14 @@ class SimpleDMBot {
                 throw new Error('Message textarea not found with exact selector');
             }
 
-            this.updateActionStatus('✅ Found textarea, typing message...');
-            textarea.value = this.messageTemplate;
+            this.updateActionStatus('✅ Found textarea, processing message template...');
+            
+            // Process message template with premium account placeholders
+            const processedMessage = this.processMessageTemplate(account.name, this.messageTemplate);
+            console.log(`💬 Original message: ${this.messageTemplate}`);
+            console.log(`💬 Processed message: ${processedMessage}`);
+            
+            textarea.value = processedMessage;
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
             textarea.dispatchEvent(new Event('change', { bubbles: true }));
 
@@ -806,6 +1042,7 @@ class SimpleDMBot {
     updateUI() {
         const accountInfo = document.getElementById('account-info');
         const progressInfo = document.getElementById('progress-info');
+        const premiumStats = document.getElementById('premium-coverage');
         const startButton = document.getElementById('start-campaign');
         const stopButton = document.getElementById('stop-campaign');
         const processCurrentButton = document.getElementById('process-current');
@@ -839,6 +1076,33 @@ class SimpleDMBot {
                 <div style="background: #4CAF50; height: 100%; border-radius: 10px; width: ${(stats.processed / stats.total) * 100}%;"></div>
             </div>
         `;
+
+        // Update premium data statistics
+        if (premiumStats) {
+            if (this.followedAccountsMap.size > 0) {
+                // Calculate how many target accounts have premium data
+                let accountsWithData = 0;
+                let totalPremiumAccounts = 0;
+                let totalRegularAccounts = 0;
+                
+                for (const targetAccount of accounts) {
+                    const followedAccounts = this.followedAccountsMap.get(targetAccount.name) || [];
+                    if (followedAccounts.length > 0) {
+                        accountsWithData++;
+                        totalPremiumAccounts += followedAccounts.filter(acc => acc.isPremium).length;
+                        totalRegularAccounts += followedAccounts.filter(acc => !acc.isPremium).length;
+                    }
+                }
+                
+                const coverage = Math.round((accountsWithData / stats.total) * 100);
+                premiumStats.innerHTML = `${accountsWithData}/${stats.total} accounts (${coverage}%) have data<br>
+                    <span style="font-size: 9px;">👑 ${totalPremiumAccounts} premium | 👤 ${totalRegularAccounts} regular</span>`;
+                premiumStats.style.color = coverage > 50 ? '#4CAF50' : '#FFA500';
+            } else {
+                premiumStats.textContent = 'No premium data loaded';
+                premiumStats.style.color = '#666';
+            }
+        }
 
         startButton.disabled = this.isRunning || this.campaign.isRunning;
         stopButton.disabled = !this.isRunning && !this.campaign.isRunning;
@@ -925,7 +1189,7 @@ class SimpleDMBot {
         return clickable;
     }
 
-    // Enhanced CSV parsing that handles URLs with commas
+    // Enhanced CSV parsing that handles URLs with commas and quoted fields
     parseCSVLine(line) {
         const fields = [];
         let current = '';
@@ -954,20 +1218,6 @@ class SimpleDMBot {
             }
             return field;
         });
-        
-        // Special handling for markt.de URLs with commas
-        // If we have more than 3 fields, it means the URL was split by commas
-        if (cleanFields.length > 3) {
-            // Reconstruct the URL by joining everything from index 2 onwards
-            const name = cleanFields[0];
-            const id = cleanFields[1];
-            const urlParts = cleanFields.slice(2);
-            const fullUrl = urlParts.join(',');
-            
-            console.log(`🔧 Reconstructed URL: ${fullUrl} (was split into ${urlParts.length} parts)`);
-            
-            return [name, id, fullUrl];
-        }
         
         return cleanFields;
     }

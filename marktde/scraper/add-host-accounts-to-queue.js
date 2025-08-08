@@ -2,7 +2,7 @@
 const fs = require('fs');
 
 // Read host accounts
-const hostContent = fs.readFileSync('marktde/host_accounts.csv', 'utf8');
+const hostContent = fs.readFileSync('./host_accounts.csv', 'utf8');
 const hostLines = hostContent.split('\n').slice(1).filter(line => line.trim());
 
 // Create queue file with header

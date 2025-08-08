@@ -1,0 +1,31 @@
+# Marktde Scraper Frontend Docker Image for Windows
+FROM mcr.microsoft.com/windows/nanoserver:1809
+
+# Install Node.js
+ADD https://nodejs.org/dist/v18.17.0/node-v18.17.0-win-x64.zip C:\nodejs.zip
+RUN powershell -Command "Expand-Archive C:\nodejs.zip C:\; Remove-Item C:\nodejs.zip"
+RUN setx PATH "%PATH%;C:\node-v18.17.0-win-x64"
+
+# Create app directory
+WORKDIR C:\app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Install Playwright browsers
+RUN npx playwright install chromium
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir scraper data uploads
+
+# Expose port
+EXPOSE 3000
+
+# Start the application
+CMD ["npm", "start"]
